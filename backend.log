@@ -5,3 +5,161 @@ INFO:     Started server process [48164]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
 INFO:     127.0.0.1:58218 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58229 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58232 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58280 - "POST /pipeline/run HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58280 - "GET /pipeline/status/f1fb2b5f-a25e-4e01-811d-ad8c563afe36 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58280 - "GET /pipeline/status/f1fb2b5f-a25e-4e01-811d-ad8c563afe36 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58280 - "GET /pipeline/status/f1fb2b5f-a25e-4e01-811d-ad8c563afe36 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58312 - "POST /pipeline/run HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58312 - "GET /pipeline/status/4fba1aa8-0bc1-4faa-a479-f78ccb95f03e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58312 - "GET /pipeline/status/4fba1aa8-0bc1-4faa-a479-f78ccb95f03e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58312 - "GET /pipeline/status/4fba1aa8-0bc1-4faa-a479-f78ccb95f03e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58420 - "GET /pipeline/status/4fba1aa8-0bc1-4faa-a479-f78ccb95f03e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58420 - "GET /pipeline/status/4fba1aa8-0bc1-4faa-a479-f78ccb95f03e HTTP/1.1" 200 OK
+WARNING: Response truncated (finish_reason=length)
+INFO:     127.0.0.1:58420 - "GET /pipeline/status/4fba1aa8-0bc1-4faa-a479-f78ccb95f03e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58420 - "GET /pipeline/status/4fba1aa8-0bc1-4faa-a479-f78ccb95f03e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58420 - "GET /pipeline/status/4fba1aa8-0bc1-4faa-a479-f78ccb95f03e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58420 - "GET /pipeline/status/4fba1aa8-0bc1-4faa-a479-f78ccb95f03e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58420 - "GET /pipeline/status/4fba1aa8-0bc1-4faa-a479-f78ccb95f03e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58420 - "GET /pipeline/status/4fba1aa8-0bc1-4faa-a479-f78ccb95f03e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58420 - "GET /pipeline/status/4fba1aa8-0bc1-4faa-a479-f78ccb95f03e HTTP/1.1" 200 OK
+WARNING: Response truncated (finish_reason=length)
+INFO:     127.0.0.1:58420 - "GET /pipeline/status/4fba1aa8-0bc1-4faa-a479-f78ccb95f03e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58420 - "GET /pipeline/status/4fba1aa8-0bc1-4faa-a479-f78ccb95f03e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58420 - "GET /pipeline/status/4fba1aa8-0bc1-4faa-a479-f78ccb95f03e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58420 - "GET /pipeline/status/4fba1aa8-0bc1-4faa-a479-f78ccb95f03e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58420 - "GET /pipeline/status/4fba1aa8-0bc1-4faa-a479-f78ccb95f03e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58420 - "GET /pipeline/status/4fba1aa8-0bc1-4faa-a479-f78ccb95f03e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58420 - "GET /pipeline/status/4fba1aa8-0bc1-4faa-a479-f78ccb95f03e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58420 - "GET /pipeline/status/4fba1aa8-0bc1-4faa-a479-f78ccb95f03e HTTP/1.1" 200 OK
+WARNING: Response truncated (finish_reason=length)
+INFO:     127.0.0.1:58420 - "GET /pipeline/status/4fba1aa8-0bc1-4faa-a479-f78ccb95f03e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58420 - "GET /pipeline/status/4fba1aa8-0bc1-4faa-a479-f78ccb95f03e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58420 - "GET /pipeline/status/4fba1aa8-0bc1-4faa-a479-f78ccb95f03e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58420 - "GET /pipeline/status/4fba1aa8-0bc1-4faa-a479-f78ccb95f03e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58420 - "GET /pipeline/status/4fba1aa8-0bc1-4faa-a479-f78ccb95f03e HTTP/1.1" 200 OK
+WARNING: Response truncated (finish_reason=length)
+INFO:     127.0.0.1:58420 - "GET /pipeline/status/4fba1aa8-0bc1-4faa-a479-f78ccb95f03e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58420 - "GET /pipeline/status/4fba1aa8-0bc1-4faa-a479-f78ccb95f03e HTTP/1.1" 200 OK
+WARNING:  WatchFiles detected changes in 'app/pipeline/graph.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [48164]
+INFO:     Started server process [48589]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'app/pipeline/graph.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [48589]
+INFO:     Started server process [48599]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'app/pipeline/graph.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [48599]
+INFO:     Started server process [48601]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'app/pipeline/graph.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [48601]
+INFO:     Started server process [48603]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'app/pipeline/graph.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [48603]
+INFO:     Started server process [48609]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'app/pipeline/graph.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [48609]
+INFO:     Started server process [48610]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'app/pipeline/graph.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [48610]
+INFO:     Started server process [48611]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'app/pipeline/graph.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [48611]
+INFO:     Started server process [48614]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'app/pipeline/graph.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [48614]
+INFO:     Started server process [48616]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'app/pipeline/graph.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [48616]
+INFO:     Started server process [48617]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'app/pipeline/graph.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [48617]
+INFO:     Started server process [48618]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'app/pipeline/graph.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [48618]
+INFO:     Started server process [48620]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'app/pipeline/graph.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [48620]
+INFO:     Started server process [48621]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'app/pipeline/graph.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [48621]
+INFO:     Started server process [48622]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'app/pipeline/graph.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [48622]
+INFO:     Started server process [48624]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.

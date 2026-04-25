@@ -48,9 +48,9 @@ async def node_extract_keyframes(state: PipelineState) -> dict:
         video_info = get_video_info(state["video_path"])
         keyframe_paths = extract_keyframes(state["video_path"], max_frames=6)
 
-        # Emit completion
+        # Emit completion (don't reset phase_start_time here - let duration calculate correctly)
         logs = _add_phase_log(
-            {**state, "detailed_logs": logs, "phase_start_time": time.time()},
+            {**state, "detailed_logs": logs},
             "extract_keyframes", "completed",
             f"Extracted {len(keyframe_paths)} keyframes from video",
             f"Duration: {video_info.get('duration', 0):.1f}s, FPS: {video_info.get('fps', 0):.0f}"
@@ -63,13 +63,13 @@ async def node_extract_keyframes(state: PipelineState) -> dict:
             "current_phase": "decompose",
             "phase_status": "running",
             "phase_message": "Analyzing visual content...",
-            "phase_start_time": time.time(),
+            "phase_start_time": time.time(),  # Set for NEXT phase
             "detailed_logs": logs,
         }
     elif state.get("image_paths"):
         # Emit completion for image input
         logs = _add_phase_log(
-            {**state, "detailed_logs": logs, "phase_start_time": time.time()},
+            {**state, "detailed_logs": logs},
             "extract_keyframes", "completed",
             f"Using {len(state['image_paths'])} uploaded images as references"
         )
@@ -80,13 +80,13 @@ async def node_extract_keyframes(state: PipelineState) -> dict:
             "current_phase": "decompose",
             "phase_status": "running",
             "phase_message": "Analyzing visual content...",
-            "phase_start_time": time.time(),
+            "phase_start_time": time.time(),  # Set for NEXT phase
             "detailed_logs": logs,
         }
 
     # 纯文本输入：返回空列表以避免 LangGraph "Must write to at least one of..." 错误
     logs = _add_phase_log(
-        {**state, "detailed_logs": logs, "phase_start_time": time.time()},
+        {**state, "detailed_logs": logs},
         "extract_keyframes", "completed",
         "Text-only mode: no media extraction needed"
     )
@@ -97,7 +97,7 @@ async def node_extract_keyframes(state: PipelineState) -> dict:
         "current_phase": "decompose",
         "phase_status": "running",
         "phase_message": "Processing text description...",
-        "phase_start_time": time.time(),
+        "phase_start_time": time.time(),  # Set for NEXT phase
         "detailed_logs": logs,
     }
 
@@ -120,7 +120,7 @@ async def node_decompose(state: PipelineState) -> dict:
 
         # Emit completion
         logs = _add_phase_log(
-            {**state, "detailed_logs": logs, "phase_start_time": time.time()},
+            {**state, "detailed_logs": logs},
             "decompose", "completed",
             f"Generated visual description: {description.get('effect_name', 'unknown')}",
             f"Shape: {description.get('shape', {}).get('type', 'unknown')}, Colors: {len(description.get('color', {}).get('palette', []))} colors"
@@ -131,12 +131,12 @@ async def node_decompose(state: PipelineState) -> dict:
             "current_phase": "generate",
             "phase_status": "running",
             "phase_message": "Generating GLSL shader code...",
-            "phase_start_time": time.time(),
+            "phase_start_time": time.time(),  # Set for NEXT phase
             "detailed_logs": logs,
         }
     except Exception as e:
         logs = _add_phase_log(
-            {**state, "detailed_logs": logs, "phase_start_time": time.time()},
+            {**state, "detailed_logs": logs},
             "decompose", "failed",
             f"Decomposition failed: {str(e)}"
         )
@@ -170,7 +170,7 @@ async def node_generate(state: PipelineState) -> dict:
 
         # Emit completion
         logs = _add_phase_log(
-            {**state, "detailed_logs": logs, "phase_start_time": time.time()},
+            {**state, "detailed_logs": logs},
             "generate", "completed",
             f"Generated shader: {len(shader)} characters",
             f"Shader preview: {shader[:200]}..." if len(shader) > 200 else shader
@@ -183,12 +183,12 @@ async def node_generate(state: PipelineState) -> dict:
             "current_phase": "render",
             "phase_status": "running",
             "phase_message": "Rendering shader frames...",
-            "phase_start_time": time.time(),
+            "phase_start_time": time.time(),  # Set for NEXT phase
             "detailed_logs": logs,
         }
     except Exception as e:
         logs = _add_phase_log(
-            {**state, "detailed_logs": logs, "phase_start_time": time.time()},
+            {**state, "detailed_logs": logs},
             "generate", "failed",
             f"Shader generation failed: {str(e)}"
         )
@@ -210,7 +210,7 @@ async def node_render_and_screenshot(state: PipelineState) -> dict:
     shader = state.get("current_shader", "")
     if not shader:
         logs = _add_phase_log(
-            {**state, "detailed_logs": logs, "phase_start_time": time.time()},
+            {**state, "detailed_logs": logs},
             "render", "failed",
             "No shader code to render"
         )
@@ -228,7 +228,7 @@ async def node_render_and_screenshot(state: PipelineState) -> dict:
 
         # Emit completion
         logs = _add_phase_log(
-            {**state, "detailed_logs": logs, "phase_start_time": time.time()},
+            {**state, "detailed_logs": logs},
             "render", "completed",
             f"Rendered {len(screenshots)} frames successfully"
         )
@@ -239,13 +239,13 @@ async def node_render_and_screenshot(state: PipelineState) -> dict:
             "current_phase": "inspect",
             "phase_status": "running",
             "phase_message": "Inspecting rendered output...",
-            "phase_start_time": time.time(),
+            "phase_start_time": time.time(),  # Set for NEXT phase
             "detailed_logs": logs,
         }
     except asyncio.TimeoutError:
         # Timeout: return empty but continue (text mode can pass without screenshots)
         logs = _add_phase_log(
-            {**state, "detailed_logs": logs, "phase_start_time": time.time()},
+            {**state, "detailed_logs": logs},
             "render", "failed",
             "Render timeout (frontend not ready)"
         )
@@ -256,7 +256,7 @@ async def node_render_and_screenshot(state: PipelineState) -> dict:
         }
     except Exception as e:
         logs = _add_phase_log(
-            {**state, "detailed_logs": logs, "phase_start_time": time.time()},
+            {**state, "detailed_logs": logs},
             "render", "failed",
             f"Render error: {str(e)}"
         )
@@ -289,7 +289,7 @@ async def node_inspect(state: PipelineState) -> dict:
         })
 
         logs = _add_phase_log(
-            {**state, "detailed_logs": logs, "phase_start_time": time.time()},
+            {**state, "detailed_logs": logs},
             "inspect", "completed",
             "Auto-accepted: text-only mode (no design reference)"
         )
@@ -316,7 +316,7 @@ async def node_inspect(state: PipelineState) -> dict:
         })
 
         logs = _add_phase_log(
-            {**state, "detailed_logs": logs, "phase_start_time": time.time()},
+            {**state, "detailed_logs": logs},
             "inspect", "failed",
             "No rendered screenshots to compare"
         )
@@ -349,7 +349,7 @@ async def node_inspect(state: PipelineState) -> dict:
 
         # Emit completion
         logs = _add_phase_log(
-            {**state, "detailed_logs": logs, "phase_start_time": time.time()},
+            {**state, "detailed_logs": logs},
             "inspect", "completed" if passed else "running",
             f"Inspection complete: score {result.get('overall_score', 0):.2f}, {'PASSED' if passed else 'NEEDS IMPROVEMENT'}",
             result.get("feedback", "")
@@ -362,11 +362,12 @@ async def node_inspect(state: PipelineState) -> dict:
             "current_phase": "complete" if passed else "generate",
             "phase_status": "completed" if passed else "running",
             "phase_message": "Pipeline completed successfully" if passed else "Preparing next iteration...",
+            "phase_start_time": time.time() if not passed else None,  # Set for NEXT phase only if continuing
             "detailed_logs": logs,
         }
     except Exception as e:
         logs = _add_phase_log(
-            {**state, "detailed_logs": logs, "phase_start_time": time.time()},
+            {**state, "detailed_logs": logs},
             "inspect", "failed",
             f"Inspection failed: {str(e)}"
         )
@@ -386,7 +387,8 @@ def should_continue(state: PipelineState) -> Literal["generate", "end"]:
         return "end"
     # For text-only mode, after first successful shader generation, end
     # (text mode auto-passes in node_inspect if no design_screenshots)
-    if state.get("input_type") == "text" and state.get("iteration", 0) >= 1:
+    # iteration >= 0 means end after first Generate+Inspect cycle completes
+    if state.get("input_type") == "text" and state.get("iteration", 0) >= 0:
         return "end"
     if state.get("compile_error") and state.get("iteration", 0) >= 1:
         # 编译错误且已重试，结束

@@ -14,7 +14,9 @@ import {
   Eye,
   Image,
   Play,
-  Clock
+  Clock,
+  Maximize2,
+  Minimize2
 } from "lucide-react";
 import type { PipelineResult, PipelineIteration, PipelineLogEntry, PhaseLog } from "../hooks/usePipeline";
 
@@ -263,7 +265,13 @@ export default function AgentLog({
   };
 
   return (
-    <div className="panel bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg overflow-hidden flex flex-col h-full min-h-[300px]">
+    <div className={`
+      panel bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg overflow-hidden flex flex-col
+      ${isFullscreen 
+        ? 'fixed inset-4 z-50 max-h-none' 
+        : 'h-full min-h-[300px]'
+      }
+    `}>
       {/* Header */}
       <div className="px-4 py-3 border-b border-[var(--border-color)] flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -289,6 +297,18 @@ export default function AgentLog({
             title="Clear logs"
           >
             <RotateCcw className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={() => setIsFullscreen(!isFullscreen)}
+            className="p-1.5 rounded hover:bg-[var(--bg-tertiary)] text-[var(--text-muted)]
+                     hover:text-[var(--text-secondary)] transition-colors"
+            title={isFullscreen ? "Minimize" : "Maximize"}
+          >
+            {isFullscreen ? (
+              <Minimize2 className="w-3.5 h-3.5" />
+            ) : (
+              <Maximize2 className="w-3.5 h-3.5" />
+            )}
           </button>
         </div>
       </div>

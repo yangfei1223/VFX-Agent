@@ -174,9 +174,11 @@ export function usePipeline(): UsePipelineReturn {
                 processedPhasesRef.current.add(logKey);
                 newPhaseLogs.push(log);
 
-                // Add to UI logs
+                // Add to UI logs (extract iteration from phase if possible, default to current iteration)
+                const iteration = statusData.iteration ?? 0;
                 addLog({
                   phase: log.phase as PipelineLogEntry['phase'],
+                  iteration: iteration,
                   message: log.message,
                   details: log.details,
                   status: log.status as PipelineLogEntry['status'],
