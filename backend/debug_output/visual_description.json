@@ -1,64 +1,72 @@
 {
-  "effect_name": "pixel_dissolve_wave",
+  "effect_name": "windows95_pixel_wave",
   "shape": {
-    "type": "composed_rects_with_dissolving_grid",
-    "description": "一个由四个彩色矩形组成的波浪形窗口标志，其左侧和上方有黑色、红色和蓝色的小方块以网格状结构向右下方扩散，并逐渐消失。这些小方块的颜色对应其源自的窗口区域或边框。",
+    "type": "custom_pixel_grid",
+    "description": "主体是一个由四个彩色矩形组成的波浪形窗口，其左侧伴随着由多个小方块（像素）组成的动态流。",
     "sdf_primitives": [
       "rect",
-      "union",
-      "grid_pattern"
+      "grid",
+      "wave_deformation"
     ],
     "parameters": {
-      "main_logo_bend_factor": 0.1,
-      "dissolving_square_size": 0.02,
-      "dissolving_square_spacing": 0.03
+      "radius": null,
+      "corner_radius": 0,
+      "blend": 0.0
     }
   },
   "color": {
     "palette": [
-      "#217C7C",
-      "#E55B5B",
-      "#90C85B",
-      "#5B90C8",
-      "#F0D040",
+      "#217A7A",
+      "#E7645B",
+      "#98C963",
+      "#63A9D0",
+      "#F0E24E",
       "#000000"
     ],
     "gradient_type": "none",
     "gradient_direction": "none",
     "opacity_range": [
-      0.0,
+      1.0,
       1.0
     ],
     "has_noise": false,
     "noise_type": "none"
   },
   "animation": {
-    "loop_duration_s": 2.0,
-    "easing": "linear",
+    "loop_duration_s": 4.8,
+    "easing": "ease_in_out",
     "phases": [
       {
-        "name": "pixel_emergence_and_movement",
+        "name": "window_deformation",
         "time_range": [
           0.0,
           1.0
         ],
-        "description": "小方块从主标志的左侧和顶部边缘出现，并以线性速度向右下方移动，形成波浪状扩散。"
+        "description": "窗口主体在水平方向上进行轻微的波浪形形变和摆动，模拟旗帜飘动。"
       },
       {
-        "name": "pixel_fade_out",
+        "name": "pixel_stream_movement",
         "time_range": [
-          0.5,
+          0.0,
           1.0
         ],
-        "description": "随着小方块远离主标志，其透明度逐渐降低，最终消失，缓动曲线为ease_out。"
+        "description": "左侧的像素流从左上角向右下角移动，并逐渐消散。"
+      },
+      {
+        "name": "pixel_stream_fade_and_reappear",
+        "time_range": [
+          0.0,
+          1.0
+        ],
+        "description": "像素在移动过程中逐渐消失，并在新的位置重新生成，形成连续的流动感，颜色按黑、红、蓝的顺序循环。"
       }
     ],
-    "time_function": "custom"
+    "time_function": "sin(t) / fract(t)"
   },
   "interaction": {
     "responds_to_pointer": false,
     "interaction_type": "none",
-    "description": "无交互效果"
+    "description": "无"
   },
   "post_processing": {
     "blur": false,
@@ -67,5 +75,5 @@
     "bloom_intensity": 0.0,
     "chromatic_aberration": false
   },
-  "overall_description": "一个复古风格的动画，展示了经典的Windows 95标志。小型的彩色和黑色方块从主波浪形标志的左侧和顶部边缘持续发出，以波浪状模式向外移动，并逐渐淡入青色背景。该效果营造出一种数字消散或数据流动的视觉感受。"
+  "overall_description": "该视效重现了经典的 Windows 95 启动动画。一个由四色矩形组成的窗口标志在画面中央，其主体进行着轻微的波浪形形变。左侧伴随着由黑色、红色和蓝色小方块组成的像素流，这些像素以波浪状的动态效果从左上角向右下角移动、消散并重新生成，形成连续的流动感。"
 }
