@@ -1,5 +1,5 @@
 // hooks/usePipeline.ts
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 
 export interface PipelineIteration {
   iteration: number;
@@ -17,41 +17,194 @@ export interface PipelineResult {
   history: PipelineIteration[];
   inspect_result: Record<string, unknown> | null;
   error: string | null;
+  // Extended fields for detailed logging
+  logs?: PipelineLogEntry[];
 }
 
-export function usePipeline() {
+export interface PipelineLogEntry {
+  id: string;
+  timestamp: number;
+  phase: 'decompose' | 'generate' | 'inspect' | 'system';
+  iteration?: number;
+  message: string;
+  details?: string;
+  metadata?: Record<string, unknown>;
+}
+
+interface UsePipelineReturn {
+  pipelineId: string | null;
+  result: PipelineResult | null;
+  loading: boolean;
+  logs: PipelineLogEntry[];
+  startPipeline: (formData: FormData) => Promise<void>;
+  clearPipeline: () => void;
+}
+
+export function usePipeline(): UsePipelineReturn {
   const [pipelineId, setPipelineId] = useState<string | null>(null);
   const [result, setResult] = useState<PipelineResult | null>(null);
   const [loading, setLoading] = useState(false);
+  const [logs, setLogs] = useState<PipelineLogEntry[]>([]);
+  const pollingRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const addLog = useCallback((entry: Omit<PipelineLogEntry, 'id' | 'timestamp'>) => {
+    setLogs(prev => [...prev, {
+      ...entry,
+      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      timestamp: Date.now()
+    }]);
+  }, []);
+
+  const clearPipeline = useCallback(() => {
+    setPipelineId(null);
+    setResult(null);
+    setLogs([]);
+    setLoading(false);
+    if (pollingRef.current) {
+      clearTimeout(pollingRef.current);
+      pollingRef.current = null;
+    }
+  }, []);
 
   const startPipeline = useCallback(async (formData: FormData) => {
+    // Clear previous state
+    clearPipeline();
     setLoading(true);
-    setResult(null);
+
+    addLog({
+      phase: 'system',
+      message: 'Starting pipeline...',
+      details: 'Uploading media and initializing agent process'
+    });
+
     try {
       const res = await fetch("http://localhost:8000/pipeline/run", {
         method: "POST",
         body: formData,
       });
+
+      if (!res.ok) {
+        throw new Error(`HTTP error! status: ${res.status}`);
+      }
+
       const data = await res.json();
       setPipelineId(data.pipeline_id);
 
-      // 轮询状态
+      addLog({
+        phase: 'system',
+        message: 'Pipeline initialized',
+        details: `Pipeline ID: ${data.pipeline_id}`,
+        metadata: { pipelineId: data.pipeline_id }
+      });
+
+      // Poll for status
       const poll = async () => {
-        const statusRes = await fetch(`http://localhost:8000/pipeline/status/${data.pipeline_id}`);
-        const statusData = await statusRes.json();
-        setResult(statusData);
-        if (statusData.status === "running") {
-          setTimeout(poll, 2000);
-        } else {
+        try {
+          const statusRes = await fetch(`http://localhost:8000/pipeline/status/${data.pipeline_id}`);
+
+          if (!statusRes.ok) {
+            throw new Error(`Status check failed: ${statusRes.status}`);
+          }
+
+          const statusData: PipelineResult = await statusRes.json();
+
+          // Add phase-specific logs
+          if (statusData.iteration > (result?.iteration || 0)) {
+            const iteration = statusData.iteration;
+
+            // Decompose phase
+            addLog({
+              phase: 'decompose',
+              iteration,
+              message: `Iteration ${iteration}: Decomposing visual description`,
+              details: JSON.stringify(statusData.visual_description, null, 2)
+            });
+
+            // Generate phase
+            addLog({
+              phase: 'generate',
+              iteration,
+              message: `Iteration ${iteration}: Generating shader code`,
+              details: statusData.current_shader
+                ? `Generated ${statusData.current_shader.length} characters`
+                : 'Generating...'
+            });
+          }
+
+          // Inspect phase logs from history
+          if (statusData.history && statusData.history.length > 0) {
+            const latestHistory = statusData.history[statusData.history.length - 1];
+            const existingLog = logs.find(l =>
+              l.phase === 'inspect' &&
+              l.iteration === latestHistory.iteration
+            );
+
+            if (!existingLog) {
+              addLog({
+                phase: 'inspect',
+                iteration: latestHistory.iteration,
+                message: `Iteration ${latestHistory.iteration + 1}: Inspection complete`,
+                details: `Score: ${latestHistory.score.toFixed(2)} | Passed: ${latestHistory.passed}`,
+                metadata: {
+                  score: latestHistory.score,
+                  passed: latestHistory.passed,
+                  feedback: latestHistory.feedback
+                }
+              });
+            }
+          }
+
+          setResult(statusData);
+
+          if (statusData.status === "running") {
+            pollingRef.current = setTimeout(poll, 2000);
+          } else {
+            setLoading(false);
+            addLog({
+              phase: 'system',
+              message: `Pipeline ${statusData.status}`,
+              details: statusData.error || `Final status: ${statusData.status}`,
+              metadata: { finalResult: statusData }
+            });
+          }
+        } catch (err) {
           setLoading(false);
+          const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+          addLog({
+            phase: 'system',
+            message: 'Polling error',
+            details: errorMessage
+          });
         }
       };
+
       poll();
     } catch (err) {
       setLoading(false);
-      console.error("Pipeline error:", err);
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      addLog({
+        phase: 'system',
+        message: 'Pipeline failed to start',
+        details: errorMessage
+      });
     }
+  }, [addLog, clearPipeline, logs, result?.iteration]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (pollingRef.current) {
+        clearTimeout(pollingRef.current);
+      }
+    };
   }, []);
 
-  return { pipelineId, result, loading, startPipeline };
+  return {
+    pipelineId,
+    result,
+    loading,
+    logs,
+    startPipeline,
+    clearPipeline
+  };
 }
