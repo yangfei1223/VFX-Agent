@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 
 export default function App() {
-  const { result, loading, logs, startPipeline } = usePipeline();
+  const { result, loading, logs, phaseLogs, currentPhase, phaseMessage, startPipeline } = usePipeline();
   const [shaderCode, setShaderCode] = useState<string | null>(null);
   const [editedCode, setEditedCode] = useState<string | null>(null);
 
@@ -127,7 +127,14 @@ export default function App() {
 
             {/* Agent Process Log */}
             <div className="flex-1 min-h-0">
-              <AgentLog result={result} loading={loading} logs={logs} />
+              <AgentLog
+                result={result}
+                loading={loading}
+                logs={logs}
+                phaseLogs={phaseLogs}
+                currentPhase={currentPhase}
+                phaseMessage={phaseMessage}
+              />
             </div>
           </div>
 

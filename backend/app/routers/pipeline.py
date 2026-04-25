@@ -1,6 +1,7 @@
 """Pipeline 触发与状态查询 API"""
 
 import asyncio
+import time
 import uuid
 from fastapi import APIRouter, UploadFile, File, Form
 from pathlib import Path
@@ -42,7 +43,7 @@ async def run_pipeline(
             shutil.copyfileobj(img.file, f)
         image_paths.append(img_path)
 
-    # 构建初始状态
+# 构建初始状态
     initial_state: PipelineState = {
         "input_type": "text" if not video_path and not image_paths else ("video" if video_path else "image"),
         "video_path": video_path,
@@ -62,6 +63,12 @@ async def run_pipeline(
         "status": "running",
         "error": None,
         "history": [],
+        # Phase tracking fields
+        "current_phase": "extract_keyframes",
+        "phase_status": "running",
+        "phase_message": "Initializing pipeline...",
+        "phase_start_time": time.time(),
+        "detailed_logs": [],
     }
 
     # 异步执行 pipeline

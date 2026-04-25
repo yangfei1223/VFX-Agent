@@ -3,6 +3,16 @@
 from typing import TypedDict
 
 
+class PhaseLog(TypedDict, total=False):
+    """Phase execution log entry"""
+    phase: str                          # "extract_keyframes" | "decompose" | "generate" | "render" | "inspect"
+    timestamp: float                    # Unix timestamp
+    status: str                         # "started" | "running" | "completed" | "failed"
+    message: str                        # Human-readable progress message
+    details: str | None                 # Additional details (e.g., agent thinking, tool output)
+    duration_ms: int | None             # Phase duration in milliseconds
+
+
 class PipelineState(TypedDict, total=False):
     # 输入
     input_type: str                     # "video" | "image"
@@ -35,3 +45,10 @@ class PipelineState(TypedDict, total=False):
     status: str                         # "running" | "passed" | "failed" | "max_iterations"
     error: str | None                   # 错误信息
     history: list[dict]                 # 迭代历史记录
+
+    # Phase tracking (new fields for enhanced logging)
+    current_phase: str                  # Current pipeline phase
+    phase_status: str                   # Phase status: "running" | "completed" | "failed"
+    phase_message: str                  # Human-readable progress message
+    phase_start_time: float | None      # Phase start timestamp
+    detailed_logs: list[PhaseLog]       # Detailed execution logs

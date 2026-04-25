@@ -11,17 +11,23 @@ import {
   RotateCcw,
   Search,
   Code2,
-  Eye
+  Eye,
+  Image,
+  Play,
+  Clock
 } from "lucide-react";
-import type { PipelineResult, PipelineIteration, PipelineLogEntry } from "../hooks/usePipeline";
+import type { PipelineResult, PipelineIteration, PipelineLogEntry, PhaseLog } from "../hooks/usePipeline";
 
 interface AgentLogProps {
   result: PipelineResult | null;
   loading: boolean;
   logs?: PipelineLogEntry[];
+  phaseLogs?: PhaseLog[];
+  currentPhase?: string | null;
+  phaseMessage?: string | null;
 }
 
-type LogEntryType = 'decompose' | 'generate' | 'inspect' | 'success' | 'error' | 'info';
+type LogEntryType = 'extract_keyframes' | 'decompose' | 'generate' | 'render' | 'inspect' | 'success' | 'error' | 'info' | 'system';
 
 interface LogEntry {
   id: string;
@@ -32,20 +38,37 @@ interface LogEntry {
   details?: string;
   score?: number;
   passed?: boolean;
+  status?: 'started' | 'running' | 'completed' | 'failed';
+  duration_ms?: number;
 }
+
+// Phase configuration for the timeline
+const PHASES = [
+  { id: 'extract_keyframes', name: 'Extract Keyframes', icon: Image, description: 'Extracting frames from video' },
+  { id: 'decompose', name: 'Decompose', icon: Search, description: 'Analyzing visual content' },
+  { id: 'generate', name: 'Generate', icon: Code2, description: 'Creating GLSL shader' },
+  { id: 'render', name: 'Render', icon: Play, description: 'Rendering shader frames' },
+  { id: 'inspect', name: 'Inspect', icon: Eye, description: 'Evaluating results' },
+];
 
 const StepIcon = ({ type, className }: { type: LogEntryType; className?: string }) => {
   switch (type) {
+    case 'extract_keyframes':
+      return <Image className={className} />;
     case 'decompose':
       return <Search className={className} />;
     case 'generate':
       return <Code2 className={className} />;
+    case 'render':
+      return <Play className={className} />;
     case 'inspect':
       return <Eye className={className} />;
     case 'success':
       return <CheckCircle2 className={className} />;
     case 'error':
       return <XCircle className={className} />;
+    case 'system':
+      return <Terminal className={className} />;
     default:
       return <AlertCircle className={className} />;
   }
@@ -74,7 +97,14 @@ const StepStatus = ({ status }: { status: string }) => {
   );
 };
 
-export default function AgentLog({ result, loading, logs: externalLogs }: AgentLogProps) {
+export default function AgentLog({
+  result,
+  loading,
+  logs: externalLogs,
+  phaseLogs,
+  currentPhase,
+  phaseMessage
+}: AgentLogProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [expandedLog, setExpandedLog] = useState<string | null>(null);
@@ -89,6 +119,8 @@ export default function AgentLog({ result, loading, logs: externalLogs }: AgentL
         iteration: log.iteration,
         message: log.message,
         details: log.details,
+        status: log.status,
+        duration_ms: log.duration_ms,
       }));
       setLogs(convertedLogs);
     }
@@ -167,16 +199,22 @@ export default function AgentLog({ result, loading, logs: externalLogs }: AgentL
 
   const getLogIconColor = (type: LogEntryType) => {
     switch (type) {
+      case 'extract_keyframes':
+        return 'text-cyan-400';
       case 'decompose':
         return 'text-purple-400';
       case 'generate':
         return 'text-blue-400';
+      case 'render':
+        return 'text-orange-400';
       case 'inspect':
         return 'text-yellow-400';
       case 'success':
         return 'text-green-400';
       case 'error':
         return 'text-red-400';
+      case 'system':
+        return 'text-gray-400';
       default:
         return 'text-gray-400';
     }
@@ -184,19 +222,44 @@ export default function AgentLog({ result, loading, logs: externalLogs }: AgentL
 
   const getLogBorderColor = (type: LogEntryType) => {
     switch (type) {
+      case 'extract_keyframes':
+        return 'border-l-cyan-500';
       case 'decompose':
         return 'border-l-purple-500';
       case 'generate':
         return 'border-l-blue-500';
+      case 'render':
+        return 'border-l-orange-500';
       case 'inspect':
         return 'border-l-yellow-500';
       case 'success':
         return 'border-l-green-500';
       case 'error':
         return 'border-l-red-500';
+      case 'system':
+        return 'border-l-gray-500';
       default:
         return 'border-l-gray-500';
     }
+  };
+
+  // Determine phase status for the timeline
+  const getPhaseStatus = (phaseId: string): 'pending' | 'running' | 'completed' | 'failed' => {
+    if (!currentPhase) return 'pending';
+
+    const phaseLogsForPhase = phaseLogs?.filter(p => p.phase === phaseId) || [];
+    if (phaseLogsForPhase.length > 0) {
+      const lastLog = phaseLogsForPhase[phaseLogsForPhase.length - 1];
+      return lastLog.status as 'completed' | 'failed' | 'running';
+    }
+
+    const phaseOrder = PHASES.map(p => p.id);
+    const currentIndex = phaseOrder.indexOf(currentPhase);
+    const phaseIndex = phaseOrder.indexOf(phaseId);
+
+    if (phaseIndex < currentIndex) return 'completed';
+    if (phaseIndex === currentIndex) return 'running';
+    return 'pending';
   };
 
   return (
@@ -230,32 +293,50 @@ export default function AgentLog({ result, loading, logs: externalLogs }: AgentL
         </div>
       </div>
 
-      {/* Process Steps Indicator */}
-      {loading && (
+      {/* Phase Timeline */}
+      {(loading || result) && (
         <div className="px-4 py-3 bg-[var(--bg-tertiary)]/50 border-b border-[var(--border-color)]">
-          <div className="flex items-center gap-2">
-            {['Decompose', 'Generate', 'Inspect'].map((step, index) => {
-              const isActive = result?.status === 'running' &&
-                (result.iteration === 0 ? index === 0 :
-                 result.iteration === 1 ? index <= 1 :
-                 index <= 2);
+          {/* Progress message */}
+          {phaseMessage && loading && (
+            <div className="flex items-center gap-2 mb-2 text-xs text-[var(--accent-primary)]">
+              <Loader2 className="w-3 h-3 animate-spin" />
+              <span>{phaseMessage}</span>
+            </div>
+          )}
+
+          {/* Phase timeline */}
+          <div className="flex items-center gap-1">
+            {PHASES.map((phase, index) => {
+              const status = getPhaseStatus(phase.id);
+              const isActive = status === 'running';
+              const isCompleted = status === 'completed';
+              const isFailed = status === 'failed';
+
               return (
-                <div key={step} className="flex items-center">
+                <div key={phase.id} className="flex items-center">
                   <div className={`
                     flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium
-                    transition-all duration-300
+                    transition-all duration-300 border
                     ${isActive
-                      ? 'bg-[var(--accent-primary)]/20 text-[var(--accent-primary)]'
-                      : 'text-[var(--text-muted)]'
+                      ? 'bg-[var(--accent-primary)]/20 text-[var(--accent-primary)] border-[var(--accent-primary)]/40 shadow-sm'
+                      : isCompleted
+                        ? 'bg-green-500/20 text-green-400 border-green-500/30'
+                        : isFailed
+                          ? 'bg-red-500/20 text-red-400 border-red-500/30'
+                          : 'text-[var(--text-muted)] border-transparent'
                     }
                   `}>
-                    {index === 0 && <Search className="w-3 h-3" />}
-                    {index === 1 && <Code2 className="w-3 h-3" />}
-                    {index === 2 && <Eye className="w-3 h-3" />}
-                    <span>{step}</span>
+                    {isActive && <Loader2 className="w-3 h-3 animate-spin" />}
+                    {isCompleted && <CheckCircle2 className="w-3 h-3" />}
+                    {isFailed && <XCircle className="w-3 h-3" />}
+                    {!isActive && !isCompleted && !isFailed && <phase.icon className="w-3 h-3" />}
+                    <span>{phase.name}</span>
                   </div>
-                  {index < 2 && (
-                    <ChevronRight className="w-3 h-3 text-[var(--text-muted)] mx-1" />
+                  {index < PHASES.length - 1 && (
+                    <ChevronRight className={`
+                      w-3 h-3 mx-0.5
+                      ${isCompleted ? 'text-green-400' : 'text-[var(--text-muted)]'}
+                    `} />
                   )}
                 </div>
               );
@@ -291,17 +372,28 @@ export default function AgentLog({ result, loading, logs: externalLogs }: AgentL
               bg-[var(--bg-tertiary)]/50 hover:bg-[var(--bg-tertiary)]
               transition-all duration-200
               ${expandedLog === log.id ? 'ring-1 ring-[var(--border-hover)]' : ''}
+              ${log.status === 'running' ? 'animate-pulse' : ''}
             `}
           >
             <div className="flex items-start gap-2.5">
               <div className={`mt-0.5 ${getLogIconColor(log.type)}`}>
-                <StepIcon type={log.type} className="w-4 h-4" />
+                {log.status === 'running' && <Loader2 className="w-4 h-4 animate-spin" />}
+                {log.status === 'completed' && <CheckCircle2 className="w-4 h-4" />}
+                {log.status === 'failed' && <XCircle className="w-4 h-4" />}
+                {!log.status && <StepIcon type={log.type} className="w-4 h-4" />}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium text-[var(--text-primary)]">
                     {log.message}
                   </span>
+                  {log.duration_ms !== undefined && (
+                    <span className="text-xs text-[var(--text-muted)] font-mono">
+                      {log.duration_ms > 1000
+                        ? `${(log.duration_ms / 1000).toFixed(1)}s`
+                        : `${log.duration_ms}ms`}
+                    </span>
+                  )}
                   {log.score !== undefined && (
                     <span className={`
                       text-xs px-1.5 py-0.5 rounded font-mono
@@ -314,14 +406,17 @@ export default function AgentLog({ result, loading, logs: externalLogs }: AgentL
                     </span>
                   )}
                 </div>
-                <p className="text-xs text-[var(--text-muted)] mt-0.5">
-                  {log.timestamp.toLocaleTimeString()}
+                <div className="flex items-center gap-2 mt-0.5">
+                  <p className="text-xs text-[var(--text-muted)]">
+                    <Clock className="w-3 h-3 inline mr-1" />
+                    {log.timestamp.toLocaleTimeString()}
+                  </p>
                   {log.iteration !== undefined && (
-                    <span className="ml-2 text-[var(--accent-primary)]">
+                    <span className="text-xs text-[var(--accent-primary)]">
                       Iteration {log.iteration + 1}
                     </span>
                   )}
-                </p>
+                </div>
 
                 {/* Expandable Details */}
                 {log.details && (
@@ -329,7 +424,7 @@ export default function AgentLog({ result, loading, logs: externalLogs }: AgentL
                     mt-2 text-xs text-[var(--text-secondary)] font-mono
                     bg-[var(--bg-primary)]/50 rounded p-2
                     overflow-hidden transition-all duration-200
-                    ${expandedLog === log.id ? 'max-h-48' : 'max-h-0 opacity-0'}
+                    ${expandedLog === log.id ? 'max-h-48 overflow-y-auto' : 'max-h-0 opacity-0'}
                   `}>
                     <pre className="whitespace-pre-wrap break-words">
                       {log.details}
