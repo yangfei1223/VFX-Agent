@@ -47,6 +47,19 @@ export function usePipeline(): UsePipelineReturn {
   const [logs, setLogs] = useState<PipelineLogEntry[]>([]);
   const pollingRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Use refs to track latest values for poll function (avoids stale closures)
+  const resultRef = useRef<PipelineResult | null>(null);
+  const logsRef = useRef<PipelineLogEntry[]>([]);
+
+  // Sync refs with state
+  useEffect(() => {
+    resultRef.current = result;
+  }, [result]);
+
+  useEffect(() => {
+    logsRef.current = logs;
+  }, [logs]);
+
   const addLog = useCallback((entry: Omit<PipelineLogEntry, 'id' | 'timestamp'>) => {
     setLogs(prev => [...prev, {
       ...entry,
@@ -108,8 +121,8 @@ export function usePipeline(): UsePipelineReturn {
 
           const statusData: PipelineResult = await statusRes.json();
 
-          // Add phase-specific logs
-          if (statusData.iteration > (result?.iteration || 0)) {
+          // Add phase-specific logs (use ref to avoid stale closure)
+          if (statusData.iteration > (resultRef.current?.iteration || 0)) {
             const iteration = statusData.iteration;
 
             // Decompose phase
@@ -131,10 +144,10 @@ export function usePipeline(): UsePipelineReturn {
             });
           }
 
-          // Inspect phase logs from history
+          // Inspect phase logs from history (use ref to avoid stale closure)
           if (statusData.history && statusData.history.length > 0) {
             const latestHistory = statusData.history[statusData.history.length - 1];
-            const existingLog = logs.find(l =>
+            const existingLog = logsRef.current.find(l =>
               l.phase === 'inspect' &&
               l.iteration === latestHistory.iteration
             );
@@ -188,7 +201,7 @@ export function usePipeline(): UsePipelineReturn {
         details: errorMessage
       });
     }
-  }, [addLog, clearPipeline, logs, result?.iteration]);
+  }, [addLog, clearPipeline]);
 
   // Cleanup on unmount
   useEffect(() => {

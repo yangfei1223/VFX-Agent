@@ -1,17 +1,14 @@
 INFO:     Will watch for changes in these directories: ['/Users/yangfei/Code/VFX-Agent/backend']
 INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
-INFO:     Started reloader process [45549] using WatchFiles
-INFO:     Started server process [45552]
+INFO:     Started reloader process [45880] using WatchFiles
+INFO:     Started server process [45884]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
-INFO:     127.0.0.1:54359 - "GET /health HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54362 - "GET /health HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54403 - "POST /pipeline/run HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54418 - "POST /pipeline/run HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54424 - "POST /pipeline/run HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54458 - "GET /pipeline/status/a328cdf9-de49-4a20-8035-316a4f4c52b4 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54527 - "GET /pipeline/status/a328cdf9-de49-4a20-8035-316a4f4c52b4 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54531 - "GET /pipeline/status/a328cdf9-de49-4a20-8035-316a4f4c52b4 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54585 - "GET /pipeline/status/a328cdf9-de49-4a20-8035-316a4f4c52b4 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54587 - "POST /pipeline/run HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54587 - "GET /pipeline/status/c4c16baa-e55d-40e7-a413-a79b8ac39520 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54895 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54952 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55025 - "POST /pipeline/run HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55025 - "GET /pipeline/status/d73482ea-e88c-43e8-a2cd-b0754d560429 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55277 - "POST /pipeline/run HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55363 - "GET /pipeline/status/94ef06d5-c65e-478c-98c9-f6d5185906c2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55392 - "GET /pipeline/status/d73482ea-e88c-43e8-a2cd-b0754d560429 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55413 - "GET /pipeline/status/d73482ea-e88c-43e8-a2cd-b0754d560429 HTTP/1.1" 200 OK
