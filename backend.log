@@ -1,14 +1,15 @@
 INFO:     Will watch for changes in these directories: ['/Users/yangfei/Code/VFX-Agent/backend']
 INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
-INFO:     Started reloader process [45880] using WatchFiles
-INFO:     Started server process [45884]
+INFO:     Started reloader process [46393] using WatchFiles
+INFO:     Started server process [46396]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
-INFO:     127.0.0.1:54895 - "GET /health HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54952 - "GET /health HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55025 - "POST /pipeline/run HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55025 - "GET /pipeline/status/d73482ea-e88c-43e8-a2cd-b0754d560429 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55277 - "POST /pipeline/run HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55363 - "GET /pipeline/status/94ef06d5-c65e-478c-98c9-f6d5185906c2 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55392 - "GET /pipeline/status/d73482ea-e88c-43e8-a2cd-b0754d560429 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55413 - "GET /pipeline/status/d73482ea-e88c-43e8-a2cd-b0754d560429 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55645 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55657 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55704 - "POST /pipeline/run HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55704 - "GET /pipeline/status/7f40d05d-324b-4e80-bb49-d30faf10542d HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55704 - "GET /pipeline/status/7f40d05d-324b-4e80-bb49-d30faf10542d HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55704 - "GET /pipeline/status/7f40d05d-324b-4e80-bb49-d30faf10542d HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55704 - "GET /pipeline/status/7f40d05d-324b-4e80-bb49-d30faf10542d HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55704 - "GET /pipeline/status/7f40d05d-324b-4e80-bb49-d30faf10542d HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55704 - "GET /pipeline/status/7f40d05d-324b-4e80-bb49-d30faf10542d HTTP/1.1" 200 OK

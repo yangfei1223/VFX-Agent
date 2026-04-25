@@ -121,6 +121,12 @@ export function usePipeline(): UsePipelineReturn {
 
           const statusData: PipelineResult = await statusRes.json();
 
+          // "not_found" means pipeline is still initializing, continue polling
+          if (statusData.status === "not_found") {
+            pollingRef.current = setTimeout(poll, 1000);
+            return;
+          }
+
           // Add phase-specific logs (use ref to avoid stale closure)
           if (statusData.iteration > (resultRef.current?.iteration || 0)) {
             const iteration = statusData.iteration;

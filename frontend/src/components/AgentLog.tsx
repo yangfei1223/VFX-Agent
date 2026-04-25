@@ -13,11 +13,12 @@ import {
   Code2,
   Eye
 } from "lucide-react";
-import type { PipelineResult, PipelineIteration } from "../hooks/usePipeline";
+import type { PipelineResult, PipelineIteration, PipelineLogEntry } from "../hooks/usePipeline";
 
 interface AgentLogProps {
   result: PipelineResult | null;
   loading: boolean;
+  logs?: PipelineLogEntry[];
 }
 
 type LogEntryType = 'decompose' | 'generate' | 'inspect' | 'success' | 'error' | 'info';
@@ -73,12 +74,27 @@ const StepStatus = ({ status }: { status: string }) => {
   );
 };
 
-export default function AgentLog({ result, loading }: AgentLogProps) {
+export default function AgentLog({ result, loading, logs: externalLogs }: AgentLogProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [expandedLog, setExpandedLog] = useState<string | null>(null);
 
-  // Generate logs from pipeline result
+  // Sync with external logs from usePipeline
+  useEffect(() => {
+    if (externalLogs && externalLogs.length > 0) {
+      const convertedLogs: LogEntry[] = externalLogs.map(log => ({
+        id: log.id,
+        type: log.phase as LogEntryType,
+        timestamp: new Date(log.timestamp),
+        iteration: log.iteration,
+        message: log.message,
+        details: log.details,
+      }));
+      setLogs(convertedLogs);
+    }
+  }, [externalLogs]);
+
+  // Generate logs from pipeline result (fallback)
   useEffect(() => {
     if (!result) return;
 
