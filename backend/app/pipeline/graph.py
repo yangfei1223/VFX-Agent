@@ -22,11 +22,15 @@ generate_agent = GenerateAgent()
 inspect_agent = InspectAgent()
 
 
-def _add_phase_log(state: PipelineState, phase: str, status: str, message: str, details: str | None = None) -> list[PhaseLog]:
+def _add_phase_log(state: PipelineState, phase: str, status: str, message: str, details: str | None = None, start_time: float | None = None) -> list[PhaseLog]:
     """Helper to add a phase log entry"""
     logs = state.get("detailed_logs", [])
-    start_time = state.get("phase_start_time")
-    duration_ms = int((time.time() - start_time) * 1000) if start_time and status in ("completed", "failed") else None
+    
+    # Calculate duration: use provided start_time or state's phase_start_time
+    phase_start = start_time or state.get("phase_start_time")
+    duration_ms = None
+    if phase_start and status in ("completed", "failed"):
+        duration_ms = int((time.time() - phase_start) * 1000)
 
     new_log: PhaseLog = {
         "phase": phase,
@@ -41,6 +45,9 @@ def _add_phase_log(state: PipelineState, phase: str, status: str, message: str, 
 
 async def node_extract_keyframes(state: PipelineState) -> dict:
     """视频输入时，提取关键帧；纯文本输入时返回空列表"""
+    # Record phase start time
+    phase_start = time.time()
+    
     # Emit phase start
     logs = _add_phase_log(state, "extract_keyframes", "started", "Starting keyframe extraction...")
 
@@ -48,12 +55,13 @@ async def node_extract_keyframes(state: PipelineState) -> dict:
         video_info = get_video_info(state["video_path"])
         keyframe_paths = extract_keyframes(state["video_path"], max_frames=6)
 
-        # Emit completion (don't reset phase_start_time here - let duration calculate correctly)
+        # Emit completion with duration
         logs = _add_phase_log(
             {**state, "detailed_logs": logs},
             "extract_keyframes", "completed",
             f"Extracted {len(keyframe_paths)} keyframes from video",
-            f"Duration: {video_info.get('duration', 0):.1f}s, FPS: {video_info.get('fps', 0):.0f}"
+            f"Duration: {video_info.get('duration', 0):.1f}s, FPS: {video_info.get('fps', 0):.0f}",
+            start_time=phase_start
         )
 
         return {
@@ -67,11 +75,12 @@ async def node_extract_keyframes(state: PipelineState) -> dict:
             "detailed_logs": logs,
         }
     elif state.get("image_paths"):
-        # Emit completion for image input
+        # Emit completion for image input with duration
         logs = _add_phase_log(
             {**state, "detailed_logs": logs},
             "extract_keyframes", "completed",
-            f"Using {len(state['image_paths'])} uploaded images as references"
+            f"Using {len(state['image_paths'])} uploaded images as references",
+            start_time=phase_start
         )
 
         return {
@@ -88,7 +97,8 @@ async def node_extract_keyframes(state: PipelineState) -> dict:
     logs = _add_phase_log(
         {**state, "detailed_logs": logs},
         "extract_keyframes", "completed",
-        "Text-only mode: no media extraction needed"
+        "Text-only mode: no media extraction needed",
+        start_time=phase_start
     )
 
     return {
@@ -104,6 +114,9 @@ async def node_extract_keyframes(state: PipelineState) -> dict:
 
 async def node_decompose(state: PipelineState) -> dict:
     """Decompose Agent：解构视效语义描述"""
+    # Record phase start time
+    phase_start = time.time()
+    
     # Emit phase start
     logs = _add_phase_log(state, "decompose", "started", "Decomposing visual description...")
 
@@ -118,12 +131,13 @@ async def node_decompose(state: PipelineState) -> dict:
             user_notes=user_notes,
         )
 
-        # Emit completion
+        # Emit completion with duration
         logs = _add_phase_log(
             {**state, "detailed_logs": logs},
             "decompose", "completed",
             f"Generated visual description: {description.get('effect_name', 'unknown')}",
-            f"Shape: {description.get('shape', {}).get('type', 'unknown')}, Colors: {len(description.get('color', {}).get('palette', []))} colors"
+            f"Shape: {description.get('shape', {}).get('type', 'unknown')}, Colors: {len(description.get('color', {}).get('palette', []))} colors",
+            start_time=phase_start
         )
 
         return {
@@ -138,7 +152,8 @@ async def node_decompose(state: PipelineState) -> dict:
         logs = _add_phase_log(
             {**state, "detailed_logs": logs},
             "decompose", "failed",
-            f"Decomposition failed: {str(e)}"
+            f"Decomposition failed: {str(e)}",
+            start_time=phase_start
         )
         return {
             "visual_description": {},
@@ -150,6 +165,9 @@ async def node_decompose(state: PipelineState) -> dict:
 async def node_generate(state: PipelineState) -> dict:
     """Generate Agent：生成或修正 GLSL 代码"""
     iteration = state.get("iteration", 0)
+
+    # Record phase start time
+    phase_start = time.time()
 
     # Emit phase start
     phase_msg = f"Generating shader (iteration {iteration + 1})..." if iteration > 0 else "Generating initial shader..."
@@ -168,12 +186,13 @@ async def node_generate(state: PipelineState) -> dict:
             feedback=feedback,
         )
 
-        # Emit completion
+        # Emit completion with duration
         logs = _add_phase_log(
             {**state, "detailed_logs": logs},
             "generate", "completed",
             f"Generated shader: {len(shader)} characters",
-            f"Shader preview: {shader[:200]}..." if len(shader) > 200 else shader
+            f"Shader preview: {shader[:200]}..." if len(shader) > 200 else shader,
+            start_time=phase_start
         )
 
         return {
@@ -190,7 +209,8 @@ async def node_generate(state: PipelineState) -> dict:
         logs = _add_phase_log(
             {**state, "detailed_logs": logs},
             "generate", "failed",
-            f"Shader generation failed: {str(e)}"
+            f"Shader generation failed: {str(e)}",
+            start_time=phase_start
         )
         return {
             "current_shader": "",
@@ -204,6 +224,9 @@ async def node_render_and_screenshot(state: PipelineState) -> dict:
     """在浏览器中渲染 shader 并截图"""
     iteration = state.get("iteration", 0)
 
+    # Record phase start time
+    phase_start = time.time()
+
     # Emit phase start
     logs = _add_phase_log(state, "render", "started", f"Rendering shader frames (iteration {iteration + 1})...")
 
@@ -212,7 +235,8 @@ async def node_render_and_screenshot(state: PipelineState) -> dict:
         logs = _add_phase_log(
             {**state, "detailed_logs": logs},
             "render", "failed",
-            "No shader code to render"
+            "No shader code to render",
+            start_time=phase_start
         )
         return {
             "render_screenshots": [],
@@ -226,11 +250,12 @@ async def node_render_and_screenshot(state: PipelineState) -> dict:
             times=[0.0, 0.5, 1.0, 1.5, 2.0],
         )
 
-        # Emit completion
+        # Emit completion with duration
         logs = _add_phase_log(
             {**state, "detailed_logs": logs},
             "render", "completed",
-            f"Rendered {len(screenshots)} frames successfully"
+            f"Rendered {len(screenshots)} frames successfully",
+            start_time=phase_start
         )
 
         return {
@@ -247,7 +272,8 @@ async def node_render_and_screenshot(state: PipelineState) -> dict:
         logs = _add_phase_log(
             {**state, "detailed_logs": logs},
             "render", "failed",
-            "Render timeout (frontend not ready)"
+            "Render timeout (frontend not ready)",
+            start_time=phase_start
         )
         return {
             "render_screenshots": [],
@@ -258,7 +284,8 @@ async def node_render_and_screenshot(state: PipelineState) -> dict:
         logs = _add_phase_log(
             {**state, "detailed_logs": logs},
             "render", "failed",
-            f"Render error: {str(e)}"
+            f"Render error: {str(e)}",
+            start_time=phase_start
         )
         return {
             "render_screenshots": [],
@@ -270,6 +297,9 @@ async def node_render_and_screenshot(state: PipelineState) -> dict:
 async def node_inspect(state: PipelineState) -> dict:
     """Inspect Agent：对比截图，输出评估"""
     iteration = state.get("iteration", 0)
+
+    # Record phase start time
+    phase_start = time.time()
 
     # Emit phase start
     logs = _add_phase_log(state, "inspect", "started", f"Inspecting rendered output (iteration {iteration + 1})...")
@@ -291,7 +321,8 @@ async def node_inspect(state: PipelineState) -> dict:
         logs = _add_phase_log(
             {**state, "detailed_logs": logs},
             "inspect", "completed",
-            "Auto-accepted: text-only mode (no design reference)"
+            "Auto-accepted: text-only mode (no design reference)",
+            start_time=phase_start
         )
 
         return {
@@ -318,7 +349,8 @@ async def node_inspect(state: PipelineState) -> dict:
         logs = _add_phase_log(
             {**state, "detailed_logs": logs},
             "inspect", "failed",
-            "No rendered screenshots to compare"
+            "No rendered screenshots to compare",
+            start_time=phase_start
         )
 
         return {
@@ -347,12 +379,13 @@ async def node_inspect(state: PipelineState) -> dict:
             "feedback": result.get("feedback", ""),
         })
 
-        # Emit completion
+        # Emit completion with duration
         logs = _add_phase_log(
             {**state, "detailed_logs": logs},
             "inspect", "completed" if passed else "running",
             f"Inspection complete: score {result.get('overall_score', 0):.2f}, {'PASSED' if passed else 'NEEDS IMPROVEMENT'}",
-            result.get("feedback", "")
+            result.get("feedback", ""),
+            start_time=phase_start
         )
 
         return {
@@ -369,7 +402,8 @@ async def node_inspect(state: PipelineState) -> dict:
         logs = _add_phase_log(
             {**state, "detailed_logs": logs},
             "inspect", "failed",
-            f"Inspection failed: {str(e)}"
+            f"Inspection failed: {str(e)}",
+            start_time=phase_start
         )
         return {
             "inspect_result": {"passed": False, "overall_score": 0, "feedback": str(e)},
