@@ -8,6 +8,14 @@ interface ShaderPreviewProps {
   height?: number;
 }
 
+// 为 Playwright 截图服务暴露全局函数
+declare global {
+  interface Window {
+    __shaderReady: boolean;
+    __setShaderTime: (t: number) => void;
+  }
+}
+
 export default function ShaderPreview({ shaderCode, width = 512, height = 512 }: ShaderPreviewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<ShaderRenderer | null>(null);
@@ -19,9 +27,18 @@ export default function ShaderPreview({ shaderCode, width = 512, height = 512 }:
     if (containerRef.current && !rendererRef.current) {
       rendererRef.current = new ShaderRenderer(containerRef.current);
     }
+    
+    // 暴露时间设置函数给 Playwright
+    window.__setShaderTime = (t: number) => {
+      if (rendererRef.current) {
+        rendererRef.current.setTime(t);
+      }
+    };
+    
     return () => {
       rendererRef.current?.dispose();
       rendererRef.current = null;
+      window.__shaderReady = false;
     };
   }, []);
 
@@ -34,10 +51,13 @@ export default function ShaderPreview({ shaderCode, width = 512, height = 512 }:
       setCompileError(null);
       rendererRef.current.startRendering();
       setIsRendering(true);
+      // 标记 shader 就绪，供 Playwright 等待
+      window.__shaderReady = true;
     } else {
       setCompileError(result.error);
       rendererRef.current.stopRendering();
       setIsRendering(false);
+      window.__shaderReady = false;
     }
   }, [shaderCode]);
 

@@ -134,4 +134,10 @@ class BaseAgent:
             max_tokens=max_tokens,
         )
 
-        return response.choices[0].message.content or ""
+        content = response.choices[0].message.content or ""
+        
+        # 检查是否被截断（finish_reason 不是 "stop"）
+        if response.choices[0].finish_reason != "stop":
+            print(f"WARNING: Response truncated (finish_reason={response.choices[0].finish_reason})")
+        
+        return content

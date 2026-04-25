@@ -62,11 +62,45 @@ class DecomposeAgent(BaseAgent):
 
     @staticmethod
     def _parse_json(text: str) -> dict:
-        """从 LLM 响应中提取 JSON（处理 markdown code block 包裹）"""
+        """从 LLM 响应中提取 JSON，处理多种格式"""
         text = text.strip()
+        
+        # 1. 处理 markdown code block
         if text.startswith("```"):
             lines = text.split("\n")
-            # 去掉首尾的 ``` 行
-            lines = [l for l in lines if not l.strip().startswith("```")]
-            text = "\n".join(lines)
-        return json.loads(text)
+            # 去掉首尾的 ``` 行和可能的 language 标识
+            lines = [l for l in lines if not l.strip().startswith("```") and not l.strip().lower() in ("json", "")]
+            text = "\n".join(lines).strip()
+        
+        # 2. 提取 JSON 对象（查找第一个 { 到最后一个 }）
+        start_idx = text.find("{")
+        end_idx = text.rfind("}")
+        if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+            text = text[start_idx:end_idx + 1]
+        
+        # 3. 尝试解析
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError as e:
+            # 4. 尝试修复常见问题
+            import re
+            # 移除末尾的逗号
+            text = re.sub(r',\s*}', '}', text)
+            text = re.sub(r',\s*]', ']', text)
+            # 移除控制字符
+            text = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', text)
+            
+            try:
+                return json.loads(text)
+            except json.JSONDecodeError:
+                # 5. 最后尝试：返回一个包含原始文本的 fallback
+                return {
+                    "effect_name": "parse_failed",
+                    "overall_description": text,
+                    "shape": {"type": "full_screen", "description": "JSON 解析失败"},
+                    "color": {"palette": ["#333333"], "gradient_type": "none"},
+                    "animation": {"loop_duration_s": 2.0, "easing": "linear"},
+                    "interaction": {"responds_to_pointer": False, "interaction_type": "none"},
+                    "post_processing": {},
+                    "parse_error": str(e),
+                }

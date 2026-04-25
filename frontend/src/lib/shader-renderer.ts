@@ -139,6 +139,15 @@ export class ShaderRenderer {
     this.mousePos.set(x, canvas.height - y);
   }
 
+  setTime(t: number) {
+    // 设置渲染时间（供 Playwright 截图时控制动画帧）
+    if (this.mesh) {
+      const mat = (this.mesh.material as THREE.ShaderMaterial);
+      mat.uniforms.u_time.value = t;
+    }
+    this.renderer.render(this.scene, this.camera);
+  }
+
   resize(width: number, height: number) {
     this.renderer.setSize(width, height);
     if (this.mesh) {
