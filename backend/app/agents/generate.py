@@ -57,7 +57,7 @@ class GenerateAgent(BaseAgent):
             system_prompt=self.system_prompt,
             user_prompt=user_prompt,
             temperature=0.2 if previous_shader else 0.5,
-            max_tokens=4096,
+            max_tokens=8192,  # GLSL shader 可能较长，增加 token 限制
         )
 
         return self._extract_glsl(response)

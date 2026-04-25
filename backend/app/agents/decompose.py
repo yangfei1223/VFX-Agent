@@ -54,7 +54,7 @@ class DecomposeAgent(BaseAgent):
             user_prompt=user_prompt,
             image_paths=image_paths,
             temperature=0.3,
-            max_tokens=2048,
+            max_tokens=4096,  # 增加 token 限制，确保 JSON 完整
         )
 
         # 从响应中提取 JSON
