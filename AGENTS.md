@@ -103,9 +103,39 @@
 |------|------|------|
 | **5 阶段时间线** | ✅ | Extract → Decompose → Generate → Render → Inspect |
 | **实时进度消息** | ✅ | 每阶段显示 started/completed/failed |
-| **持续时间统计** | ⚠️ | 已实现，但时间戳需优化 |
+| **持续时间统计** | ✅ | 每阶段显示 duration (ms/s) |
 | **阶段详情展开** | ✅ | 点击展开查看详细信息 |
+| **迭代次数显示** | ✅ | 每条日志显示 Iteration N |
 | **500ms polling** | ✅ | 实时状态更新 |
+| **日志窗口最大化** | ✅ | Maximize 按钮展开全屏显示 |
+
+---
+
+## 已知问题与待优化
+
+### 当前已知问题
+
+| 问题 | 状态 | 说明 |
+|------|------|------|
+| **视频输入 Pipeline 慢** | ⚠️ | 关键帧提取 + 多图多模态分析耗时 2-3 分钟 |
+| **Inspect 评分简化** | ⚠️ | 纯文本模式 auto-pass，缺少量化指标 |
+| **参数面板未同步** | ⚠️ | Parameter Panel 提取 #define/uniform 但未实时联动 |
+
+### 待优化项（P1）
+
+1. **增强 Inspect Agent 多维度评估**
+   - 实现 IoU 计算（渲染截图 vs 设计参考 mask）
+   - 实现 MSE 光流对比
+   - 输出结构化修正指令
+
+2. **特征提取增强**
+   - 关键帧 SDF Mask 提取（形态场）
+   - 光流场计算（动态特征）
+   - 色彩频域分析
+
+3. **参数面板实时联动**
+   - 滑块修改 #define 常量实时更新 shader
+   - uniform 变量实时传递到预览
 
 ---
 
@@ -368,9 +398,14 @@ VFX-Agent/
 
 ---
 
-## Git Commits (23)
+## Git Commits (29)
 
 ```
+69b41b4 fix: duration tracking in all pipeline nodes
+b4dc435 fix: add missing isFullscreen state to AgentLog
+c0cf6bd feat: add fullscreen toggle to AgentLog component
+d8fbcec docs: clarify scope - focus on development state, runtime deferred
+6ea9697 docs: add AGENTS.md with project overview and gap analysis
 52f4c79 fix: initialize phase_start_time for duration tracking
 d8fa034 chore: remove demo screenshot
 f46012a fix: screenshot size 1024x1024 to avoid mobile warning
@@ -449,6 +484,18 @@ PROXY=http://127.0.0.1:7890
 - **effect-dev Skill**: `.claude/skills/effect-dev/SKILL.md`
 - **iq SDF 算子**: https://iquilezles.org/articles/distfunctions2d/
 - **Shadertoy 案例**: https://www.shadertoy.com/
+
+---
+
+## 代码统计
+
+| 指标 | 数值 |
+|------|------|
+| **总代码文件** | ~40 个核心文件 |
+| **代码行数** | ~4071 行 |
+| **Git Commits** | 29 条 |
+| **已实现功能** | 25+ 项 ✅ |
+| **设计方案差距** | 6 项待补充（开发态） |
 
 ---
 
