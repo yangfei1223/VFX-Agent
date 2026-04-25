@@ -69,7 +69,13 @@ async def run_pipeline(
         try:
             result = await pipeline_app.ainvoke(initial_state)
             result_dict = {k: v for k, v in result.items()}
-            result_dict["status"] = "passed" if result.get("passed") else "max_iterations"
+            # Set final status based on passed flag and iteration count
+            if result.get("passed"):
+                result_dict["status"] = "passed"
+            elif result.get("iteration", 0) >= settings.max_iterations:
+                result_dict["status"] = "max_iterations"
+            else:
+                result_dict["status"] = "failed"
             pipeline_results[pipeline_id] = result_dict
         except Exception as e:
             pipeline_results[pipeline_id] = {"status": "failed", "error": str(e)}

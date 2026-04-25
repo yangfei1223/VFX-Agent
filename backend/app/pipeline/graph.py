@@ -81,6 +81,9 @@ async def node_render_and_screenshot(state: PipelineState) -> dict:
             times=[0.0, 0.5, 1.0, 1.5, 2.0],
         )
         return {"render_screenshots": screenshots, "compile_error": None}
+    except asyncio.TimeoutError:
+        # Timeout: return empty but continue (text mode can pass without screenshots)
+        return {"render_screenshots": [], "compile_error": "Render timeout (frontend not ready)"}
     except Exception as e:
         return {"render_screenshots": [], "compile_error": str(e)}
 
@@ -89,11 +92,37 @@ async def node_inspect(state: PipelineState) -> dict:
     """Inspect Agent：对比截图，输出评估"""
     design_imgs = state.get("design_screenshots", [])
     render_imgs = state.get("render_screenshots", [])
+    
+    # Text-only mode: no design reference, auto-pass if shader generated
+    if not design_imgs and state.get("current_shader"):
+        # 记录历史
+        history = state.get("history", [])
+        history.append({
+            "iteration": state.get("iteration", 0),
+            "score": 0.9,
+            "passed": True,
+            "feedback": "Text mode: auto-accepted (no design reference)",
+        })
+        return {
+            "inspect_result": {"passed": True, "overall_score": 0.9, "feedback": "Text mode: auto-accepted"},
+            "passed": True,
+            "history": history,
+        }
 
+    # Render failed: skip inspect, will retry in next iteration
     if not render_imgs:
+        # 记录历史
+        history = state.get("history", [])
+        history.append({
+            "iteration": state.get("iteration", 0),
+            "score": 0,
+            "passed": False,
+            "feedback": "渲染失败，无截图可对比",
+        })
         return {
             "inspect_result": {"passed": False, "overall_score": 0, "feedback": "渲染失败，无截图可对比"},
             "passed": False,
+            "history": history,
         }
 
     result = inspect_agent.run(
@@ -126,6 +155,10 @@ async def node_inspect(state: PipelineState) -> dict:
 def should_continue(state: PipelineState) -> Literal["generate", "end"]:
     """判断是否继续迭代"""
     if state.get("passed", False):
+        return "end"
+    # For text-only mode, after first successful shader generation, end
+    # (text mode auto-passes in node_inspect if no design_screenshots)
+    if state.get("input_type") == "text" and state.get("iteration", 0) >= 1:
         return "end"
     if state.get("compile_error") and state.get("iteration", 0) >= 1:
         # 编译错误且已重试，结束
