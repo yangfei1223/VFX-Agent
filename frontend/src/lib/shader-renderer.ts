@@ -90,7 +90,7 @@ export class ShaderRenderer {
 
     // 检查编译错误
     const gl = this.renderer.getContext();
-    const existingProgram = gl.getParameter(gl.CURRENT_PROGRAM);
+    gl.getParameter(gl.CURRENT_PROGRAM);
 
     const geometry = new THREE.PlaneGeometry(2, 2);
     this.mesh = new THREE.Mesh(geometry, material);
