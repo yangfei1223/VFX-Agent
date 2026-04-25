@@ -110,6 +110,7 @@ export default function AgentLog({
   const scrollRef = useRef<HTMLDivElement>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [expandedLog, setExpandedLog] = useState<string | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Sync with external logs from usePipeline
   useEffect(() => {
