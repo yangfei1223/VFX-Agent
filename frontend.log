@@ -2,9 +2,8 @@
 > frontend@0.0.0 dev
 > vite
 
-09:55:37 [vite] (client) Re-optimizing dependencies because lockfile has changed
 
-  VITE v8.0.10  ready in 389 ms
+  VITE v8.0.10  ready in 301 ms
 
   ➜  Local:   http://localhost:5173/
   ➜  Network: use --host to expose

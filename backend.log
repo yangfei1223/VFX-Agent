@@ -1,9 +1,21 @@
 INFO:     Will watch for changes in these directories: ['/Users/yangfei/Code/VFX-Agent/backend']
 INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
-INFO:     Started reloader process [35766] using WatchFiles
-INFO:     Started server process [35769]
+INFO:     Started reloader process [36206] using WatchFiles
+INFO:     Started server process [36210]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
-INFO:     127.0.0.1:53377 - "GET /health HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53383 - "GET /health HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53387 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54204 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54209 - "GET /health HTTP/1.1" 200 OK
+WARNING:  WatchFiles detected changes in 'app/agents/base.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [36210]
+INFO:     Started server process [36291]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [36291]
+INFO:     Stopping reloader process [36206]
