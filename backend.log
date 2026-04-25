@@ -1,7 +1,12 @@
 INFO:     Will watch for changes in these directories: ['/Users/yangfei/Code/VFX-Agent/backend']
 INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
-INFO:     Started reloader process [42584] using WatchFiles
-INFO:     Started server process [42589]
+INFO:     Started reloader process [43161] using WatchFiles
+INFO:     Started server process [43164]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
-INFO:     127.0.0.1:56410 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57198 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57212 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57300 - "POST /pipeline/run HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57300 - "GET /pipeline/status/9dc2ec4f-fe9e-4aca-a9ee-d75b0f2bb034 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57361 - "GET /pipeline/status HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:57365 - "POST /pipeline/run HTTP/1.1" 200 OK

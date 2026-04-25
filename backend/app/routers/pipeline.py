@@ -44,7 +44,7 @@ async def run_pipeline(
 
     # 构建初始状态
     initial_state: PipelineState = {
-        "input_type": "video" if video_path else "image",
+        "input_type": "text" if not video_path and not image_paths else ("video" if video_path else "image"),
         "video_path": video_path,
         "image_paths": image_paths,
         "user_notes": notes,

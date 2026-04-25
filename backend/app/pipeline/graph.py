@@ -22,14 +22,15 @@ inspect_agent = InspectAgent()
 
 
 async def node_extract_keyframes(state: PipelineState) -> dict:
-    """视频输入时，提取关键帧"""
+    """视频输入时，提取关键帧；纯文本输入时返回空列表"""
     if state.get("input_type") == "video" and state.get("video_path"):
         video_info = get_video_info(state["video_path"])
         keyframe_paths = extract_keyframes(state["video_path"], max_frames=6)
         return {"video_info": video_info, "keyframe_paths": keyframe_paths, "design_screenshots": keyframe_paths}
     elif state.get("image_paths"):
         return {"keyframe_paths": state["image_paths"], "design_screenshots": state["image_paths"]}
-    return {}
+    # 纯文本输入：返回空列表以避免 LangGraph "Must write to at least one of..." 错误
+    return {"keyframe_paths": [], "design_screenshots": []}
 
 
 async def node_decompose(state: PipelineState) -> dict:

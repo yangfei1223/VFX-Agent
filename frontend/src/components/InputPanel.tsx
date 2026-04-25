@@ -74,7 +74,7 @@ export default function InputPanel({ onSubmit, loading }: InputPanelProps) {
   const handleSubmit = useCallback(() => {
     const formData = new FormData();
     mediaFiles.forEach((mf) => {
-      formData.append(mf.type === 'video' ? "videos" : "images", mf.file);
+      formData.append(mf.type === 'video' ? "video" : "images", mf.file);
     });
     formData.append("notes", description);
     onSubmit(formData);

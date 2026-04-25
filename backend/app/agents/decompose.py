@@ -41,8 +41,11 @@ class DecomposeAgent(BaseAgent):
             parts.append(
                 f"以下 {len(image_paths)} 张图片是从视频中均匀提取的关键帧。"
             )
-        else:
+        elif image_paths:
             parts.append(f"以下是 {len(image_paths)} 张设计稿图片。")
+        else:
+            # 纯文本输入模式
+            parts.append("用户仅提供文本描述，没有图片参考。请根据用户描述直接生成视效语义描述。")
 
         if user_notes:
             parts.append(f"用户附加参数标注：{user_notes}")
