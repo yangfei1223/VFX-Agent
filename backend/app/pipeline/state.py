@@ -54,6 +54,12 @@ class PipelineState(TypedDict, total=False):
     generate_history: list[dict]        # Generate Agent 历史：[{iteration, feedback_received, shader_preview, duration_ms}]
     inspect_history: list[dict]         # Inspect Agent 历史：[{iteration, score, feedback, issues_summary}]
 
+    # 用户人工干预相关
+    human_feedback: str | None           # 用户自然语言检视命令
+    human_modified_shader: str | None    # 用户在编辑器中修改的代码（可选）
+    human_iteration_mode: bool           # 是否处于人工迭代模式
+    human_iteration_count: int           # 人工迭代计数（用于日志区分）
+
     # Phase tracking (new fields for enhanced logging)
     current_phase: str                  # Current pipeline phase
     phase_status: str                   # Phase status: "running" | "completed" | "failed"

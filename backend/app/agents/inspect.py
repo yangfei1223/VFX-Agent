@@ -19,6 +19,7 @@ class InspectAgent(BaseAgent):
         visual_description: dict | None = None,
         iteration: int = 0,
         context_history: list[dict] | None = None,
+        human_feedback: str | None = None,  # 用户人工反馈
     ) -> dict:
         """
         对比渲染截图与设计参考，输出评估结果和修正指令。
@@ -56,6 +57,10 @@ class InspectAgent(BaseAgent):
                 f"\n---\n你之前的历史评估记录：\n{history_summary}",
                 "\n请参考之前的问题和评分趋势，判断当前是否在改进或仍有相同问题。",
             ])
+
+        # 注入用户人工反馈（评估时参考）
+        if human_feedback:
+            parts.append(f"\n---\n[用户期望]\n用户希望的效果：{human_feedback}\n请评估渲染结果是否符合用户期望。")
 
         user_prompt = "\n".join(parts)
 

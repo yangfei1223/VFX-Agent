@@ -137,3 +137,62 @@ async def get_pipeline_status(pipeline_id: str):
     if not result:
         return {"status": "not_found"}
     return result
+
+
+@router.post("/{pipeline_id}/human-iterate")
+async def human_iterate(
+    pipeline_id: str,
+    background_tasks: BackgroundTasks,
+    feedback: str = Form(...),
+    modified_shader: str | None = Form(None),
+):
+    """
+    触发人工迭代。
+    
+    Args:
+        feedback: 用户自然语言反馈
+        modified_shader: 用户修改的代码（可选）
+    
+    Returns:
+        Pipeline status
+    """
+    # 1. 检查 pipeline 是否存在且已结束
+    if pipeline_id not in pipeline_results:
+        return {"error": "Pipeline not found", "status": "not_found"}
+    
+    current_state = pipeline_results[pipeline_id]
+    if current_state.get("status") == "running":
+        return {"error": "Pipeline still running", "status": "error"}
+    
+    # 2. 更新状态
+    current_state["human_feedback"] = feedback
+    current_state["human_modified_shader"] = modified_shader
+    current_state["human_iteration_mode"] = True
+    current_state["human_iteration_count"] = current_state.get("human_iteration_count", 0) + 1
+    current_state["status"] = "running"
+    current_state["phase_status"] = "running"
+    
+    # 3. 决定起始节点
+    if modified_shader and modified_shader.strip():
+        current_state["current_shader"] = modified_shader
+        current_state["current_phase"] = "render"
+        current_state["phase_message"] = "Rendering user-modified shader..."
+    else:
+        current_state["current_phase"] = "generate"
+        current_state["phase_message"] = "Generating with human feedback..."
+    
+    # 4. 清除之前的错误状态
+    current_state["compile_error"] = None
+    current_state["validation_errors"] = None
+    current_state["passed"] = False
+    current_state["error"] = None
+    
+    # 5. 启动 Pipeline（后台任务）
+    background_tasks.add_task(_run_pipeline, pipeline_id, current_state)
+    
+    return {
+        "status": "running",
+        "pipeline_id": pipeline_id,
+        "human_iteration_count": current_state["human_iteration_count"],
+        "message": "Human iteration triggered",
+    }

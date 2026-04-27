@@ -349,6 +349,7 @@ Shadertoy 标准内置变量：
             previous_shader=previous_shader,
             feedback=feedback,
             context_history=generate_history,
+            human_feedback=state.get("human_feedback"),  # 用户人工反馈
             return_raw=True,  # 获取原始响应
         )
         
@@ -623,6 +624,7 @@ async def node_inspect(state: PipelineState) -> dict:
             visual_description=state.get("visual_description"),
             iteration=iteration,
             context_history=inspect_history,  # Agent 自己的历史
+            human_feedback=state.get("human_feedback"),  # 用户人工反馈
         )
 
         passed = result.get("passed", False) or result.get("overall_score", 0) >= get_runtime_config().passing_threshold
@@ -653,6 +655,8 @@ async def node_inspect(state: PipelineState) -> dict:
             "passed": passed,
             "feedback": result.get("feedback", ""),
             "issues_summary": issues_summary,
+            "human_iteration": state.get("human_iteration_mode", False),
+            "human_feedback": state.get("human_feedback"),
         }
         updated_inspect_history = inspect_history + [new_inspect_entry]
 

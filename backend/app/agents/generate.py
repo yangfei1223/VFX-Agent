@@ -22,6 +22,7 @@ class GenerateAgent(BaseAgent):
         previous_shader: str | None = None,
         feedback: str | None = None,
         context_history: list[dict] | None = None,
+        human_feedback: str | None = None,  # 用户人工反馈
         return_raw: bool = False,
     ) -> str | dict:
         """
@@ -61,6 +62,10 @@ class GenerateAgent(BaseAgent):
                 f"\n---\n你之前的历史工作记录：\n{history_summary}",
                 "\n请参考之前的工作，避免重复已尝试但无效的修改方向。",
             ])
+
+        # 注入用户人工反馈（优先级最高）
+        if human_feedback:
+            user_parts.append(f"\n---\n[用户检视指令]\n{human_feedback}\n请根据用户指令调整着色器效果。")
 
         # 修正指令
         if previous_shader and feedback:
