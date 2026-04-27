@@ -3,13 +3,14 @@
 import asyncio
 import time
 import uuid
-from fastapi import APIRouter, UploadFile, File, Form
+from fastapi import APIRouter, UploadFile, File, Form, BackgroundTasks
 from pathlib import Path
 import shutil
 
 from app.pipeline.graph import pipeline_app
 from app.pipeline.state import PipelineState
 from app.config import settings
+from app.routers.config import get_runtime_config
 
 router = APIRouter(prefix="/pipeline", tags=["pipeline"])
 
@@ -17,8 +18,50 @@ router = APIRouter(prefix="/pipeline", tags=["pipeline"])
 pipeline_results: dict[str, dict] = {}
 
 
+def _run_pipeline(pipeline_id: str, initial_state: PipelineState):
+    """同步执行 pipeline（在后台线程中运行）"""
+    try:
+        print(f"[Pipeline {pipeline_id}] Starting execution...")
+        
+        # 使用 asyncio.run 在后台线程中执行
+        async def _async_run():
+            current_state = initial_state
+            async for event in pipeline_app.astream(initial_state, stream_mode="updates"):
+                for node_name, node_output in event.items():
+                    if node_output:
+                        print(f"[Pipeline {pipeline_id}] Node {node_name} completed")
+                        current_state = {**current_state, **node_output}
+                        result_dict = {k: v for k, v in current_state.items()}
+                        result_dict["status"] = "running"
+                        pipeline_results[pipeline_id] = result_dict
+            
+            print(f"[Pipeline {pipeline_id}] All nodes completed")
+            
+            result_dict = {k: v for k, v in current_state.items()}
+            if current_state.get("passed"):
+                result_dict["status"] = "passed"
+            elif current_state.get("iteration", 0) >= get_runtime_config().max_iterations:
+                result_dict["status"] = "max_iterations"
+            elif current_state.get("error"):
+                result_dict["status"] = "failed"
+            else:
+                result_dict["status"] = "completed"
+            
+            print(f"[Pipeline {pipeline_id}] Final status: {result_dict['status']}")
+            pipeline_results[pipeline_id] = result_dict
+        
+        asyncio.run(_async_run())
+        
+    except Exception as e:
+        print(f"[Pipeline {pipeline_id}] FAILED: {e}")
+        import traceback
+        traceback.print_exc()
+        pipeline_results[pipeline_id] = {"status": "failed", "error": str(e)}
+
+
 @router.post("/run")
 async def run_pipeline(
+    background_tasks: BackgroundTasks,
     video: UploadFile | None = File(None),
     images: list[UploadFile] = File([]),
     notes: str = Form(""),
@@ -43,7 +86,7 @@ async def run_pipeline(
             shutil.copyfileobj(img.file, f)
         image_paths.append(img_path)
 
-# 构建初始状态
+    # 构建初始状态
     initial_state: PipelineState = {
         "input_type": "text" if not video_path and not image_paths else ("video" if video_path else "image"),
         "video_path": video_path,
@@ -53,9 +96,12 @@ async def run_pipeline(
         "keyframe_paths": [],
         "visual_description": {},
         "iteration": 0,
-        "max_iterations": settings.max_iterations,
+        "max_iterations": get_runtime_config().max_iterations,
         "current_shader": "",
         "compile_error": None,
+        "validation_errors": None,
+        "validation_warnings": None,
+        "compile_retry_count": 0,
         "inspect_result": None,
         "passed": False,
         "render_screenshots": [],
@@ -63,7 +109,8 @@ async def run_pipeline(
         "status": "running",
         "error": None,
         "history": [],
-        # Phase tracking fields
+        "generate_history": [],
+        "inspect_history": [],
         "current_phase": "extract_keyframes",
         "phase_status": "running",
         "phase_message": "Initializing pipeline...",
@@ -71,23 +118,12 @@ async def run_pipeline(
         "detailed_logs": [],
     }
 
-    # 异步执行 pipeline
-    async def _run():
-        try:
-            result = await pipeline_app.ainvoke(initial_state)
-            result_dict = {k: v for k, v in result.items()}
-            # Set final status based on passed flag and iteration count
-            if result.get("passed"):
-                result_dict["status"] = "passed"
-            elif result.get("iteration", 0) >= settings.max_iterations:
-                result_dict["status"] = "max_iterations"
-            else:
-                result_dict["status"] = "failed"
-            pipeline_results[pipeline_id] = result_dict
-        except Exception as e:
-            pipeline_results[pipeline_id] = {"status": "failed", "error": str(e)}
+    # 立即写入初始状态，避免 "not_found"
+    pipeline_results[pipeline_id] = {k: v for k, v in initial_state.items()}
+    pipeline_results[pipeline_id]["status"] = "running"
 
-    asyncio.create_task(_run())
+    # 使用 BackgroundTasks 在后台执行 pipeline
+    background_tasks.add_task(_run_pipeline, pipeline_id, initial_state)
 
     return {"pipeline_id": pipeline_id, "status": "running"}
 

@@ -18,6 +18,7 @@ class DecomposeAgent(BaseAgent):
         image_paths: list[str],
         video_info: dict | None = None,
         user_notes: str = "",
+        return_raw: bool = False,
     ) -> dict:
         """
         分析输入的视觉参考，输出结构化视效语义描述。
@@ -26,9 +27,10 @@ class DecomposeAgent(BaseAgent):
             image_paths: 关键帧图片路径列表
             video_info: 视频元信息（时长、帧率等），可选
             user_notes: 用户附加的结构化参数标注，可选
+            return_raw: 如果 True，返回包含原始响应的 dict
 
         Returns:
-            解构出的视效语义描述 dict
+            解构出的视效语义描述 dict（如果 return_raw=True，包含 raw_response）
         """
         parts = ["请分析以下视觉参考，解构出视效语义描述。"]
 
@@ -57,11 +59,20 @@ class DecomposeAgent(BaseAgent):
             user_prompt=user_prompt,
             image_paths=image_paths,
             temperature=0.3,
-            max_tokens=4096,  # 增加 token 限制，确保 JSON 完整
+            max_tokens=4096,
+            return_raw=True,  # 始终获取原始响应
         )
 
         # 从响应中提取 JSON
-        return self._parse_json(response)
+        content = response["content"] if isinstance(response, dict) else response
+        description = self._parse_json(content)
+        
+        # 如果需要原始响应，添加到结果中
+        if return_raw and isinstance(response, dict):
+            description["_raw_response"] = content
+            description["_usage"] = response.get("usage")
+            
+        return description
 
     @staticmethod
     def _parse_json(text: str) -> dict:

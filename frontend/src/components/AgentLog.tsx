@@ -42,6 +42,7 @@ interface LogEntry {
   passed?: boolean;
   status?: 'started' | 'running' | 'completed' | 'failed';
   duration_ms?: number;
+  agent_response?: string;  // Agent's raw response for displaying reasoning
 }
 
 // Phase configuration for the timeline
@@ -124,6 +125,7 @@ export default function AgentLog({
         details: log.details,
         status: log.status,
         duration_ms: log.duration_ms,
+        agent_response: (log as unknown as { agent_response?: string }).agent_response,
       }));
       setLogs(convertedLogs);
     }
@@ -452,8 +454,27 @@ export default function AgentLog({
                     </pre>
                   </div>
                 )}
+
+                {/* Agent Reasoning (raw response) */}
+                {log.agent_response && expandedLog === log.id && (
+                  <div className="mt-2">
+                    <div className="flex items-center gap-1.5 text-xs text-[var(--accent-primary)] mb-1">
+                      <Sparkles className="w-3 h-3" />
+                      <span className="font-medium">Agent Reasoning</span>
+                    </div>
+                    <div className={`
+                      text-xs text-[var(--text-secondary)] font-mono
+                      bg-[var(--bg-primary)]/70 rounded p-2 max-h-64 overflow-y-auto
+                      border border-[var(--border-color)]/50
+                    `}>
+                      <pre className="whitespace-pre-wrap break-words">
+                        {log.agent_response}
+                      </pre>
+                    </div>
+                  </div>
+                )}
               </div>
-              {log.details && (
+              {(log.details || log.agent_response) && (
                 <ChevronRight className={`
                   w-4 h-4 text-[var(--text-muted)] transition-transform duration-200
                   ${expandedLog === log.id ? 'rotate-90' : ''}

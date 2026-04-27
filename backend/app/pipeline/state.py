@@ -5,12 +5,13 @@ from typing import TypedDict
 
 class PhaseLog(TypedDict, total=False):
     """Phase execution log entry"""
-    phase: str                          # "extract_keyframes" | "decompose" | "generate" | "render" | "inspect"
+    phase: str                          # "extract_keyframes" | "decompose" | "generate" | "render" | "inspect" | "validate_shader"
     timestamp: float                    # Unix timestamp
     status: str                         # "started" | "running" | "completed" | "failed"
     message: str                        # Human-readable progress message
     details: str | None                 # Additional details (e.g., agent thinking, tool output)
     duration_ms: int | None             # Phase duration in milliseconds
+    agent_response: str | None          # Agent's raw response (for displaying reasoning)
 
 
 class PipelineState(TypedDict, total=False):
@@ -31,7 +32,10 @@ class PipelineState(TypedDict, total=False):
     iteration: int                      # 当前迭代轮次（从 0 开始）
     max_iterations: int                 # 最大迭代次数
     current_shader: str                 # 当前 GLSL 代码
-    compile_error: str | None           # 编译错误信息
+    compile_error: str | None           # 编译/渲染错误信息
+    validation_errors: str | None       # Shader 验证错误信息（静态检查）
+    validation_warnings: str | None     # Shader 验证警告（不影响渲染）
+    compile_retry_count: int            # 编译/验证重试次数（用于限制低级错误重试）
 
     # Inspect Agent 产出
     inspect_result: dict | None         # 评估结果
@@ -44,7 +48,11 @@ class PipelineState(TypedDict, total=False):
     # Pipeline 状态
     status: str                         # "running" | "passed" | "failed" | "max_iterations"
     error: str | None                   # 错误信息
-    history: list[dict]                 # 迭代历史记录
+    history: list[dict]                 # Pipeline 级别的迭代历史记录
+
+    # Agent 专属上下文历史（每个 Agent 保留自己的工作记录）
+    generate_history: list[dict]        # Generate Agent 历史：[{iteration, feedback_received, shader_preview, duration_ms}]
+    inspect_history: list[dict]         # Inspect Agent 历史：[{iteration, score, feedback, issues_summary}]
 
     # Phase tracking (new fields for enhanced logging)
     current_phase: str                  # Current pipeline phase

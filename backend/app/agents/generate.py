@@ -21,7 +21,9 @@ class GenerateAgent(BaseAgent):
         visual_description: dict,
         previous_shader: str | None = None,
         feedback: str | None = None,
-    ) -> str:
+        context_history: list[dict] | None = None,
+        return_raw: bool = False,
+    ) -> str | dict:
         """
         生成或修正 GLSL 着色器代码。
 
@@ -32,9 +34,11 @@ class GenerateAgent(BaseAgent):
             visual_description: Decompose Agent 输出的视效语义描述
             previous_shader: 前一轮生成的 shader 代码（修正时传入）
             feedback: Inspect Agent 的修正指令（修正时传入）
+            context_history: Generate Agent 自身的历史调用记录（每轮的 prompt+shader）
+            return_raw: 如果 True，返回包含原始响应的 dict
 
         Returns:
-            完整的 Shadertoy 格式 GLSL 代码
+            完整的 Shadertoy 格式 GLSL 代码（如果 return_raw=True，返回 dict）
         """
         # 构建 user prompt
         user_parts = [
@@ -42,14 +46,25 @@ class GenerateAgent(BaseAgent):
             f"```json\n{json.dumps(visual_description, indent=2, ensure_ascii=False)}\n```",
         ]
 
-        # 修正模式下注入历史代码和反馈
+        # 修正模式下注入上一轮代码和反馈
         if previous_shader and feedback:
             user_parts.extend([
                 "\n---\n以下是上一轮生成的着色器代码：",
                 f"```glsl\n{previous_shader}\n```",
                 f"\n---\n检视 Agent 的反馈：\n{feedback}",
-                "\n请根据反馈修正着色器代码，保持整体结构不变，仅修改有问题的部分。",
             ])
+
+        # 注入 Generate Agent 自身的历史上下文
+        if context_history and len(context_history) > 0:
+            history_summary = self._format_context_history(context_history)
+            user_parts.extend([
+                f"\n---\n你之前的历史工作记录：\n{history_summary}",
+                "\n请参考之前的工作，避免重复已尝试但无效的修改方向。",
+            ])
+
+        # 修正指令
+        if previous_shader and feedback:
+            user_parts.append("\n请根据反馈修正着色器代码，保持整体结构不变，仅修改有问题的部分。")
 
         user_prompt = "\n".join(user_parts)
 
@@ -57,10 +72,42 @@ class GenerateAgent(BaseAgent):
             system_prompt=self.system_prompt,
             user_prompt=user_prompt,
             temperature=0.2 if previous_shader else 0.5,
-            max_tokens=16384,  # GLSL shader 可能很长，大幅增加 token 限制
+            max_tokens=16384,
+            return_raw=True,  # 始终获取原始响应
         )
 
-        return self._extract_glsl(response)
+        content = response["content"] if isinstance(response, dict) else response
+        shader = self._extract_glsl(content)
+        
+        if return_raw and isinstance(response, dict):
+            return {
+                "shader": shader,
+                "raw_response": content,
+                "usage": response.get("usage"),
+            }
+        
+        return shader
+
+    @staticmethod
+    def _format_context_history(history: list[dict]) -> str:
+        """格式化 Generate Agent 的历史上下文"""
+        lines = []
+        for entry in history:
+            iteration = entry.get("iteration", 0)
+            feedback_received = entry.get("feedback_received", "")
+            shader_preview = entry.get("shader_preview", "")
+            duration_ms = entry.get("duration_ms", 0)
+            
+            lines.append(f"\n### 第 {iteration} 轮")
+            if feedback_received:
+                # 截取 feedback 关键信息
+                fb_preview = feedback_received[:200] + "..." if len(feedback_received) > 200 else feedback_received
+                lines.append(f"收到反馈：{fb_preview}")
+            if shader_preview:
+                lines.append(f"生成代码（前100字符）：{shader_preview[:100]}...")
+            lines.append(f"耗时：{duration_ms}ms")
+        
+        return "\n".join(lines)
 
     @staticmethod
     def _extract_glsl(text: str) -> str:

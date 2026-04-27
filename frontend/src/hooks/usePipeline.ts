@@ -15,6 +15,7 @@ export interface PhaseLog {
   message: string;
   details?: string;
   duration_ms?: number;
+  agent_response?: string;  // Agent's raw response for displaying reasoning
 }
 
 export interface PipelineResult {

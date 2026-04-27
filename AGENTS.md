@@ -108,6 +108,25 @@
 | **迭代次数显示** | ✅ | 每条日志显示 Iteration N |
 | **500ms polling** | ✅ | 实时状态更新 |
 | **日志窗口最大化** | ✅ | Maximize 按钮展开全屏显示 |
+| **Agent Reasoning 显示** | ✅ | 点击日志条目展开显示 "Agent Reasoning" 原始响应 |
+
+### ✅ Pipeline 增强
+
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| **流式处理** | ✅ | 使用 `astream()` 替代 `ainvoke()` 实现实时状态更新 |
+| **路由修复** | ✅ | 修复 generate → validate_shader → generate 无限循环 |
+| **编译重试限制** | ✅ | `compile_retry_count` 计数和终止条件 |
+| **节点日志输出** | ✅ | Backend 日志添加 `[Pipeline ID] Node XXX completed` 输出 |
+
+### ✅ 配置与上下文
+
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| **设置面板** | ✅ | 右上角齿轮图标，可配置 max_iterations/passing_threshold/compile_retry_limit |
+| **配置 API** | ✅ | GET/PUT `/config` 动态配置 |
+| **Agent 上下文历史** | ✅ | 每个 Agent 保留工作记录 (generate_history, inspect_history) |
+| **历史上下文注入** | ✅ | Agent prompt 注入历史上下文，避免重复错误 |
 
 ---
 
@@ -324,6 +343,7 @@ VFX-Agent/
 │   │   ├── config.py               # 环境变量 + 模型配置
 │   │   ├── routers/
 │   │   │   ├── pipeline.py         # Pipeline API
+│   │   │   ├── config.py           # 配置 API (GET/PUT)
 │   │   │   └── __init__.py
 │   │   ├── agents/
 │   │   │   ├── base.py             # Agent 基类 (多 API 支持 + 代理)
@@ -332,8 +352,8 @@ VFX-Agent/
 │   │   │   ├── inspect.py          # Inspect Agent
 │   │   │   └── __init__.py
 │   │   ├── pipeline/
-│   │   │   ├── graph.py            # LangGraph 编排 + 阶段日志
-│   │   │   ├── state.py            # PipelineState TypedDict
+│   │   │   ├── graph.py            # LangGraph 编排 + 阶段日志 + 路由函数
+│   │   │   ├── state.py            # PipelineState TypedDict (含 history 字段)
 │   │   │   └── __init__.py
 │   │   ├── services/
 │   │   │   ├── video_extractor.py  # FFmpeg 关键帧提取
@@ -373,7 +393,8 @@ VFX-Agent/
 │   │   │   ├── AgentLog.tsx        # Pipeline 进度日志 (增强版)
 │   │   │   ├── ShaderEditor.tsx    # GLSL 编辑器 + 语法高亮
 │   │   │   ├── ParameterPanel.tsx  # 参数提取 + 滑块
-│   │   │   └ ShaderPreview.tsx     # WebGL 渲染预览
+│   │   │   ├── ShaderPreview.tsx   # WebGL 渲染预览
+│   │   │   └ SettingsPanel.tsx     # 设置面板 (配置迭代参数)
 │   │   ├── hooks/
 │   │   │   └ usePipeline.ts        # Pipeline 状态订阅 (500ms polling)
 │   │   ├── lib/
@@ -491,12 +512,12 @@ PROXY=http://127.0.0.1:7890
 
 | 指标 | 数值 |
 |------|------|
-| **总代码文件** | ~40 个核心文件 |
-| **代码行数** | ~4071 行 |
+| **总代码文件** | ~42 个核心文件 |
+| **代码行数** | ~4300 行 |
 | **Git Commits** | 29 条 |
-| **已实现功能** | 25+ 项 ✅ |
+| **已实现功能** | 30+ 项 ✅ |
 | **设计方案差距** | 6 项待补充（开发态） |
 
 ---
 
-*最后更新: 2026-04-25*
+*最后更新: 2026-04-27*

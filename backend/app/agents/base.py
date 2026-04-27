@@ -96,9 +96,15 @@ class BaseAgent:
         image_paths: list[str] | None = None,
         temperature: float = 0.7,
         max_tokens: int = 4096,
-    ) -> str:
-        """调用 LLM，支持可选的图片输入（多模态）"""
-        return self._chat_openai(system_prompt, user_prompt, image_paths, temperature, max_tokens)
+        return_raw: bool = False,
+    ) -> str | dict:
+        """
+        调用 LLM，支持可选的图片输入（多模态）
+        
+        Args:
+            return_raw: 如果 True，返回包含原始响应的 dict，用于显示 reasoning
+        """
+        return self._chat_openai(system_prompt, user_prompt, image_paths, temperature, max_tokens, return_raw)
 
     def _chat_openai(
         self,
@@ -107,7 +113,8 @@ class BaseAgent:
         image_paths: list[str] | None,
         temperature: float,
         max_tokens: int,
-    ) -> str:
+        return_raw: bool = False,
+    ) -> str | dict:
         """OpenAI-compatible API 调用"""
         content: list[Any] = [{"type": "text", "text": user_prompt}]
 
@@ -134,10 +141,22 @@ class BaseAgent:
             max_tokens=max_tokens,
         )
 
-        content = response.choices[0].message.content or ""
+        response_content = response.choices[0].message.content or ""
         
         # 检查是否被截断（finish_reason 不是 "stop"）
         if response.choices[0].finish_reason != "stop":
             print(f"WARNING: Response truncated (finish_reason={response.choices[0].finish_reason})")
         
-        return content
+        if return_raw:
+            return {
+                "content": response_content,
+                "model": self.model,
+                "finish_reason": response.choices[0].finish_reason,
+                "usage": {
+                    "prompt_tokens": response.usage.prompt_tokens if response.usage else None,
+                    "completion_tokens": response.usage.completion_tokens if response.usage else None,
+                    "total_tokens": response.usage.total_tokens if response.usage else None,
+                },
+            }
+        
+        return response_content
