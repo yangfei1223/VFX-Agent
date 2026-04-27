@@ -76,8 +76,23 @@ class GenerateAgent(BaseAgent):
             return_raw=True,  # 始终获取原始响应
         )
 
-        content = response["content"] if isinstance(response, dict) else response
+        # Safe handling of None response
+        if response is None:
+            print("WARNING: LLM returned None response")
+            if return_raw:
+                return {"shader": "", "raw_response": "", "usage": None}
+            return ""
+
+        content = response.get("content", "") if isinstance(response, dict) else response
+        if content is None:
+            content = ""
+        
         shader = self._extract_glsl(content)
+        
+        # Ensure shader is not None
+        if shader is None or shader.strip() == "":
+            print(f"WARNING: Empty shader extracted from content (len={len(content)})")
+            shader = ""
         
         if return_raw and isinstance(response, dict):
             return {
@@ -115,14 +130,29 @@ class GenerateAgent(BaseAgent):
         text = text.strip()
 
         # 如果被 markdown code block 包裹
+        # 先尝试匹配 ```glsl ... ```
         if "```glsl" in text:
             match = re.search(r"```glsl\s*\n(.*?)```", text, re.DOTALL)
             if match:
                 return match.group(1).strip()
+        
+        # 尝试匹配 ``` ... ``` (无语言标识)
         if "```" in text:
-            match = re.search(r"```\s*\n(.*?)```", text, re.DOTALL)
-            if match:
-                return match.group(1).strip()
+            # 找到第一个 ``` 和最后一个 ```
+            first_block = text.find("```")
+            last_block = text.rfind("```")
+            if first_block != -1 and last_block != -1 and last_block > first_block:
+                # 提取中间内容
+                content = text[first_block:last_block]
+                # 移除开始标记（可能包含语言标识）
+                start_marker_end = content.find("\n")
+                if start_marker_end != -1:
+                    content = content[start_marker_end + 1:]
+                return content.strip()
 
         # 否则假定整个响应就是 GLSL 代码
+        # 但仍需移除末尾可能的 ``` 标记
+        if text.endswith("```"):
+            text = text[:-3].strip()
+        
         return text

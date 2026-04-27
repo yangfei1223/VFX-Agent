@@ -23,14 +23,17 @@ def validate_shader_static(source: str) -> dict:
     # 2. 不应声明系统 uniform (Shadertoy 自动注入)
     banned_decls = [
         (r"uniform\s+float\s+iTime", "iTime"),
-        (r"uniform\s+vec2\s+iResolution", "iResolution"),
+        (r"uniform\s+vec3\s+iResolution", "iResolution"),
+        (r"uniform\s+vec2\s+iResolution", "iResolution (vec2)"),
         (r"uniform\s+vec4\s+iMouse", "iMouse"),
-        (r"uniform\s+float\s+u_time", "u_time"),
-        (r"uniform\s+vec2\s+u_resolution", "u_resolution"),
+        (r"uniform\s+int\s+iFrame", "iFrame"),
+        (r"uniform\s+float\s+u_time", "u_time (非标准)"),
+        (r"uniform\s+vec2\s+u_resolution", "u_resolution (非标准)"),
+        (r"uniform\s+vec3\s+u_resolution", "u_resolution (非标准)"),
     ]
     for pattern, name in banned_decls:
         if re.search(pattern, source):
-            errors.append(f"BANNED: explicit declaration of uniform {name} (injected by Shadertoy runtime)")
+            errors.append(f"BANNED: uniform '{name}' is auto-injected by Shadertoy - remove declaration")
     
     # 3. 禁止 discard
     if re.search(r"\bdiscard\b", source):
@@ -80,17 +83,38 @@ def validate_shader_with_glslang(source: str) -> dict:
         return validate_shader_static(source)
     
     # 将 shader 包装为完整 GLSL fragment shader
-    wrapped_source = f"""
-#version 310 es
+    # 注意：#version 必须是第一行，移除 shader 开头的注释/空白
+    clean_source = source.strip()
+    # 移除开头的注释（单行或多行）
+    while clean_source.startswith('//') or clean_source.startswith('/*') or clean_source.startswith('\n'):
+        if clean_source.startswith('//'):
+            # 移除单行注释
+            newline_idx = clean_source.find('\n')
+            if newline_idx != -1:
+                clean_source = clean_source[newline_idx + 1:].strip()
+            else:
+                clean_source = ''
+        elif clean_source.startswith('/*'):
+            # 移除多行注释
+            end_idx = clean_source.find('*/')
+            if end_idx != -1:
+                clean_source = clean_source[end_idx + 2:].strip()
+            else:
+                break  # 未结束的多行注释，保留原样
+        elif clean_source.startswith('\n'):
+            clean_source = clean_source[1:].strip()
+    
+    wrapped_source = f"""#version 310 es
 precision highp float;
 
+// Shadertoy standard uniforms
 uniform float iTime;
-uniform vec2 iResolution;
+uniform vec3 iResolution;
 uniform vec4 iMouse;
 
 out vec4 fragColor;
 
-{source}
+{clean_source}
 
 void main() {{
     mainImage(fragColor, gl_FragCoord.xy);
@@ -113,11 +137,13 @@ void main() {{
         # 清理临时文件
         Path(temp_path).unlink(missing_ok=True)
         
+        # glslangValidator: 0 = success, 2+ = error
         if result.returncode == 0:
             return {"valid": True, "errors": []}
         else:
-            # 解析错误信息
-            error_lines = result.stderr.strip().split("\n") if result.stderr else []
+            # 错误信息在 stdout（不是 stderr）
+            output = result.stdout.strip() if result.stdout else ""
+            error_lines = output.split("\n") if output else []
             errors = [line for line in error_lines if "ERROR" in line or "error" in line.lower()]
             return {"valid": False, "errors": errors}
     

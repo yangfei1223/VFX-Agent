@@ -13,12 +13,19 @@ void main() {
 function wrapFragmentShader(userShader: string): string {
   return `
 precision highp float;
+
+// System uniforms (Three.js naming)
 uniform float u_time;
 uniform vec2 u_resolution;
 uniform vec2 u_mouse;
 uniform sampler2D iChannel0;
 uniform sampler2D iChannel1;
 varying vec2 vUv;
+
+// Shadertoy aliases (for compatibility with generated shaders)
+#define iTime u_time
+#define iResolution u_resolution
+#define iMouse vec4(u_mouse, 0.0, 0.0)
 
 ${userShader}
 

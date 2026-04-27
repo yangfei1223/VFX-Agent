@@ -67,6 +67,11 @@ class InspectAgent(BaseAgent):
             max_tokens=4096,  # 增加以避免截断
         )
 
+        # Safe handling of None response
+        if response is None:
+            print("WARNING: Inspect LLM returned None response")
+            return {"passed": False, "overall_score": 0.0, "feedback": "LLM returned None", "parse_error": "LLM returned None"}
+
         return self._parse_json(response)
 
     @staticmethod

@@ -35,7 +35,7 @@ class PipelineState(TypedDict, total=False):
     compile_error: str | None           # 编译/渲染错误信息
     validation_errors: str | None       # Shader 验证错误信息（静态检查）
     validation_warnings: str | None     # Shader 验证警告（不影响渲染）
-    compile_retry_count: int            # 编译/验证重试次数（用于限制低级错误重试）
+    compile_retry_count: int            # [DEPRECATED] 编译错误次数记录（仅用于日志，不控制流程）
 
     # Inspect Agent 产出
     inspect_result: dict | None         # 评估结果

@@ -101,7 +101,7 @@ async def run_pipeline(
         "compile_error": None,
         "validation_errors": None,
         "validation_warnings": None,
-        "compile_retry_count": 0,
+        "compile_retry_count": 0,  # Deprecated: only for logging
         "inspect_result": None,
         "passed": False,
         "render_screenshots": [],

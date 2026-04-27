@@ -174,15 +174,13 @@ async def node_decompose(state: PipelineState) -> dict:
 
 
 async def node_validate_shader(state: PipelineState) -> dict:
-    """Shader 验证：静态检查 + 语法验证，确保能编译后才进入 Render"""
+    """Shader 验证：静态检查 + 语法验证。失败时返回 generate 由 Agent 闭环修正。"""
     iteration = state.get("iteration", 0)
-    compile_retry_count = state.get("compile_retry_count", 0)
-    retry_limit = get_runtime_config().compile_retry_limit
     
     # Record phase start time
     phase_start = time.time()
     
-    logs = _add_phase_log(state, "validate_shader", "started", "Validating shader syntax...")
+    logs = _add_phase_log(state, "validate_shader", "started", f"Validating shader syntax (iteration {iteration + 1})...")
     
     shader = state.get("current_shader", "")
     if not shader:
@@ -192,22 +190,15 @@ async def node_validate_shader(state: PipelineState) -> dict:
             "No shader code to validate",
             start_time=phase_start
         )
-        # 检查重试次数是否已达上限
-        if compile_retry_count >= retry_limit:
-            return {
-                "validation_errors": "No shader code (retry limit reached)",
-                "compile_error": "No shader code",
-                "error": f"Compile retry limit ({retry_limit}) reached: no shader code",
-                "current_phase": "complete",
-                "phase_status": "failed",
-                "detailed_logs": logs,
-            }
+        # 返回 generate 让 Agent 修正（计入 iteration）
         return {
-            "validation_errors": "No shader code",
+            "validation_errors": "No shader code generated",
             "compile_error": "No shader code",
-            "compile_retry_count": compile_retry_count + 1,  # 增加重试计数
+            "compile_retry_count": state.get("compile_retry_count", 0) + 1,  # 仅日志记录
             "current_phase": "generate",
             "phase_status": "running",
+            "phase_message": "Shader empty, requesting Agent to regenerate...",
+            "phase_start_time": time.time(),
             "detailed_logs": logs,
         }
     
@@ -226,23 +217,14 @@ async def node_validate_shader(state: PipelineState) -> dict:
             start_time=phase_start
         )
         
-        # 检查重试次数是否已达上限
-        if compile_retry_count >= retry_limit:
-            return {
-                "validation_errors": errors_str,
-                "error": f"Compile retry limit ({retry_limit}) reached: {errors_str[:100]}",
-                "current_phase": "complete",
-                "phase_status": "failed",
-                "detailed_logs": logs,
-            }
-        
+        # 返回 generate 让 Agent 闭环修正（不设置终止条件）
         return {
             "validation_errors": errors_str,
             "compile_error": None,
-            "compile_retry_count": compile_retry_count + 1,  # 增加重试计数
+            "compile_retry_count": state.get("compile_retry_count", 0) + 1,  # 仅日志记录
             "current_phase": "generate",
             "phase_status": "running",
-            "phase_message": "Shader validation failed, returning to generate for correction...",
+            "phase_message": "Shader validation failed, Agent will fix in next iteration...",
             "phase_start_time": time.time(),
             "detailed_logs": logs,
         }
@@ -260,7 +242,7 @@ async def node_validate_shader(state: PipelineState) -> dict:
     return {
         "validation_errors": None,
         "compile_error": None,
-        "compile_retry_count": 0,  # 验证通过，重置计数
+        "compile_retry_count": 0,  # 验证通过，重置计数（仅日志）
         "validation_warnings": warnings_str,
         "current_phase": "render",
         "phase_status": "running",
@@ -271,45 +253,43 @@ async def node_validate_shader(state: PipelineState) -> dict:
 
 
 async def node_generate(state: PipelineState) -> dict:
-    """Generate Agent：生成或修正 GLSL 代码"""
+    """Generate Agent：生成或修正 GLSL 代码。编译错误由 Agent 在 ReAct loop 中闭环解决。"""
     iteration = state.get("iteration", 0)
-    compile_retry_count = state.get("compile_retry_count", 0)
-    retry_limit = get_runtime_config().compile_retry_limit
+    compile_error_count = state.get("compile_retry_count", 0)  # 仅用于日志
 
     # Record phase start time
     phase_start = time.time()
 
-    # 检查是否已经达到重试上限（从 validate_shader/render 返回时已设置）
-    if compile_retry_count > retry_limit:
+    # 统一计数：任何返回 generate 都增加 iteration（编译错误或视觉反馈）
+    has_compile_error = state.get("compile_error") or state.get("validation_errors")
+    has_inspect_feedback = state.get("inspect_result") and not state.get("passed", False)
+    
+    # 每次进入 generate 都计入 iteration（编译修正和视觉修正都算）
+    if has_compile_error or has_inspect_feedback:
+        iteration += 1
+    
+    # 检查是否达到 max_iterations（唯一的终止条件）
+    max_iterations = get_runtime_config().max_iterations
+    if iteration >= max_iterations:
+        reason = "compile errors" if has_compile_error else "visual inspection"
         logs = _add_phase_log(
             state, "generate", "failed",
-            f"Compile retry limit ({retry_limit}) exceeded, terminating",
+            f"Max iterations ({max_iterations}) reached after {reason}",
             start_time=phase_start
         )
         return {
-            "error": f"Compile retry limit ({retry_limit}) exceeded",
+            "error": f"Max iterations ({max_iterations}) reached",
             "current_phase": "complete",
-            "phase_status": "failed",
+            "phase_status": "max_iterations",
+            "iteration": iteration,
             "detailed_logs": logs,
         }
 
-    # 确定计数器增量（只在特定情况下增加）
-    # validation_errors 已在 validate_shader 中计数，这里不重复
-    # compile_error 来自 render，需要在这里计数
-    has_compile_error = state.get("compile_error")  # 来自 render 失败
-    has_inspect_feedback = state.get("inspect_result") and not state.get("passed", False)
-    
-    if has_compile_error:
-        # render 失败，增加编译重试计数
-        compile_retry_count += 1
-    elif has_inspect_feedback:
-        # inspect 未通过，增加迭代计数
-        iteration += 1
-
     # Emit phase start
-    phase_msg = f"Generating shader (iteration {iteration + 1})..."
-    if state.get("validation_errors") or has_compile_error:
-        phase_msg = f"Fixing shader errors (retry {compile_retry_count})..."
+    if has_compile_error:
+        phase_msg = f"Fixing shader errors (iteration {iteration + 1})..."
+    else:
+        phase_msg = f"Generating shader (iteration {iteration + 1})..."
     logs = _add_phase_log(state, "generate", "started", phase_msg)
 
     description = state.get("visual_description", {})
@@ -334,7 +314,28 @@ async def node_generate(state: PipelineState) -> dict:
     
     if state.get("validation_errors"):
         val_errors = state["validation_errors"]
-        feedback_parts.append(f"[验证错误 - 请自行修正]\nShader 验证失败：{val_errors}\n请根据错误提示修正代码。")
+        # 增强 banned declaration 的修复指导
+        if "BANNED" in val_errors:
+            feedback_parts.append(f"""[验证错误 - 必须修正]
+Shader 验证失败：{val_errors}
+
+⚠️ 你声明了 Shadertoy 内置变量，这些变量由运行时自动注入，**禁止手动声明**。
+
+Shadertoy 标准内置变量：
+- iTime (float) - 全局时间
+- iResolution (vec3) - 视窗分辨率
+- iMouse (vec4) - 鼠标状态
+- iFrame (int) - 当前帧号
+
+修正方法：
+1. 删除代码中的所有 uniform 声明行
+2. 直接在 mainImage 中使用变量名（如 iTime, iResolution.xy）
+
+正确示例：
+  vec2 uv = fragCoord / iResolution.xy;  // 直接使用
+  float t = fract(iTime / 2.0);          // 直接使用""")
+        else:
+            feedback_parts.append(f"[验证错误]\nShader 验证失败：{val_errors}\n请检查 GLSL 语法并修正。")
     
     if feedback_parts:
         feedback = "\n\n".join(feedback_parts)
@@ -351,18 +352,43 @@ async def node_generate(state: PipelineState) -> dict:
             return_raw=True,  # 获取原始响应
         )
         
-        # 提取 shader 和 raw_response
-        shader = result["shader"] if isinstance(result, dict) else result
+        # Safe handling of None result
+        if result is None:
+            logs = _add_phase_log(
+                {**state, "detailed_logs": logs},
+                "generate", "failed",
+                "Generate Agent returned None",
+                start_time=phase_start
+            )
+            return {
+                "current_shader": "",
+                "compile_error": "Generate Agent returned None",
+                "validation_errors": None,
+                "iteration": iteration,
+                "detailed_logs": logs,
+            }
+        
+        # 提取 shader 和 raw_response with safe defaults
+        shader = result.get("shader", "") if isinstance(result, dict) else (result if result else "")
         raw_response = result.get("raw_response", "") if isinstance(result, dict) else ""
+        
+        # Ensure shader is a string
+        if not isinstance(shader, str):
+            shader = str(shader) if shader else ""
+        
+        # Check if shader is empty
+        if not shader.strip():
+            print(f"[Pipeline] WARNING: Empty shader generated (iteration {iteration})")
         
         duration_ms = int((time.time() - phase_start) * 1000)
 
         # Emit completion with duration and raw response
+        shader_preview = shader[:200] + "..." if len(shader) > 200 else shader
         logs = _add_phase_log(
             {**state, "detailed_logs": logs},
             "generate", "completed",
             f"Generated shader: {len(shader)} characters",
-            f"Shader preview: {shader[:200]}..." if len(shader) > 200 else shader,
+            f"Shader preview: {shader_preview}",
             start_time=phase_start,
             agent_response=raw_response[:3000] if raw_response else None,  # 截取前 3000 字符
         )
@@ -380,7 +406,7 @@ async def node_generate(state: PipelineState) -> dict:
             "current_shader": shader,
             "compile_error": None,
             "validation_errors": None,
-            "compile_retry_count": compile_retry_count,  # 更新编译重试计数
+            "compile_retry_count": compile_error_count,  # 仅日志记录
             "iteration": iteration,  # 更新迭代计数
             "current_phase": "validate_shader",
             "phase_status": "running",
@@ -396,6 +422,7 @@ async def node_generate(state: PipelineState) -> dict:
             f"Shader generation failed: {str(e)}",
             start_time=phase_start
         )
+        # 异常也返回 generate 重试（计入 iteration）
         return {
             "current_shader": "",
             "compile_error": str(e),
@@ -406,15 +433,14 @@ async def node_generate(state: PipelineState) -> dict:
 
 
 async def node_render_and_screenshot(state: PipelineState) -> dict:
-    """在浏览器中渲染 shader 并截图"""
+    """在浏览器中渲染 shader 并截图。失败时返回 generate 由 Agent 闭环修正。"""
     iteration = state.get("iteration", 0)
-    compile_retry_count = state.get("compile_retry_count", 0)
-    retry_limit = get_runtime_config().compile_retry_limit
+    compile_error_count = state.get("compile_retry_count", 0)  # 仅用于日志
 
     # Record phase start time
     phase_start = time.time()
 
-    logs = _add_phase_log(state, "render", "started", f"Rendering shader frames (iteration {iteration})...")
+    logs = _add_phase_log(state, "render", "started", f"Rendering shader frames (iteration {iteration + 1})...")
 
     shader = state.get("current_shader", "")
     if not shader:
@@ -424,23 +450,15 @@ async def node_render_and_screenshot(state: PipelineState) -> dict:
             "No shader code to render",
             start_time=phase_start
         )
-        # 检查重试上限
-        if compile_retry_count >= retry_limit:
-            return {
-                "render_screenshots": [],
-                "compile_error": "No shader code to render",
-                "error": f"Compile retry limit ({retry_limit}) reached: no shader code",
-                "current_phase": "complete",
-                "phase_status": "failed",
-                "detailed_logs": logs,
-            }
+        # 返回 generate 让 Agent 修正（不终止）
         return {
             "render_screenshots": [],
             "compile_error": "No shader code to render",
-            "compile_retry_count": compile_retry_count + 1,
+            "compile_retry_count": compile_error_count + 1,  # 仅日志
             "current_phase": "generate",
             "phase_status": "running",
-            "phase_message": "Shader render failed, returning to generate...",
+            "phase_message": "No shader, Agent will regenerate...",
+            "phase_start_time": time.time(),
             "detailed_logs": logs,
         }
 
@@ -458,11 +476,11 @@ async def node_render_and_screenshot(state: PipelineState) -> dict:
             start_time=phase_start
         )
 
-        # 渲染成功 → 进入 inspect，重置编译重试计数
+        # 渲染成功 → 进入 inspect
         return {
             "render_screenshots": screenshots,
             "compile_error": None,
-            "compile_retry_count": 0,  # 成功渲染，重置计数
+            "compile_retry_count": 0,  # 成功，重置（仅日志）
             "current_phase": "inspect",
             "phase_status": "running",
             "phase_message": "Inspecting rendered output...",
@@ -476,23 +494,15 @@ async def node_render_and_screenshot(state: PipelineState) -> dict:
             "Render timeout (frontend not ready)",
             start_time=phase_start
         )
-        # 检查重试上限
-        if compile_retry_count >= retry_limit:
-            return {
-                "render_screenshots": [],
-                "compile_error": "Render timeout",
-                "error": f"Compile retry limit ({retry_limit}) reached: render timeout",
-                "current_phase": "complete",
-                "phase_status": "failed",
-                "detailed_logs": logs,
-            }
+        # 返回 generate 让 Agent 修正（不终止）
         return {
             "render_screenshots": [],
             "compile_error": "Render timeout - frontend not ready or shader too slow",
-            "compile_retry_count": compile_retry_count + 1,
+            "compile_retry_count": compile_error_count + 1,  # 仅日志
             "current_phase": "generate",
             "phase_status": "running",
-            "phase_message": "Render timeout, returning to generate...",
+            "phase_message": "Render timeout, Agent will fix shader performance...",
+            "phase_start_time": time.time(),
             "detailed_logs": logs,
         }
     except Exception as e:
@@ -502,23 +512,15 @@ async def node_render_and_screenshot(state: PipelineState) -> dict:
             f"Render error: {str(e)}",
             start_time=phase_start
         )
-        # 检查重试上限
-        if compile_retry_count >= retry_limit:
-            return {
-                "render_screenshots": [],
-                "compile_error": str(e),
-                "error": f"Compile retry limit ({retry_limit}) reached: {str(e)[:100]}",
-                "current_phase": "complete",
-                "phase_status": "failed",
-                "detailed_logs": logs,
-            }
+        # 返回 generate 让 Agent 修正（不终止）
         return {
             "render_screenshots": [],
             "compile_error": str(e),
-            "compile_retry_count": compile_retry_count + 1,
+            "compile_retry_count": compile_error_count + 1,  # 仅日志
             "current_phase": "generate",
             "phase_status": "running",
-            "phase_message": f"Shader compile/render failed: {str(e)[:50]}, returning to generate...",
+            "phase_message": f"Shader compile error, Agent will fix: {str(e)[:50]}...",
+            "phase_start_time": time.time(),
             "detailed_logs": logs,
         }
 
@@ -709,8 +711,9 @@ def route_from_validate(state: PipelineState) -> Literal["generate", "render", "
     if state.get("error"):
         return "end"
     
-    # 验证失败 → 返回 generate
-    if state.get("validation_errors"):
+    # 验证失败 → 返回 generate（包括空字符串的情况）
+    validation_errors = state.get("validation_errors")
+    if validation_errors is not None:  # 存在 validation_errors 字段（包括空字符串）
         return "generate"
     
     # 验证通过 → 进入 render

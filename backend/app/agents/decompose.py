@@ -63,8 +63,16 @@ class DecomposeAgent(BaseAgent):
             return_raw=True,  # 始终获取原始响应
         )
 
+        # Safe handling of None response
+        if response is None:
+            print("WARNING: Decompose LLM returned None response")
+            return {"effect_name": "error", "parse_error": "LLM returned None"}
+
         # 从响应中提取 JSON
-        content = response["content"] if isinstance(response, dict) else response
+        content = response.get("content", "") if isinstance(response, dict) else response
+        if content is None:
+            content = ""
+        
         description = self._parse_json(content)
         
         # 如果需要原始响应，添加到结果中

@@ -10,13 +10,11 @@ interface SettingsPanelProps {
 interface Settings {
   maxIterations: number;
   passingThreshold: number;
-  compileRetryLimit: number;
 }
 
 const DEFAULT_SETTINGS: Settings = {
-  maxIterations: 2,
+  maxIterations: 3,
   passingThreshold: 0.85,
-  compileRetryLimit: 2,
 };
 
 const API_BASE = 'http://localhost:8000';
@@ -41,12 +39,10 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
             setSettings({
               maxIterations: data.max_iterations,
               passingThreshold: data.passing_threshold,
-              compileRetryLimit: data.compile_retry_limit,
             });
             setSavedSettings({
               maxIterations: data.max_iterations,
               passingThreshold: data.passing_threshold,
-              compileRetryLimit: data.compile_retry_limit,
             });
           }
         } catch (e) {
@@ -69,7 +65,6 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
         body: JSON.stringify({
           max_iterations: settings.maxIterations,
           passing_threshold: settings.passingThreshold,
-          compile_retry_limit: settings.compileRetryLimit,
         }),
       });
       if (!res.ok) throw new Error(`Failed: ${res.statusText}`);
@@ -90,8 +85,7 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
   const handleClose = useCallback(() => {
     const hasChanges = 
       settings.maxIterations !== savedSettings.maxIterations ||
-      settings.passingThreshold !== savedSettings.passingThreshold ||
-      settings.compileRetryLimit !== savedSettings.compileRetryLimit;
+      settings.passingThreshold !== savedSettings.passingThreshold;
     
     if (hasChanges) {
       if (window.confirm('Discard unsaved changes?')) {
@@ -117,8 +111,7 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
 
   const hasChanges = 
     settings.maxIterations !== savedSettings.maxIterations ||
-    settings.passingThreshold !== savedSettings.passingThreshold ||
-    settings.compileRetryLimit !== savedSettings.compileRetryLimit;
+    settings.passingThreshold !== savedSettings.passingThreshold;
 
   return (
     <div 
@@ -241,43 +234,6 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                   </p>
                   <span className="text-sm font-bold text-emerald-400 font-mono">
                     {settings.passingThreshold.toFixed(2)}
-                  </span>
-                </div>
-              </div>
-
-              {/* Compile Retry Limit */}
-              <div className="group">
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-sm font-medium text-[var(--text-primary)]">
-                    Compile Retry Limit
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-[var(--text-muted)]">1</span>
-                    <div className="relative w-24 h-2 bg-[var(--bg-tertiary)] rounded-full overflow-hidden">
-                      <div 
-                        className="absolute left-0 top-0 h-full bg-gradient-to-r from-orange-500 
-                                  to-orange-400 rounded-full transition-all duration-150"
-                        style={{ width: `${((settings.compileRetryLimit - 1) / 4) * 100}%` }}
-                      />
-                      <input
-                        type="range"
-                        min={1}
-                        max={5}
-                        step={1}
-                        value={settings.compileRetryLimit}
-                        onChange={(e) => setSettings(s => ({ ...s, compileRetryLimit: parseInt(e.target.value) }))}
-                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                      />
-                    </div>
-                    <span className="text-xs text-[var(--text-muted)]">5</span>
-                  </div>
-                </div>
-                <div className="flex items-center justify-between">
-                  <p className="text-xs text-[var(--text-muted)]">
-                    Max attempts to fix shader compile errors
-                  </p>
-                  <span className="text-sm font-bold text-orange-400 font-mono">
-                    {settings.compileRetryLimit}
                   </span>
                 </div>
               </div>

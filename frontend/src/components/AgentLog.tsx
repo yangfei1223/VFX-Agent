@@ -410,7 +410,7 @@ export default function AgentLog({
                   <span className="text-sm font-medium text-[var(--text-primary)]">
                     {log.message}
                   </span>
-                  {log.duration_ms !== undefined && (
+                  {log.duration_ms !== undefined && log.duration_ms !== null && (
                     <span className="text-xs text-[var(--text-muted)] font-mono">
                       {log.duration_ms > 1000
                         ? `${(log.duration_ms / 1000).toFixed(1)}s`
