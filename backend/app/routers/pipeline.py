@@ -90,6 +90,7 @@ async def run_pipeline(
 
     # 构建初始状态
     initial_state: PipelineState = {
+        "pipeline_id": pipeline_id,  # Track pipeline ID in state
         "input_type": "text" if not video_path and not image_paths else ("video" if video_path else "image"),
         "video_path": video_path,
         "image_paths": image_paths,
@@ -104,6 +105,10 @@ async def run_pipeline(
         "validation_errors": None,
         "validation_warnings": None,
         "compile_retry_count": 0,  # Deprecated: only for logging
+        "human_feedback": None,
+        "human_modified_shader": None,
+        "human_iteration_mode": False,
+        "human_iteration_count": 0,
         "inspect_result": None,
         "passed": False,
         "render_screenshots": [],

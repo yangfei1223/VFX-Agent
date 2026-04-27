@@ -15,6 +15,9 @@ class PhaseLog(TypedDict, total=False):
 
 
 class PipelineState(TypedDict, total=False):
+    # Pipeline identification
+    pipeline_id: str                    # Pipeline UUID
+    
     # 输入
     input_type: str                     # "video" | "image"
     video_path: str | None              # 视频文件路径

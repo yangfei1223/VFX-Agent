@@ -16,6 +16,8 @@ export interface PhaseLog {
   details?: string;
   duration_ms?: number;
   agent_response?: string;  // Agent's raw response for displaying reasoning
+  human_iteration?: boolean;  // Whether this was a human-triggered iteration
+  human_feedback?: string;  // User feedback for human iterations
 }
 
 export interface PipelineResult {
@@ -58,6 +60,7 @@ interface UsePipelineReturn {
   phaseMessage: string | null;
   startPipeline: (formData: FormData) => Promise<void>;
   clearPipeline: () => void;
+  humanIterate: (pipelineId: string, feedback: string, modifiedShader: string | null) => Promise<void>;
 }
 
 export function usePipeline(): UsePipelineReturn {
@@ -283,6 +286,55 @@ export function usePipeline(): UsePipelineReturn {
     };
   }, []);
 
+  // Trigger human iteration
+  const humanIterate = useCallback(async (
+    pipelineId: string,
+    feedback: string,
+    modifiedShader: string | null
+  ): Promise<void> => {
+    setLoading(true);
+    addLog({
+      phase: 'system',
+      message: 'Starting human iteration...',
+      details: `Feedback: ${feedback.substring(0, 50)}...`
+    });
+
+    try {
+      const formData = new FormData();
+      formData.append('feedback', feedback);
+      if (modifiedShader) {
+        formData.append('modified_shader', modifiedShader);
+      }
+
+      const res = await fetch(`http://localhost:8000/pipeline/${pipelineId}/human-iterate`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!res.ok) {
+        throw new Error(`Human iterate failed: ${res.status}`);
+      }
+
+      const data = await res.json();
+      addLog({
+        phase: 'system',
+        message: 'Human iteration triggered',
+        details: `Iteration count: ${data.human_iteration_count}`
+      });
+
+      // Polling will continue from the existing poll loop
+    } catch (err) {
+      setLoading(false);
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      addLog({
+        phase: 'system',
+        message: 'Human iteration failed',
+        details: errorMessage
+      });
+      throw err;
+    }
+  }, [addLog, setLoading]);
+
   return {
     pipelineId,
     result,
@@ -292,6 +344,7 @@ export function usePipeline(): UsePipelineReturn {
     currentPhase,
     phaseMessage,
     startPipeline,
-    clearPipeline
+    clearPipeline,
+    humanIterate
   };
 }

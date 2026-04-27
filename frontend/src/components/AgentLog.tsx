@@ -16,7 +16,8 @@ import {
   Play,
   Clock,
   Maximize2,
-  Minimize2
+  Minimize2,
+  MessageSquare
 } from "lucide-react";
 import type { PipelineResult, PipelineIteration, PipelineLogEntry, PhaseLog } from "../hooks/usePipeline";
 
@@ -43,6 +44,8 @@ interface LogEntry {
   status?: 'started' | 'running' | 'completed' | 'failed';
   duration_ms?: number;
   agent_response?: string;  // Agent's raw response for displaying reasoning
+  human_iteration?: boolean;  // Whether this was a human-triggered iteration
+  human_feedback?: string;  // User feedback for human iterations
 }
 
 // Phase configuration for the timeline
@@ -126,6 +129,8 @@ export default function AgentLog({
         status: log.status,
         duration_ms: log.duration_ms,
         agent_response: (log as unknown as { agent_response?: string }).agent_response,
+        human_iteration: (log as unknown as { human_iteration?: boolean }).human_iteration,
+        human_feedback: (log as unknown as { human_feedback?: string }).human_feedback,
       }));
       setLogs(convertedLogs);
     }
@@ -435,8 +440,8 @@ export default function AgentLog({
                     {log.timestamp.toLocaleTimeString()}
                   </p>
                   {log.iteration !== undefined && (
-                    <span className="text-xs text-[var(--accent-primary)]">
-                      Iteration {log.iteration + 1}
+                    <span className={`text-xs ${log.human_iteration ? 'bg-orange-500/20 text-orange-400' : 'text-[var(--accent-primary)]'} px-1.5 py-0.5 rounded`}>
+                      {log.human_iteration ? `人工迭代 ${log.iteration + 1}` : `Iteration ${log.iteration + 1}`}
                     </span>
                   )}
                 </div>
@@ -470,6 +475,19 @@ export default function AgentLog({
                       <pre className="whitespace-pre-wrap break-words">
                         {log.agent_response}
                       </pre>
+                    </div>
+                  </div>
+                )}
+
+                {/* User Feedback (for human iterations) */}
+                {log.human_feedback && expandedLog === log.id && (
+                  <div className="mt-2">
+                    <div className="flex items-center gap-1.5 text-xs text-orange-400 mb-1">
+                      <MessageSquare className="w-3 h-3" />
+                      <span className="font-medium">用户指令</span>
+                    </div>
+                    <div className="text-xs text-[var(--text-secondary)] bg-orange-500/10 rounded p-2">
+                      {log.human_feedback}
                     </div>
                   </div>
                 )}

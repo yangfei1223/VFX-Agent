@@ -6,6 +6,7 @@ import ShaderEditor from "./components/ShaderEditor";
 import ParameterPanel from "./components/ParameterPanel";
 import ShaderPreview from "./components/ShaderPreview";
 import SettingsPanel from "./components/SettingsPanel";
+import FeedbackPanel from "./components/FeedbackPanel";
 import { usePipeline } from "./hooks/usePipeline";
 import {
   Terminal,
@@ -15,7 +16,7 @@ import {
 } from "lucide-react";
 
 function App() {
-  const { result, loading, logs, phaseLogs, currentPhase, phaseMessage, startPipeline } = usePipeline();
+  const { pipelineId, result, loading, logs, phaseLogs, currentPhase, phaseMessage, startPipeline, clearPipeline, humanIterate } = usePipeline();
   const [showSettings, setShowSettings] = useState(false);
   const [shaderCode, setShaderCode] = useState<string | null>(null);
   const [editedCode, setEditedCode] = useState<string | null>(null);
@@ -66,6 +67,31 @@ function App() {
   const handleSubmit = useCallback((formData: FormData) => {
     startPipeline(formData);
   }, [startPipeline]);
+
+  // Check if user modified shader
+  const getModifiedShader = useCallback(() => {
+    if (editedCode && shaderCode && editedCode !== shaderCode) {
+      return editedCode;
+    }
+    return null;
+  }, [editedCode, shaderCode]);
+
+  // Handle human iteration
+  const handleHumanIterate = useCallback(async (feedback: string, modifiedShader: string | null) => {
+    if (!pipelineId) return;
+    try {
+      await humanIterate(pipelineId, feedback, modifiedShader);
+    } catch (e) {
+      console.error('Human iteration failed:', e);
+    }
+  }, [pipelineId, humanIterate]);
+
+  // Handle end session
+  const handleEndSession = useCallback(() => {
+    clearPipeline();
+    setShaderCode(null);
+    setEditedCode(null);
+  }, [clearPipeline]);
 
   // Determine which code to use for preview
   const previewCode = editedCode || shaderCode;
@@ -167,12 +193,24 @@ function App() {
             </div>
           </div>
 
-          {/* Right Column: Shader Preview */}
-          <div className="col-span-4 h-full overflow-hidden">
-            <ShaderPreview
-              shaderCode={previewCode}
-              width={600}
-              height={600}
+          {/* Right Column: Shader Preview + Feedback */}
+          <div className="col-span-4 h-full overflow-hidden flex flex-col gap-4">
+            <div className="flex-1 min-h-0">
+              <ShaderPreview
+                shaderCode={previewCode}
+                width={600}
+                height={600}
+              />
+            </div>
+            
+            {/* Feedback Panel for human iteration */}
+            <FeedbackPanel
+              pipelineId={pipelineId}
+              status={result?.status || ''}
+              disabled={loading}
+              onHumanIterate={handleHumanIterate}
+              onEndSession={handleEndSession}
+              getModifiedShader={getModifiedShader}
             />
           </div>
 
