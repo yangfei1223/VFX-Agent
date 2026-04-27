@@ -172,23 +172,23 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                   </label>
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-[var(--text-muted)]">1</span>
-                    <div className="relative w-24 h-2 bg-[var(--bg-tertiary)] rounded-full overflow-hidden">
-                      <div 
-                        className="absolute left-0 top-0 h-full bg-gradient-to-r from-[var(--accent-primary)] 
-                                  to-[var(--accent-secondary)] rounded-full transition-all duration-150"
-                        style={{ width: `${((settings.maxIterations - 1) / 4) * 100}%` }}
-                      />
-                      <input
-                        type="range"
-                        min={1}
-                        max={5}
-                        step={1}
-                        value={settings.maxIterations}
-                        onChange={(e) => setSettings(s => ({ ...s, maxIterations: parseInt(e.target.value) }))}
-                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                      />
-                    </div>
-                    <span className="text-xs text-[var(--text-muted)]">5</span>
+<div className="relative w-24 h-2 bg-[var(--bg-tertiary)] rounded-full overflow-hidden">
+                       <div 
+                         className="absolute left-0 top-0 h-full bg-gradient-to-r from-[var(--accent-primary)] 
+                                   to-[var(--accent-secondary)] rounded-full transition-all duration-150"
+                         style={{ width: `${((settings.maxIterations - 1) / 99) * 100}%` }}
+                       />
+                       <input
+                         type="range"
+                         min={1}
+                         max={100}
+                         step={1}
+                         value={settings.maxIterations}
+                         onChange={(e) => setSettings(s => ({ ...s, maxIterations: parseInt(e.target.value) }))}
+                         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                       />
+                     </div>
+                     <span className="text-xs text-[var(--text-muted)]">100</span>
                   </div>
                 </div>
                 <div className="flex items-center justify-between">

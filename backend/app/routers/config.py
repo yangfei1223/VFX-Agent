@@ -8,7 +8,7 @@ router = APIRouter(prefix="/config", tags=["config"])
 
 class RuntimeConfig(BaseModel):
     """Runtime configuration settings"""
-    max_iterations: int = Field(default=3, ge=1, le=10, description="Maximum number of iteration cycles (includes both visual refinement and compile fixes)")
+    max_iterations: int = Field(default=3, ge=1, le=100, description="Maximum number of iteration cycles (includes both visual refinement and compile fixes)")
     passing_threshold: float = Field(default=0.85, ge=0.5, le=1.0, description="Minimum similarity score to pass inspection")
 
 
