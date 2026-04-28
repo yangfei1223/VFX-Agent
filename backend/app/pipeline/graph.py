@@ -448,6 +448,7 @@ Shadertoy 标准内置变量：
             "phase_start_time": time.time(),
             "detailed_logs": logs,
             "generate_history": updated_generate_history,
+            # 不清除 human_iteration_mode 和 human_feedback，保留供 inspect node 判断
         }
     except Exception as e:
         logs = _add_phase_log(
@@ -662,6 +663,9 @@ async def node_inspect(state: PipelineState) -> dict:
             "phase_message": f"Processing user directive: {human_fb_preview}",
             "phase_start_time": time.time(),
             "detailed_logs": logs,
+            "human_iteration_processed": True,  # 标记用户检视轮已处理
+            "human_iteration_mode": False,  # 清除用户检视模式（已处理）
+            "human_feedback": None,  # 清除用户反馈（已转为 feedback_commands）
         }
 
     design_imgs = state.get("design_screenshots", [])
@@ -926,8 +930,12 @@ def route_from_inspect(state: PipelineState) -> Literal["generate", "end"]:
     if inspect_result.get("parse_error") and not inspect_result.get("raw_response"):
         return "end"
     
-    # Text-only mode: end after first iteration
+    # Text-only mode: end after first iteration, UNLESS user triggered human iteration
     if state.get("input_type") == "text" and state.get("iteration", 0) >= 1:
+        # 用户检视轮：如果刚处理过用户检视（human_iteration_processed=True），继续迭代
+        # 如果 human_iteration_mode=True 但未处理，也继续迭代（正常用户检视流程）
+        if state.get("human_iteration_processed") or state.get("human_iteration_mode"):
+            return "generate"
         return "end"
     
     # 达到最大迭代次数

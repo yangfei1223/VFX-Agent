@@ -32,6 +32,7 @@ def _run_pipeline(pipeline_id: str, initial_state: PipelineState):
         
         # 使用 asyncio.run 在后台线程中执行
         async def _async_run():
+            nonlocal current_state  # 允许在闭包内修改外部变量
             # 设置 recursion_limit=200（每次迭代约4步，max_iterations=100可能需要400步）
             config = {"recursion_limit": 200}
             async for event in pipeline_app.astream(current_state, config=config, stream_mode="updates"):

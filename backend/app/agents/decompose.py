@@ -59,20 +59,10 @@ class DecomposeAgent(BaseAgent):
 
         user_prompt = "\n".join(parts)
 
-        # 如果有图片，编码为 base64 传入
-        images_base64 = []
-        if image_paths:
-            for img_path in image_paths[:6]:  # 最多 6 张关键帧
-                try:
-                    img_base64 = self._encode_image(img_path)
-                    images_base64.append(img_base64)
-                except Exception as e:
-                    print(f"WARNING: Failed to encode image {img_path}: {e}")
-
         response = self.chat(
             system_prompt=self.system_prompt,
             user_prompt=user_prompt,
-            images=images_base64,
+            image_paths=image_paths,  # 传递原始路径，BaseAgent 内部处理编码
             temperature=0.3,
             return_raw=True,
         )
