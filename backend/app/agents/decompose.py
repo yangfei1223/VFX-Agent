@@ -1,4 +1,8 @@
-"""Decompose Agent：将视频/图片解构为视效语义描述 JSON"""
+"""Decompose Agent：将视频/图片解构为视效语义描述 JSON
+
+此 Agent 不加载 effect-dev Skill（那是 Generate Agent 用的）。
+它只负责视觉分析，输出 DSL 描述。
+"""
 
 import json
 from pathlib import Path
@@ -6,17 +10,13 @@ from pathlib import Path
 from app.agents.base import BaseAgent
 from app.config import settings
 from app.services.video_extractor import extract_keyframes
-from app.services.skill_loader import SkillLoader
 
 
 class DecomposeAgent(BaseAgent):
     def __init__(self):
         super().__init__(model_config=settings.decompose)
-        # 加载基础 system prompt
-        base_prompt = Path("app/prompts/decompose_system.md").read_text()
-        # 注入 Skill 知识库 context
-        skill_context = SkillLoader.build_decompose_context()
-        self.system_prompt = base_prompt + "\n\n" + skill_context
+        # System prompt 只包含角色定义和 DSL 输出格式
+        self.system_prompt = Path("app/prompts/decompose_system.md").read_text()
 
     def run(
         self,
@@ -30,12 +30,12 @@ class DecomposeAgent(BaseAgent):
 
         Args:
             image_paths: 关键帧图片路径列表
-            video_info: 视频元信息（时长、帧率等），可选
-            user_notes: 用户附加的结构化参数标注，可选
+            video_info: 视频元信息（时长、帧率等）
+            user_notes: 用户附加的结构化参数标注
             return_raw: 如果 True，返回包含原始响应的 dict
 
         Returns:
-            解构出的视效语义描述 dict（如果 return_raw=True，包含 raw_response）
+            解构出的视效语义描述 dict
         """
         parts = ["请分析以下视觉参考，解构出视效语义描述。"]
 
@@ -55,79 +55,73 @@ class DecomposeAgent(BaseAgent):
             parts.append("用户仅提供文本描述，没有图片参考。请根据用户描述直接生成视效语义描述。")
 
         if user_notes:
-            parts.append(f"用户附加参数标注：{user_notes}")
+            parts.append(f"\n用户附加标注：{user_notes}")
 
         user_prompt = "\n".join(parts)
+
+        # 如果有图片，编码为 base64 传入
+        images_base64 = []
+        if image_paths:
+            for img_path in image_paths[:6]:  # 最多 6 张关键帧
+                try:
+                    img_base64 = self._encode_image(img_path)
+                    images_base64.append(img_base64)
+                except Exception as e:
+                    print(f"WARNING: Failed to encode image {img_path}: {e}")
 
         response = self.chat(
             system_prompt=self.system_prompt,
             user_prompt=user_prompt,
-            image_paths=image_paths,
+            images=images_base64,
             temperature=0.3,
-            max_tokens=4096,
-            return_raw=True,  # 始终获取原始响应
+            return_raw=True,
         )
 
-        # Safe handling of None response
         if response is None:
-            print("WARNING: Decompose LLM returned None response")
-            return {"effect_name": "error", "parse_error": "LLM returned None"}
+            print("WARNING: LLM returned None response")
+            if return_raw:
+                return {"visual_description": {}, "raw_response": "", "usage": None}
+            return {}
 
-        # 从响应中提取 JSON
         content = response.get("content", "") if isinstance(response, dict) else response
         if content is None:
             content = ""
-        
-        description = self._parse_json(content)
-        
-        # 如果需要原始响应，添加到结果中
-        if return_raw and isinstance(response, dict):
-            description["_raw_response"] = content
-            description["_usage"] = response.get("usage")
-            
-        return description
 
-    @staticmethod
-    def _parse_json(text: str) -> dict:
-        """从 LLM 响应中提取 JSON，处理多种格式"""
+        visual_description = self._parse_json(content)
+
+        if return_raw and isinstance(response, dict):
+            return {
+                "visual_description": visual_description,
+                "raw_response": content,
+                "usage": response.get("usage"),
+            }
+
+        return visual_description
+
+    def _encode_image(self, path: str) -> str:
+        """将图片编码为 base64"""
+        import base64
+        with open(path, "rb") as f:
+            return base64.b64encode(f.read()).decode("utf-8")
+
+    def _parse_json(self, text: str) -> dict:
+        """从 LLM 响应中解析 JSON"""
         text = text.strip()
-        
-        # 1. 处理 markdown code block
-        if text.startswith("```"):
-            lines = text.split("\n")
-            # 去掉首尾的 ``` 行和可能的 language 标识
-            lines = [l for l in lines if not l.strip().startswith("```") and not l.strip().lower() in ("json", "")]
-            text = "\n".join(lines).strip()
-        
-        # 2. 提取 JSON 对象（查找第一个 { 到最后一个 }）
-        start_idx = text.find("{")
-        end_idx = text.rfind("}")
-        if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
-            text = text[start_idx:end_idx + 1]
-        
-        # 3. 尝试解析
+
+        # 尝试提取 JSON block
+        if "```json" in text:
+            import re
+            match = re.search(r"```json\s*\n(.*?)```", text, re.DOTALL)
+            if match:
+                text = match.group(1).strip()
+        elif "```" in text:
+            import re
+            match = re.search(r"```(.*?)```", text, re.DOTALL)
+            if match:
+                text = match.group(1).strip()
+
         try:
             return json.loads(text)
-        except json.JSONDecodeError as e:
-            # 4. 尝试修复常见问题
-            import re
-            # 移除末尾的逗号
-            text = re.sub(r',\s*}', '}', text)
-            text = re.sub(r',\s*]', ']', text)
-            # 移除控制字符
-            text = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', text)
-            
-            try:
-                return json.loads(text)
-            except json.JSONDecodeError:
-                # 5. 最后尝试：返回一个包含原始文本的 fallback
-                return {
-                    "effect_name": "parse_failed",
-                    "overall_description": text,
-                    "shape": {"type": "full_screen", "description": "JSON 解析失败"},
-                    "color": {"palette": ["#333333"], "gradient_type": "none"},
-                    "animation": {"loop_duration_s": 2.0, "easing": "linear"},
-                    "interaction": {"responds_to_pointer": False, "interaction_type": "none"},
-                    "post_processing": {},
-                    "parse_error": str(e),
-                }
+        except json.JSONDecodeError:
+            print(f"WARNING: Failed to parse JSON: {text[:100]}")
+            return {}
