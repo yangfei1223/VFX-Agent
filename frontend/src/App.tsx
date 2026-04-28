@@ -195,23 +195,26 @@ function App() {
 
           {/* Right Column: Shader Preview + Feedback */}
           <div className="col-span-4 h-full overflow-hidden flex flex-col gap-4">
-            <div className="flex-1 min-h-0">
+            {/* Shader Preview - limited height */}
+            <div className="flex-1 min-h-0 max-h-[70%]">
               <ShaderPreview
                 shaderCode={previewCode}
-                width={600}
-                height={600}
+                width={512}
+                height={512}
               />
             </div>
             
-            {/* Feedback Panel for human iteration */}
-            <FeedbackPanel
-              pipelineId={pipelineId}
-              status={result?.status || ''}
-              disabled={loading}
-              onHumanIterate={handleHumanIterate}
-              onEndSession={handleEndSession}
-              getModifiedShader={getModifiedShader}
-            />
+            {/* Feedback Panel - fixed height at bottom */}
+            <div className="flex-shrink-0">
+              <FeedbackPanel
+                pipelineId={pipelineId}
+                status={result?.status || ''}
+                disabled={loading}
+                onHumanIterate={handleHumanIterate}
+                onEndSession={handleEndSession}
+                getModifiedShader={getModifiedShader}
+              />
+            </div>
           </div>
 
         </div>

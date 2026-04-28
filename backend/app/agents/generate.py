@@ -6,15 +6,17 @@ from pathlib import Path
 
 from app.agents.base import BaseAgent
 from app.config import settings
+from app.services.skill_loader import SkillLoader
 
 
 class GenerateAgent(BaseAgent):
     def __init__(self):
         super().__init__(model_config=settings.generate)
-        self.system_prompt = Path("app/prompts/generate_system.md").read_text()
-        # Skill 知识库通过 .claude/skills/effect-dev/ 的标准 Agent Skill 机制提供
-        # 运行此 Agent 的 AI 编码工具（如 OpenCode/Claude Code）会自动发现并按需加载 Skill
-        # 这里不需要自定义的 SkillLoader —— Skill 在 Agent 的 system prompt 层面生效
+        # 加载基础 system prompt
+        base_prompt = Path("app/prompts/generate_system.md").read_text()
+        # 注入 Skill 知识库 context
+        skill_context = SkillLoader.build_generate_context()
+        self.system_prompt = base_prompt + "\n\n" + skill_context
 
     def run(
         self,

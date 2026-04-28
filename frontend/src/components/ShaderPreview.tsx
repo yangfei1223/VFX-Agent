@@ -185,7 +185,7 @@ export default function ShaderPreview({
   return (
     <div className={`
       panel bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg overflow-hidden
-      flex flex-col transition-all duration-300
+      flex flex-col h-full transition-all duration-300
       ${isFullscreen ? 'fixed inset-4 z-50' : ''}
     `}>
       {/* Header */}
@@ -260,14 +260,14 @@ export default function ShaderPreview({
       </div>
 
       {/* Canvas Container */}
-      <div className="flex-1 flex items-center justify-center p-4 bg-black/50">
+      <div className="flex-1 min-h-0 flex items-center justify-center p-4 bg-black/50 overflow-hidden">
         <div
           ref={containerRef}
           style={{
-            width: isFullscreen ? '100%' : width,
-            height: isFullscreen ? '100%' : height,
-            maxWidth: '100%',
-            maxHeight: '100%'
+            width: isFullscreen ? '100%' : '100%',
+            height: isFullscreen ? '100%' : '100%',
+            maxWidth: width + 'px',
+            maxHeight: height + 'px'
           }}
           className="relative border border-[var(--border-color)] rounded-lg overflow-hidden bg-black
                    cursor-crosshair transition-all duration-200"

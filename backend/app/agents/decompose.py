@@ -6,12 +6,17 @@ from pathlib import Path
 from app.agents.base import BaseAgent
 from app.config import settings
 from app.services.video_extractor import extract_keyframes
+from app.services.skill_loader import SkillLoader
 
 
 class DecomposeAgent(BaseAgent):
     def __init__(self):
         super().__init__(model_config=settings.decompose)
-        self.system_prompt = Path("app/prompts/decompose_system.md").read_text()
+        # 加载基础 system prompt
+        base_prompt = Path("app/prompts/decompose_system.md").read_text()
+        # 注入 Skill 知识库 context
+        skill_context = SkillLoader.build_decompose_context()
+        self.system_prompt = base_prompt + "\n\n" + skill_context
 
     def run(
         self,
