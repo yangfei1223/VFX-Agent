@@ -48,6 +48,22 @@ def _add_phase_log(state: PipelineState, phase: str, status: str, message: str, 
 
 async def node_extract_keyframes(state: PipelineState) -> dict:
     """视频输入时，提取关键帧；纯文本输入时返回空列表"""
+    # Human iteration mode: skip keyframe extraction, jump to generate
+    if state.get("human_iteration_mode"):
+        phase_start = time.time()
+        logs = _add_phase_log(
+            state, "extract_keyframes", "completed",
+            "Human iteration: skipping keyframe extraction",
+            start_time=phase_start
+        )
+        return {
+            "current_phase": "decompose",
+            "phase_status": "running",
+            "phase_message": "Human iteration mode active...",
+            "phase_start_time": time.time(),
+            "detailed_logs": logs,
+        }
+    
     # Record phase start time
     phase_start = time.time()
     
@@ -117,6 +133,23 @@ async def node_extract_keyframes(state: PipelineState) -> dict:
 
 async def node_decompose(state: PipelineState) -> dict:
     """Decompose Agent：解构视效语义描述"""
+    # Human iteration mode: skip decompose, jump to generate with existing visual_description
+    if state.get("human_iteration_mode"):
+        phase_start = time.time()
+        logs = _add_phase_log(
+            state, "decompose", "completed",
+            "Human iteration: skipping decompose, using existing visual description",
+            start_time=phase_start
+        )
+        # Keep existing visual_description and design_screenshots
+        return {
+            "current_phase": "generate",
+            "phase_status": "running",
+            "phase_message": "Generating shader with human feedback...",
+            "phase_start_time": time.time(),
+            "detailed_logs": logs,
+        }
+    
     # Record phase start time
     phase_start = time.time()
     
@@ -527,20 +560,112 @@ async def node_render_and_screenshot(state: PipelineState) -> dict:
 
 
 async def node_inspect(state: PipelineState) -> dict:
-    """Inspect Agent：对比截图，输出评估"""
+    """Inspect Agent：对比截图，输出评估
+    
+    核心机制：
+    1. 评分对比：只有评分 >= 上一轮才接受更改
+    2. 用户检视轮：跳过 Agent 检视，直接处理用户指令
+    """
     iteration = state.get("iteration", 0)
+    human_iteration_mode = state.get("human_iteration_mode", False)
+    
+    # Debug logging for human iteration mode
+    human_fb = state.get('human_feedback')
+    human_fb_preview = human_fb[:30] + '...' if human_fb and len(human_fb) > 30 else (human_fb or 'N/A')
+    print(f"[Inspect Node] iteration={iteration}, human_iteration_mode={human_iteration_mode}, human_feedback={human_fb_preview}")
 
     # Record phase start time
     phase_start = time.time()
 
+    # 获取 Inspect Agent 自身的历史上下文
+    inspect_history = state.get("inspect_history", [])
+    
+    # 获取上一轮评分（用于评分对比）
+    last_score = 0
+    if inspect_history:
+        last_entry = inspect_history[-1]
+        last_score = last_entry.get("score", 0)
+        # 如果上一轮也是用户检视，可能没有评分，使用更早的评分
+        if last_score == 0 and len(inspect_history) > 1:
+            for entry in reversed(inspect_history[:-1]):
+                if entry.get("score", 0) > 0:
+                    last_score = entry.get("score", 0)
+                    break
+
     # Emit phase start
     logs = _add_phase_log(state, "inspect", "started", f"Inspecting rendered output (iteration {iteration})...")
 
+    # === 用户检视轮：跳过 Agent 检视，直接处理用户指令 ===
+    if human_iteration_mode and human_fb:
+        logs = _add_phase_log(
+            {**state, "detailed_logs": logs},
+            "inspect", "completed",
+            f"User inspection mode: skipping Agent evaluation",
+            f"User directive: {human_fb_preview}",
+            start_time=phase_start
+        )
+        
+        # 将用户反馈转为结构化 feedback_commands
+        user_feedback_commands = [
+            {
+                "target": "user_directive",
+                "action": "apply",
+                "value": human_fb,
+                "reason": "用户直接指令，优先级最高"
+            }
+        ]
+        
+        result = {
+            "passed": False,  # 用户检视轮不自动通过，需要 Generate Agent 处理
+            "overall_score": None,  # 用户检视轮无评分
+            "feedback_commands": user_feedback_commands,
+            "feedback_summary": f"用户指令：{human_fb}",
+            "dimensions": {
+                "shape": {"score": None, "notes": "用户检视轮"},
+                "color": {"score": None, "notes": "用户检视轮"},
+                "animation": {"score": None, "notes": "用户检视轮"},
+                "performance": {"score": None, "notes": "用户检视轮"},
+            },
+            "human_iteration": True,
+        }
+        
+        # 记录 Inspect Agent 历史（用户检视轮）
+        new_inspect_entry = {
+            "iteration": iteration,
+            "score": None,
+            "passed": False,
+            "feedback": human_fb,
+            "feedback_commands": user_feedback_commands,
+            "issues_summary": None,
+            "human_iteration": True,
+            "human_feedback": human_fb,
+        }
+        updated_inspect_history = inspect_history + [new_inspect_entry]
+        
+        # 记录 pipeline 级别历史
+        history = state.get("history", [])
+        history.append({
+            "iteration": iteration,
+            "score": None,
+            "passed": False,
+            "feedback": human_fb,
+            "human_iteration": True,
+        })
+        
+        return {
+            "inspect_result": result,
+            "passed": False,  # 继续迭代让 Generate Agent 处理用户指令
+            "history": history,
+            "inspect_history": updated_inspect_history,
+            "current_phase": "generate",
+            "phase_status": "running",
+            "phase_message": f"Processing user directive: {human_fb_preview}",
+            "phase_start_time": time.time(),
+            "detailed_logs": logs,
+        }
+
     design_imgs = state.get("design_screenshots", [])
     render_imgs = state.get("render_screenshots", [])
-    
-    # 获取 Inspect Agent 自身的历史上下文
-    inspect_history = state.get("inspect_history", [])
 
     # Text-only mode: no design reference, auto-pass if shader generated
     if not design_imgs and state.get("current_shader"):
@@ -627,7 +752,33 @@ async def node_inspect(state: PipelineState) -> dict:
             human_feedback=state.get("human_feedback"),  # 用户人工反馈
         )
 
-        passed = result.get("passed", False) or result.get("overall_score", 0) >= get_runtime_config().passing_threshold
+        current_score = result.get("overall_score", 0)
+        passed = result.get("passed", False) or current_score >= get_runtime_config().passing_threshold
+        
+        # === 评分对比机制：只有评分更高才接受更改 ===
+        score_improved = True
+        if passed and last_score > 0:
+            if current_score < last_score:
+                # 评分降低，拒绝更改
+                passed = False
+                score_improved = False
+                # 添加回滚指令
+                if result.get("feedback_commands"):
+                    result["feedback_commands"].append({
+                        "target": "overall",
+                        "action": "rollback",
+                        "value": "previous_version",
+                        "reason": f"评分降低（{current_score:.2f} < {last_score:.2f}），建议回滚到上一版本或调整参数"
+                    })
+                else:
+                    result["feedback_commands"] = [{
+                        "target": "overall",
+                        "action": "rollback",
+                        "value": "previous_version",
+                        "reason": f"评分降低（{current_score:.2f} < {last_score:.2f}），建议回滚到上一版本"
+                    }]
+                
+                print(f"[Inspect Node] Score regression: {current_score:.2f} < {last_score:.2f}, rejecting changes")
         
         # 提取 issues summary（如果有 dimensions）
         issues_summary = None
@@ -658,14 +809,27 @@ async def node_inspect(state: PipelineState) -> dict:
             "human_iteration": state.get("human_iteration_mode", False),
             "human_feedback": state.get("human_feedback"),
         }
+        
+        print(f"[Inspect Node] new_inspect_entry keys: {list(new_inspect_entry.keys())}")
+        print(f"[Inspect Node] human_iteration value: {new_inspect_entry.get('human_iteration')}")
+        print(f"[Inspect Node] human_feedback value: {new_inspect_entry.get('human_feedback')}")
+        
         updated_inspect_history = inspect_history + [new_inspect_entry]
+        
+        print(f"[Inspect Node] updated_inspect_history length: {len(updated_inspect_history)}")
+        if updated_inspect_history:
+            print(f"[Inspect Node] last entry keys: {list(updated_inspect_history[-1].keys())}")
 
         # Emit completion with duration
+        score_info = f"score {current_score:.2f}"
+        if last_score > 0:
+            score_info += f" (last: {last_score:.2f}, {'↑' if score_improved else '↓'})"
+        
         logs = _add_phase_log(
             {**state, "detailed_logs": logs},
             "inspect", "completed" if passed else "running",
-            f"Inspection complete: score {result.get('overall_score', 0):.2f}, {'PASSED' if passed else 'NEEDS IMPROVEMENT'}",
-            result.get("feedback", ""),
+            f"Inspection complete: {score_info}, {'PASSED' if passed else 'NEEDS IMPROVEMENT'}",
+            result.get("feedback_summary", result.get("feedback", "")),
             start_time=phase_start
         )
 
