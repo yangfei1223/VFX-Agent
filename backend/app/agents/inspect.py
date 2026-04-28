@@ -1,7 +1,11 @@
-"""Inspect Agent：对比渲染截图与设计参考，输出修正指令
+"""Inspect Agent：对比渲染截图与设计参考，输出视觉分析
 
-此 Agent 不加载 effect-dev Skill（那是 Generate Agent 用的）。
-它只负责质量评估和反馈生成。
+此 Agent 加载 visual-effect-critique skill：
+- VFX Terminology（专业术语词典）
+- Dimension Analysis（8 维度详细分析）
+- Critique Examples（好坏描述示例）
+
+这些知识库在 run() 方法中动态注入到 user prompt。
 """
 
 import json
@@ -9,12 +13,13 @@ from pathlib import Path
 
 from app.agents.base import BaseAgent
 from app.config import settings
+from app.services.skill_loader import SkillLoader
 
 
 class InspectAgent(BaseAgent):
     def __init__(self):
         super().__init__(model_config=settings.inspect)
-        # System prompt 只包含角色定义和评估标准
+        # System prompt 只包含角色定义
         self.system_prompt = Path("app/prompts/inspect_system.md").read_text()
 
     def run(
@@ -29,7 +34,12 @@ class InspectAgent(BaseAgent):
         return_raw: bool = False,
     ) -> dict:
         """
-        对比渲染结果与设计参考，输出评估和修正指令。
+        对比渲染结果与设计参考，输出视觉分析。
+
+        visual-effect-critique skill 知识库动态注入到 user prompt，包含：
+        - VFX Terminology（专业术语词典）
+        - Dimension Analysis（8 维度详细分析）
+        - Critique Examples（好坏描述示例）
 
         Args:
             design_images: 设计参考图片路径列表
@@ -42,9 +52,18 @@ class InspectAgent(BaseAgent):
             return_raw: 如果 True，返回包含原始响应的 dict
 
         Returns:
-            评估结果 dict（包含 passed, score, feedback_commands 等）
+            评估结果 dict（包含 passed, overall_score, visual_issues 等）
         """
-        parts = [f"请对比以下渲染结果与设计参考，进行第 {iteration + 1} 次评估。"]
+        parts = []
+
+        # 1. 动态注入 Skill 知识库 context (visual-effect-critique)
+        skill_context = SkillLoader.build_inspect_context()
+        parts.append("--- Skill 知识库参考 ---\n")
+        parts.append(skill_context)
+        parts.append("\n---\n\n")
+
+        # 2. 任务描述
+        parts.append(f"请对比以下渲染结果与设计参考，进行第 {iteration + 1} 次评估。")
 
         # 注入人工迭代模式提示
         if human_iteration_mode and human_feedback:

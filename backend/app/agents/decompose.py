@@ -1,7 +1,10 @@
 """Decompose Agent：将视频/图片解构为视效语义描述 JSON
 
-此 Agent 不加载 effect-dev Skill（那是 Generate Agent 用的）。
-它只负责视觉分析，输出 DSL 描述。
+此 Agent 加载 visual-effect-decomposition skill：
+- Operator Catalog（GLSL 算子库）
+- DSL Schema（完整 DSL 规范）
+
+这些知识库在 run() 方法中动态注入到 user prompt。
 """
 
 import json
@@ -9,13 +12,14 @@ from pathlib import Path
 
 from app.agents.base import BaseAgent
 from app.config import settings
+from app.services.skill_loader import SkillLoader
 from app.services.video_extractor import extract_keyframes
 
 
 class DecomposeAgent(BaseAgent):
     def __init__(self):
         super().__init__(model_config=settings.decompose)
-        # System prompt 只包含角色定义和 DSL 输出格式
+        # System prompt 只包含角色定义
         self.system_prompt = Path("app/prompts/decompose_system.md").read_text()
 
     def run(
@@ -28,6 +32,10 @@ class DecomposeAgent(BaseAgent):
         """
         分析输入的视觉参考，输出结构化视效语义描述。
 
+        visual-effect-decomposition skill 知识库动态注入到 user prompt，包含：
+        - Operator Catalog（GLSL 算子库）
+        - DSL Schema（完整 DSL 规范）
+
         Args:
             image_paths: 关键帧图片路径列表
             video_info: 视频元信息（时长、帧率等）
@@ -37,7 +45,16 @@ class DecomposeAgent(BaseAgent):
         Returns:
             解构出的视效语义描述 dict
         """
-        parts = ["请分析以下视觉参考，解构出视效语义描述。"]
+        parts = []
+
+        # 1. 动态注入 Skill 知识库 context (visual-effect-decomposition)
+        skill_context = SkillLoader.build_decompose_context()
+        parts.append("--- Skill 知识库参考 ---\n")
+        parts.append(skill_context)
+        parts.append("\n---\n\n")
+
+        # 2. 任务描述
+        parts.append("请分析以下视觉参考，解构出视效语义描述。")
 
         if video_info:
             parts.append(
