@@ -128,15 +128,15 @@ class GenerateAgent(BaseAgent):
         for entry in history:
             iteration = entry.get("iteration", 0)
             feedback_received = entry.get("feedback_received", "")
-            shader_preview = entry.get("shader_preview", "")
+            shader = entry.get("shader", "")
             duration_ms = entry.get("duration_ms", 0)
 
             lines.append(f"\n### 第 {iteration} 轮")
             if feedback_received:
-                fb_preview = feedback_received[:200] + "..." if len(feedback_received) > 200 else feedback_received
+                fb_preview = feedback_received[:300] + "..." if len(feedback_received) > 300 else feedback_received
                 lines.append(f"收到反馈：{fb_preview}")
-            if shader_preview:
-                lines.append(f"生成代码（前100字符）：{shader_preview[:100]}...")
+            if shader:
+                lines.append(f"生成的 shader：\n```glsl\n{shader}\n```")
             lines.append(f"耗时：{duration_ms}ms")
 
         return "\n".join(lines)

@@ -336,10 +336,26 @@ async def node_generate(state: PipelineState) -> dict:
     
     feedback_parts = []
     
+    # 视觉反馈：从 inspect_result 提取 visual_issues 和 visual_goals
     if state.get("inspect_result") and not state.get("passed", False):
-        inspect_feedback = state["inspect_result"].get("feedback", "")
-        if inspect_feedback:
-            feedback_parts.append(f"[视觉评估反馈]\n{inspect_feedback}")
+        inspect_result = state["inspect_result"]
+        
+        # 提取视觉问题描述
+        visual_issues = inspect_result.get("visual_issues", [])
+        visual_goals = inspect_result.get("visual_goals", [])
+        
+        if visual_issues:
+            issues_text = "\n".join([f"- {issue}" for issue in visual_issues])
+            feedback_parts.append(f"[视觉问题]\n{issues_text}")
+        
+        if visual_goals:
+            goals_text = "\n".join([f"- {goal}" for goal in visual_goals])
+            feedback_parts.append(f"[期望效果]\n{goals_text}")
+        
+        # 保留 feedback_summary 作为整体指导
+        feedback_summary = inspect_result.get("feedback_summary", "")
+        if feedback_summary:
+            feedback_parts.append(f"[整体方向]\n{feedback_summary}")
     
     if state.get("compile_error"):
         compile_error = state["compile_error"]
@@ -427,11 +443,11 @@ Shadertoy 标准内置变量：
             agent_response=raw_response[:3000] if raw_response else None,  # 截取前 3000 字符
         )
 
-        # 更新 Generate Agent 的历史上下文
+        # 更新 Generate Agent 的历史上下文（保留完整 shader）
         new_history_entry = {
             "iteration": iteration + 1,
             "feedback_received": feedback[:500] if feedback else None,
-            "shader_preview": shader[:200] if shader else None,
+            "shader": shader,  # 完整 shader，供后续迭代参考
             "duration_ms": duration_ms,
         }
         updated_generate_history = generate_history + [new_history_entry]
@@ -606,20 +622,15 @@ async def node_inspect(state: PipelineState) -> dict:
             start_time=phase_start
         )
         
-        # 将用户反馈转为结构化 feedback_commands
-        user_feedback_commands = [
-            {
-                "target": "user_directive",
-                "action": "apply",
-                "value": human_fb,
-                "reason": "用户直接指令，优先级最高"
-            }
-        ]
+        # 将用户反馈转为视觉问题描述（由 Generate Agent 决定如何修改）
+        visual_issues = [f"用户反馈：{human_fb}"]
+        visual_goals = ["根据用户指令调整视觉效果"]
         
         result = {
             "passed": False,  # 用户检视轮不自动通过，需要 Generate Agent 处理
             "overall_score": None,  # 用户检视轮无评分
-            "feedback_commands": user_feedback_commands,
+            "visual_issues": visual_issues,
+            "visual_goals": visual_goals,
             "feedback_summary": f"用户指令：{human_fb}",
             "dimensions": {
                 "shape": {"score": None, "notes": "用户检视轮"},
@@ -636,7 +647,8 @@ async def node_inspect(state: PipelineState) -> dict:
             "score": None,
             "passed": False,
             "feedback": human_fb,
-            "feedback_commands": user_feedback_commands,
+            "visual_issues": visual_issues,
+            "visual_goals": visual_goals,
             "issues_summary": None,
             "human_iteration": True,
             "human_feedback": human_fb,
@@ -766,21 +778,12 @@ async def node_inspect(state: PipelineState) -> dict:
                 # 评分降低，拒绝更改
                 passed = False
                 score_improved = False
-                # 添加回滚指令
-                if result.get("feedback_commands"):
-                    result["feedback_commands"].append({
-                        "target": "overall",
-                        "action": "rollback",
-                        "value": "previous_version",
-                        "reason": f"评分降低（{current_score:.2f} < {last_score:.2f}），建议回滚到上一版本或调整参数"
-                    })
+                # 添加回滚视觉问题描述
+                rollback_issue = f"本次修改导致效果变差（评分从 {last_score:.2f} 降至 {current_score:.2f}），建议回滚到上一版本或重新调整"
+                if result.get("visual_issues"):
+                    result["visual_issues"].append(rollback_issue)
                 else:
-                    result["feedback_commands"] = [{
-                        "target": "overall",
-                        "action": "rollback",
-                        "value": "previous_version",
-                        "reason": f"评分降低（{current_score:.2f} < {last_score:.2f}），建议回滚到上一版本"
-                    }]
+                    result["visual_issues"] = [rollback_issue]
                 
                 print(f"[Inspect Node] Score regression: {current_score:.2f} < {last_score:.2f}, rejecting changes")
         
