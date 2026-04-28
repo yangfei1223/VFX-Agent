@@ -60,24 +60,17 @@ class InspectAgent(BaseAgent):
 
         user_prompt = "\n".join(parts)
 
-        # 编码图片
-        images_base64 = []
+        # 收集图片路径（让 BaseAgent.chat() 处理编码）
+        all_image_paths = []
         for img_path in design_images[:3]:
-            try:
-                images_base64.append(self._encode_image(img_path))
-            except Exception as e:
-                print(f"WARNING: Failed to encode design image {img_path}: {e}")
-
+            all_image_paths.append(img_path)
         for img_path in render_screenshots[:3]:
-            try:
-                images_base64.append(self._encode_image(img_path))
-            except Exception as e:
-                print(f"WARNING: Failed to encode render image {img_path}: {e}")
+            all_image_paths.append(img_path)
 
         response = self.chat(
             system_prompt=self.system_prompt,
             user_prompt=user_prompt,
-            images=images_base64,
+            image_paths=all_image_paths,  # 传递路径列表
             temperature=0.2,
             return_raw=True,
         )
@@ -103,12 +96,6 @@ class InspectAgent(BaseAgent):
             return {**result, "raw_response": content, "usage": response.get("usage")}
 
         return result
-
-    def _encode_image(self, path: str) -> str:
-        """将图片编码为 base64"""
-        import base64
-        with open(path, "rb") as f:
-            return base64.b64encode(f.read()).decode("utf-8")
 
     def _parse_json(self, text: str) -> dict:
         """从 LLM 响应中解析 JSON"""

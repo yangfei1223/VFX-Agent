@@ -73,12 +73,20 @@ async def run_pipeline(
     background_tasks: BackgroundTasks,
     video: UploadFile | None = File(None),
     images: list[UploadFile] = File([]),
+    media: list[UploadFile] = File([]),  # 支持 media 参数名（兼容前端）
     notes: str = Form(""),
+    description: str = Form(""),  # 支持 description 参数名
 ):
     """触发 Pipeline 执行"""
     pipeline_id = str(uuid.uuid4())
     upload_dir = Path(f"/tmp/vfx_uploads/{pipeline_id}")
     upload_dir.mkdir(parents=True, exist_ok=True)
+
+    # 合并 media 和 images 参数
+    all_images = images + media
+    
+    # 合并 notes 和 description 参数
+    user_notes = notes or description
 
     # 保存上传文件
     video_path = None
@@ -89,7 +97,7 @@ async def run_pipeline(
         with open(video_path, "wb") as f:
             shutil.copyfileobj(video.file, f)
 
-    for img in images:
+    for img in all_images:
         img_path = str(upload_dir / img.filename)
         with open(img_path, "wb") as f:
             shutil.copyfileobj(img.file, f)
@@ -101,7 +109,7 @@ async def run_pipeline(
         "input_type": "text" if not video_path and not image_paths else ("video" if video_path else "image"),
         "video_path": video_path,
         "image_paths": image_paths,
-        "user_notes": notes,
+        "user_notes": user_notes,
         "video_info": None,
         "keyframe_paths": [],
         "visual_description": {},

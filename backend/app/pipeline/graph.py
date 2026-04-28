@@ -764,7 +764,7 @@ async def node_inspect(state: PipelineState) -> dict:
             render_screenshots=render_imgs,
             visual_description=state.get("visual_description"),
             iteration=iteration,
-            context_history=inspect_history,  # Agent 自己的历史
+            inspect_history=inspect_history,  # Agent 自己的历史
             human_feedback=state.get("human_feedback"),  # 用户人工反馈
         )
 
