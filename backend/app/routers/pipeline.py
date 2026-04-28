@@ -21,14 +21,20 @@ pipeline_results: dict[str, dict] = {}
 def _run_pipeline(pipeline_id: str, initial_state: PipelineState):
     """同步执行 pipeline（在后台线程中运行）"""
     try:
+        # 从 pipeline_results 获取最新状态（human-iterate 可能已更新）
+        current_state = pipeline_results.get(pipeline_id, initial_state)
+        
+        # Debug: 检查 human_iteration_mode 是否正确传入
         print(f"[Pipeline {pipeline_id}] Starting execution...")
+        print(f"[Pipeline {pipeline_id}] human_iteration_mode: {current_state.get('human_iteration_mode')}")
+        human_fb = current_state.get('human_feedback') or 'N/A'
+        print(f"[Pipeline {pipeline_id}] human_feedback: {human_fb[:50]}")
         
         # 使用 asyncio.run 在后台线程中执行
         async def _async_run():
-            current_state = initial_state
             # 设置 recursion_limit=200（每次迭代约4步，max_iterations=100可能需要400步）
             config = {"recursion_limit": 200}
-            async for event in pipeline_app.astream(initial_state, config=config, stream_mode="updates"):
+            async for event in pipeline_app.astream(current_state, config=config, stream_mode="updates"):
                 for node_name, node_output in event.items():
                     if node_output:
                         print(f"[Pipeline {pipeline_id}] Node {node_name} completed")
@@ -176,6 +182,12 @@ async def human_iterate(
     current_state["human_iteration_count"] = current_state.get("human_iteration_count", 0) + 1
     current_state["status"] = "running"
     current_state["phase_status"] = "running"
+    
+    print(f"[Human Iterate {pipeline_id}] State updated:")
+    print(f"  human_iteration_mode: {current_state.get('human_iteration_mode')}")
+    print(f"  human_iteration_count: {current_state.get('human_iteration_count')}")
+    print(f"  human_feedback: {(feedback or 'N/A')[:50]}...")
+    print(f"  modified_shader: {modified_shader[:50] if modified_shader else 'None'}...")
     
     # 3. 决定起始节点
     if modified_shader and modified_shader.strip():
