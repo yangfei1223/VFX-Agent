@@ -54,8 +54,8 @@ class PipelineState(TypedDict, total=False):
     history: list[dict]                 # Pipeline 级别的迭代历史记录
 
     # Agent 专属上下文历史（每个 Agent 保留自己的工作记录）
-    generate_history: list[dict]        # Generate Agent 历史：[{iteration, feedback_received, shader_preview, duration_ms}]
-    inspect_history: list[dict]         # Inspect Agent 历史：[{iteration, score, feedback, issues_summary}]
+    generate_history: list[dict]        # Generate Agent 历史：[{iteration, feedback_received, shader_preview, duration_ms, human_iteration, human_feedback}]
+    inspect_history: list[dict]         # Inspect Agent 历史：[{iteration, score, feedback, issues_summary, human_iteration, human_feedback}]
 
     # 用户人工干预相关
     human_feedback: str | None           # 用户自然语言检视命令
