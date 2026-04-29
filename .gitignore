@@ -1,0 +1,76 @@
+# Environment variables (SENSITIVE - NEVER COMMIT)
+.env
+*.env
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs and runtime files
+*.log
+*.pid
+backend.log
+frontend.log
+.backend.pid
+.frontend.pid
+
+# Debug output
+debug_output/
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build outputs
+frontend/dist/
+frontend/build/
+
+# Test coverage
+coverage/
+.coverage
+htmlcov/
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
