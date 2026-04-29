@@ -601,12 +601,14 @@ async def node_inspect(state: PipelineState) -> dict:
     last_score = 0
     if inspect_history:
         last_entry = inspect_history[-1]
-        last_score = last_entry.get("score", 0)
+        # 使用 or 0 处理 None 值（用户检视轮 score 为 None）
+        last_score = last_entry.get("score") or 0
         # 如果上一轮也是用户检视，可能没有评分，使用更早的评分
         if last_score == 0 and len(inspect_history) > 1:
             for entry in reversed(inspect_history[:-1]):
-                if entry.get("score", 0) > 0:
-                    last_score = entry.get("score", 0)
+                entry_score = entry.get("score") or 0
+                if entry_score > 0:
+                    last_score = entry_score
                     break
 
     # Emit phase start
