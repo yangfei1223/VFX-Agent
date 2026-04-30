@@ -6,11 +6,13 @@ Skill 知识库（effect-dev）在 run() 方法中动态注入到 user prompt，
 
 import json
 import re
+import time
 from pathlib import Path
 
 from app.agents.base import BaseAgent
 from app.config import settings
 from app.services.skill_loader import SkillLoader
+from app.services.session_logger import SessionLogger
 
 
 class GenerateAgent(BaseAgent):
@@ -27,6 +29,8 @@ class GenerateAgent(BaseAgent):
         feedback: str | None = None,
         context_history: list[dict] | None = None,
         human_feedback: str | None = None,
+        pipeline_id: str | None = None,
+        iteration: int = 0,
         return_raw: bool = False,
     ) -> str | dict:
         """
@@ -44,11 +48,14 @@ class GenerateAgent(BaseAgent):
             feedback: Inspect Agent 的修正指令（修正时传入）
             context_history: Generate Agent 自身的历史调用记录
             human_feedback: 用户人工反馈
+            pipeline_id: Pipeline ID（用于保存 session）
+            iteration: 当前迭代轮次（用于 session 文件命名）
             return_raw: 如果 True，返回包含原始响应的 dict
 
         Returns:
             完整的 Shadertoy 格式 GLSL 代码
         """
+        start_time = time.time()
         # 构建 user prompt
         user_parts = []
 
@@ -88,16 +95,36 @@ class GenerateAgent(BaseAgent):
 
         user_prompt = "\n".join(user_parts)
 
+        temperature = 0.2 if previous_shader else 0.5
         response = self.chat(
             system_prompt=self.system_prompt,
             user_prompt=user_prompt,
-            temperature=0.2 if previous_shader else 0.5,
+            temperature=temperature,
             max_tokens=16384,
             return_raw=True,
         )
 
+        duration_ms = int((time.time() - start_time) * 1000)
+
         if response is None:
             print("WARNING: LLM returned None response")
+            # 保存失败的 session
+            if pipeline_id:
+                SessionLogger.save_session(
+                    pipeline_id=pipeline_id,
+                    agent_name="generate",
+                    iteration=iteration,
+                    system_prompt=self.system_prompt,
+                    user_prompt=user_prompt,
+                    raw_response="",
+                    parsed_result={"error": "LLM returned None"},
+                    usage=None,
+                    temperature=temperature,
+                    max_tokens=16384,
+                    model=self.model_config.model,
+                    duration_ms=duration_ms,
+                    human_feedback=human_feedback,
+                )
             if return_raw:
                 return {"shader": "", "raw_response": "", "usage": None}
             return ""
@@ -111,6 +138,25 @@ class GenerateAgent(BaseAgent):
         if shader is None or shader.strip() == "":
             print(f"WARNING: Empty shader extracted from content (len={len(content)})")
             shader = ""
+
+        # 保存 session
+        if pipeline_id:
+            usage = response.get("usage") if isinstance(response, dict) else None
+            SessionLogger.save_session(
+                pipeline_id=pipeline_id,
+                agent_name="generate",
+                iteration=iteration,
+                system_prompt=self.system_prompt,
+                user_prompt=user_prompt,
+                raw_response=content,
+                parsed_result={"shader": shader[:500] + "..." if len(shader) > 500 else shader},
+                usage=usage,
+                temperature=temperature,
+                max_tokens=16384,
+                model=self.model_config.model,
+                duration_ms=duration_ms,
+                human_feedback=human_feedback,
+            )
 
         if return_raw and isinstance(response, dict):
             return {

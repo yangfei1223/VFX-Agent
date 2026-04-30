@@ -166,6 +166,8 @@ async def node_decompose(state: PipelineState) -> dict:
             image_paths=keyframes,
             video_info=video_info,
             user_notes=user_notes,
+            pipeline_id=state.get("pipeline_id"),  # 传入 pipeline_id 用于保存 session
+            iteration=0,  # Decompose 总是第一轮
             return_raw=True,
         )
 
@@ -399,6 +401,8 @@ Shadertoy 标准内置变量：
             feedback=feedback,
             context_history=generate_history,
             human_feedback=state.get("human_feedback"),  # 用户人工反馈
+            pipeline_id=state.get("pipeline_id"),  # 传入 pipeline_id 用于保存 session
+            iteration=iteration + 1,  # 当前迭代轮次（Generate 每次进入都算一轮）
             return_raw=True,  # 获取原始响应
         )
         
@@ -768,6 +772,9 @@ async def node_inspect(state: PipelineState) -> dict:
             iteration=iteration,
             inspect_history=inspect_history,  # Agent 自己的历史
             human_feedback=state.get("human_feedback"),  # 用户人工反馈
+            human_iteration_mode=state.get("human_iteration_mode", False),  # 人工迭代模式
+            pipeline_id=state.get("pipeline_id"),  # 传入 pipeline_id 用于保存 session
+            return_raw=True,
         )
 
         current_score = result.get("overall_score", 0)

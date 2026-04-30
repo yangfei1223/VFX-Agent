@@ -9,11 +9,13 @@
 """
 
 import json
+import time
 from pathlib import Path
 
 from app.agents.base import BaseAgent
 from app.config import settings
 from app.services.skill_loader import SkillLoader
+from app.services.session_logger import SessionLogger
 
 
 class InspectAgent(BaseAgent):
@@ -31,6 +33,7 @@ class InspectAgent(BaseAgent):
         inspect_history: list[dict] | None = None,
         human_feedback: str | None = None,
         human_iteration_mode: bool = False,
+        pipeline_id: str | None = None,
         return_raw: bool = False,
     ) -> dict:
         """
@@ -49,11 +52,13 @@ class InspectAgent(BaseAgent):
             inspect_history: Inspect Agent 自身的历史评估记录
             human_feedback: 用户人工反馈（人工迭代模式）
             human_iteration_mode: 是否为人工迭代模式
+            pipeline_id: Pipeline ID（用于保存 session）
             return_raw: 如果 True，返回包含原始响应的 dict
 
         Returns:
             评估结果 dict（包含 passed, overall_score, visual_issues 等）
         """
+        start_time = time.time()
         parts = []
 
         # 1. 动态注入 Skill 知识库 context (visual-effect-critique)
@@ -94,8 +99,27 @@ class InspectAgent(BaseAgent):
             return_raw=True,
         )
 
+        duration_ms = int((time.time() - start_time) * 1000)
+
         if response is None:
             print("WARNING: LLM returned None response")
+            # 保存失败的 session
+            if pipeline_id:
+                SessionLogger.save_session(
+                    pipeline_id=pipeline_id,
+                    agent_name="inspect",
+                    iteration=iteration,
+                    system_prompt=self.system_prompt,
+                    user_prompt=user_prompt,
+                    image_paths=all_image_paths,
+                    raw_response="",
+                    parsed_result={"error": "LLM returned None"},
+                    usage=None,
+                    temperature=0.2,
+                    model=self.model_config.model,
+                    duration_ms=duration_ms,
+                    human_feedback=human_feedback,
+                )
             default_result = self._default_result(iteration)
             if return_raw:
                 return {**default_result, "raw_response": "", "usage": None}
@@ -110,6 +134,25 @@ class InspectAgent(BaseAgent):
         result["human_iteration"] = human_iteration_mode
         if human_feedback:
             result["human_feedback"] = human_feedback
+
+        # 保存 session
+        if pipeline_id:
+            usage = response.get("usage") if isinstance(response, dict) else None
+            SessionLogger.save_session(
+                pipeline_id=pipeline_id,
+                agent_name="inspect",
+                iteration=iteration,
+                system_prompt=self.system_prompt,
+                user_prompt=user_prompt,
+                image_paths=all_image_paths,
+                raw_response=content,
+                parsed_result=result,
+                usage=usage,
+                temperature=0.2,
+                model=self.model_config.model,
+                duration_ms=duration_ms,
+                human_feedback=human_feedback,
+            )
 
         if return_raw and isinstance(response, dict):
             return {**result, "raw_response": content, "usage": response.get("usage")}

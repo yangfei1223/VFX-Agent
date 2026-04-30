@@ -8,11 +8,13 @@
 """
 
 import json
+import time
 from pathlib import Path
 
 from app.agents.base import BaseAgent
 from app.config import settings
 from app.services.skill_loader import SkillLoader
+from app.services.session_logger import SessionLogger
 from app.services.video_extractor import extract_keyframes
 
 
@@ -27,6 +29,8 @@ class DecomposeAgent(BaseAgent):
         image_paths: list[str],
         video_info: dict | None = None,
         user_notes: str = "",
+        pipeline_id: str | None = None,
+        iteration: int = 0,
         return_raw: bool = False,
     ) -> dict:
         """
@@ -40,11 +44,14 @@ class DecomposeAgent(BaseAgent):
             image_paths: 关键帧图片路径列表
             video_info: 视频元信息（时长、帧率等）
             user_notes: 用户附加的结构化参数标注
+            pipeline_id: Pipeline ID（用于保存 session）
+            iteration: 当前迭代轮次（用于 session 文件命名）
             return_raw: 如果 True，返回包含原始响应的 dict
 
         Returns:
             解构出的视效语义描述 dict
         """
+        start_time = time.time()
         parts = []
 
         # 1. 动态注入 Skill 知识库 context (visual-effect-decomposition)
@@ -84,8 +91,26 @@ class DecomposeAgent(BaseAgent):
             return_raw=True,
         )
 
+        duration_ms = int((time.time() - start_time) * 1000)
+
         if response is None:
             print("WARNING: LLM returned None response")
+            # 保存失败的 session
+            if pipeline_id:
+                SessionLogger.save_session(
+                    pipeline_id=pipeline_id,
+                    agent_name="decompose",
+                    iteration=iteration,
+                    system_prompt=self.system_prompt,
+                    user_prompt=user_prompt,
+                    image_paths=image_paths,
+                    raw_response="",
+                    parsed_result={"error": "LLM returned None"},
+                    usage=None,
+                    temperature=0.3,
+                    model=self.model_config.model,
+                    duration_ms=duration_ms,
+                )
             if return_raw:
                 return {"visual_description": {}, "raw_response": "", "usage": None}
             return {}
@@ -96,11 +121,29 @@ class DecomposeAgent(BaseAgent):
 
         visual_description = self._parse_json(content)
 
+        # 保存 session
+        if pipeline_id:
+            usage = response.get("usage") if isinstance(response, dict) else None
+            SessionLogger.save_session(
+                pipeline_id=pipeline_id,
+                agent_name="decompose",
+                iteration=iteration,
+                system_prompt=self.system_prompt,
+                user_prompt=user_prompt,
+                image_paths=image_paths,
+                raw_response=content,
+                parsed_result=visual_description,
+                usage=usage,
+                temperature=0.3,
+                model=self.model_config.model,
+                duration_ms=duration_ms,
+            )
+
         if return_raw and isinstance(response, dict):
             return {
                 "visual_description": visual_description,
-                "raw_response": content,
-                "usage": response.get("usage"),
+                "_raw_response": content,
+                "_usage": response.get("usage"),
             }
 
         return visual_description

@@ -74,3 +74,6 @@ htmlcov/
 *.tmp
 *.temp
 .cache/
+
+# Agent sessions (包含完整 prompt 和响应，可能敏感)
+backend/app/sessions/
