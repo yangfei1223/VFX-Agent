@@ -52,11 +52,16 @@ class GenerateAgent(BaseAgent):
 
         temperature = 0.2 if is_fix_mode else 0.5
         
+        # 从配置读取参数
+        config = state.get("config", {})
+        agent_config = config.get("generate_agent", {})
+        max_tokens = agent_config.get("max_tokens", 8192)
+        
         response = self.chat(
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             temperature=temperature,
-            max_tokens=2048,  # Reduced from 16384 for faster response
+            max_tokens=max_tokens,
             return_raw=True,
         )
 

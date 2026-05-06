@@ -17,6 +17,12 @@ app.include_router(pipeline.router)
 app.include_router(config.router)
 
 
+@app.on_event("startup")
+async def startup_event():
+    """Load config from file on startup"""
+    config.load_config_from_file()
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok"}

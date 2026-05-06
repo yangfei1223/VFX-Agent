@@ -81,6 +81,12 @@ class CheckpointRegion(TypedDict, total=False):
     best_render_screenshots: list[str]
 
 
+class AgentModelConfig(TypedDict, total=False):
+    """Agent 模型配置"""
+    temperature: float
+    max_tokens: int
+
+
 class PipelineConfig(TypedDict, total=False):
     """Pipeline Config Parameters (Adjustable)"""
     max_iterations: int
@@ -92,6 +98,9 @@ class PipelineConfig(TypedDict, total=False):
     render_timeout_ms: int
     screenshot_width: int
     screenshot_height: int
+    decompose_agent: AgentModelConfig
+    generate_agent: AgentModelConfig
+    inspect_agent: AgentModelConfig
 
 
 class PipelineState(TypedDict, total=False):
@@ -157,6 +166,9 @@ DEFAULT_CONFIG: PipelineConfig = {
     "render_timeout_ms": 2000,
     "screenshot_width": 1024,
     "screenshot_height": 1024,
+    "decompose_agent": {"temperature": 0.3, "max_tokens": 4096},
+    "generate_agent": {"temperature": 0.5, "max_tokens": 8192},
+    "inspect_agent": {"temperature": 0.3, "max_tokens": 4096},
 }
 
 

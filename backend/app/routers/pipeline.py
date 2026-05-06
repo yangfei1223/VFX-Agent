@@ -118,6 +118,9 @@ async def run_pipeline(
         "render_timeout_ms": runtime_config.render_timeout_ms,
         "screenshot_width": runtime_config.screenshot_width,
         "screenshot_height": runtime_config.screenshot_height,
+        "decompose_agent": runtime_config.decompose_agent.model_dump(),
+        "generate_agent": runtime_config.generate_agent.model_dump(),
+        "inspect_agent": runtime_config.inspect_agent.model_dump(),
     }
     
     input_type = "text" if not video_path and not image_paths else ("video" if video_path else "image")
