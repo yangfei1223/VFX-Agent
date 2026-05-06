@@ -103,42 +103,33 @@ async def run_pipeline(
             shutil.copyfileobj(img.file, f)
         image_paths.append(img_path)
 
-    # 构建初始状态
-    initial_state: PipelineState = {
-        "pipeline_id": pipeline_id,  # Track pipeline ID in state
-        "input_type": "text" if not video_path and not image_paths else ("video" if video_path else "image"),
-        "video_path": video_path,
-        "image_paths": image_paths,
-        "user_notes": user_notes,
-        "video_info": None,
-        "keyframe_paths": [],
-        "visual_description": {},
-        "iteration": 0,
-        "max_iterations": get_runtime_config().max_iterations,
-        "current_shader": "",
-        "compile_error": None,
-        "validation_errors": None,
-        "validation_warnings": None,
-        "compile_retry_count": 0,  # Deprecated: only for logging
-        "human_feedback": None,
-        "human_modified_shader": None,
-        "human_iteration_mode": False,
-        "human_iteration_count": 0,
-        "inspect_result": None,
-        "passed": False,
-        "render_screenshots": [],
-        "design_screenshots": [],
-        "status": "running",
-        "error": None,
-        "history": [],
-        "generate_history": [],
-        "inspect_history": [],
-        "current_phase": "extract_keyframes",
-        "phase_status": "running",
-        "phase_message": "Initializing pipeline...",
-        "phase_start_time": time.time(),
-        "detailed_logs": [],
+    # 构建初始状态（使用 V3.0 4-region state）
+    from app.pipeline.state import create_initial_state, PipelineConfig
+    
+    # 从 runtime_config 构造 config
+    runtime_config = get_runtime_config()
+    config: PipelineConfig = {
+        "max_iterations": runtime_config.max_iterations,
+        "passing_threshold": runtime_config.passing_threshold,
+        "re_decompose_threshold": runtime_config.re_decompose_threshold,
+        "gradient_window_size": runtime_config.gradient_window_size,
+        "stagnation_variance": runtime_config.stagnation_variance,
+        "stagnation_window": runtime_config.stagnation_window,
+        "render_timeout_ms": runtime_config.render_timeout_ms,
+        "screenshot_width": runtime_config.screenshot_width,
+        "screenshot_height": runtime_config.screenshot_height,
     }
+    
+    input_type = "text" if not video_path and not image_paths else ("video" if video_path else "image")
+    
+    initial_state = create_initial_state(
+        pipeline_id=pipeline_id,
+        input_type=input_type,
+        video_path=video_path,
+        image_paths=image_paths,
+        user_notes=user_notes,
+        config=config,
+    )
 
     # 立即写入初始状态，避免 "not_found"
     pipeline_results[pipeline_id] = {k: v for k, v in initial_state.items()}
