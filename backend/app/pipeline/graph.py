@@ -12,7 +12,6 @@
 - Agent 使用 legacy 接口过渡
 """
 
-import asyncio
 import time
 from typing import Literal
 
@@ -185,7 +184,7 @@ async def node_extract_keyframes(state: PipelineState) -> dict:
     }
 
 
-async def node_decompose(state: PipelineState) -> dict:
+def node_decompose(state: PipelineState) -> dict:
     """Decompose Agent: Analyze visual references and generate visual_description
     
     Reads from: baseline.keyframe_paths, baseline.video_info, baseline.user_notes
@@ -299,7 +298,7 @@ async def node_decompose(state: PipelineState) -> dict:
         }
 
 
-async def node_generate(state: PipelineState) -> dict:
+def node_generate(state: PipelineState) -> dict:
     """Generate Agent: Generate or fix GLSL shader
     
     Reads from: 
@@ -311,7 +310,7 @@ async def node_generate(state: PipelineState) -> dict:
     
     Gradient truncation: 禁止注入完整 shader 到 history
     """
-    print(f"[Generate Node] Starting...")
+    print(f"[node_generate] Called with state keys: {list(state.keys())[:5]}")
     
     baseline = state.get("baseline", {})
     snapshot = state.get("snapshot", {})
@@ -321,8 +320,6 @@ async def node_generate(state: PipelineState) -> dict:
     
     iteration = snapshot.get("iteration", 0)
     compile_error_count = state.get("compile_retry_count", 0)
-    
-    print(f"[Generate Node] iteration={iteration}, compile_retry_count={compile_error_count}")
     
     phase_start = time.time()
     
@@ -521,7 +518,7 @@ Shader 验证失败：{val_errors}
         }
 
 
-async def node_validate_shader(state: PipelineState) -> dict:
+def node_validate_shader(state: PipelineState) -> dict:
     """Shader validation: static check + syntax validation
     
     Reads from: snapshot.shader
@@ -609,7 +606,7 @@ async def node_validate_shader(state: PipelineState) -> dict:
     }
 
 
-async def node_render_and_screenshot(state: PipelineState) -> dict:
+def node_render_and_screenshot(state: PipelineState) -> dict:
     """Render shader in WebGL and capture screenshots
     
     Reads from: snapshot.shader
@@ -648,7 +645,8 @@ async def node_render_and_screenshot(state: PipelineState) -> dict:
         }
     
     try:
-        screenshots = await render_multiple_frames(
+        # render_multiple_frames 是同步函数，直接调用
+        screenshots = render_multiple_frames(
             shader_code=shader,
             times=[0.0, 0.5, 1.0, 1.5, 2.0],
         )
@@ -713,7 +711,7 @@ async def node_render_and_screenshot(state: PipelineState) -> dict:
         }
 
 
-async def node_inspect(state: PipelineState) -> dict:
+def node_inspect(state: PipelineState) -> dict:
     """Inspect Agent: Compare render screenshots with design reference
     
     Reads from:
