@@ -1,7 +1,9 @@
-"""Generate Agent：根据视效语义描述生成 Shadertoy 格式 GLSL 代码
+"""Generate Agent：根据自然语言视效描述生成 GLSL shader
 
-Skill 知识库（effect-dev）在 run() 方法中动态注入到 user prompt，
-而非硬编码到 system prompt。
+使用 ContextAssembler 组装专属上下文：
+- System Prompt + Skill Context + Visual Description + Current Shader + Feedback + Gradient Window
+
+禁止注入：原始图片、渲染截图
 """
 
 import json
@@ -11,93 +13,46 @@ from pathlib import Path
 
 from app.agents.base import BaseAgent
 from app.config import settings
-from app.services.skill_loader import SkillLoader
+from app.services.context_assembler import ContextAssembler, build_generate_prompt
 from app.services.session_logger import SessionLogger
+from app.pipeline.state import PipelineState
 
 
 class GenerateAgent(BaseAgent):
     def __init__(self):
         super().__init__(model_config=settings.generate)
-        # System prompt 只包含角色定义和输出格式
         self.system_prompt = Path("app/prompts/generate_system.md").read_text()
-        # Skill context 在 run() 中动态注入
 
     def run(
         self,
-        visual_description: dict,
-        previous_shader: str | None = None,
-        feedback: str | None = None,
-        context_history: list[dict] | None = None,
-        human_feedback: str | None = None,
-        pipeline_id: str | None = None,
-        iteration: int = 0,
+        state: PipelineState,
         return_raw: bool = False,
     ) -> str | dict:
         """
-        生成或修正 GLSL 着色器代码。
-
-        effect-dev Skill 知识库动态注入到 user prompt，包含：
-        - SDF Operators（算子定义）
-        - Shader Templates（效果模板）
-        - Aesthetics Rules（美学原则 + 性能预算）
-        - GLSL Constraints（安全约束）
+        根据视效语义描述生成或修正 GLSL 着色器代码。
 
         Args:
-            visual_description: Decompose Agent 输出的视效语义描述
-            previous_shader: 前一轮生成的 shader 代码（修正时传入）
-            feedback: Inspect Agent 的修正指令（修正时传入）
-            context_history: Generate Agent 自身的历史调用记录
-            human_feedback: 用户人工反馈
-            pipeline_id: Pipeline ID（用于保存 session）
-            iteration: 当前迭代轮次（用于 session 文件命名）
+            state: PipelineState（包含 snapshot + gradient_window + checkpoint）
             return_raw: 如果 True，返回包含原始响应的 dict
 
         Returns:
-            完整的 Shadertoy 格式 GLSL 代码
+            shader str（完整 GLSL 代码）
         """
         start_time = time.time()
-        # 构建 user prompt
-        user_parts = []
+        pipeline_id = state.get("pipeline_id", "")
+        snapshot = state.get("snapshot", {})
+        iteration = snapshot.get("iteration", 0)
 
-        # 1. 动态注入 Skill 知识库 context（effect-dev）
-        skill_context = SkillLoader.build_generate_context()
-        user_parts.append("--- Skill 知识库参考 ---\n")
-        user_parts.append(skill_context)
-        user_parts.append("\n---\n\n")
+        # 判断是否为修正模式
+        previous_shader = snapshot.get("shader", "")
+        is_fix_mode = previous_shader and iteration > 0
 
-        # 2. 任务描述
-        user_parts.append("请根据以下视效语义描述生成 GLSL 着色器代码：\n")
-        user_parts.append(f"```json\n{json.dumps(visual_description, indent=2, ensure_ascii=False)}\n```")
+        # 使用 ContextAssembler 组装上下文
+        system_prompt, user_prompt = build_generate_prompt(state)
 
-        # 3. 修正模式：注入上一轮代码和反馈
-        if previous_shader and feedback:
-            user_parts.extend([
-                "\n---\n以下是上一轮生成的着色器代码：",
-                f"```glsl\n{previous_shader}\n```",
-                f"\n---\n检视 Agent 的反馈：\n{feedback}",
-            ])
-
-        # 4. 注入历史上下文
-        if context_history and len(context_history) > 0:
-            history_summary = self._format_context_history(context_history)
-            user_parts.extend([
-                f"\n---\n你之前的历史工作记录：\n{history_summary}",
-                "\n请参考之前的工作，避免重复已尝试但无效的修改方向。",
-            ])
-
-        # 5. 注入用户人工反馈（优先级最高）
-        if human_feedback:
-            user_parts.append(f"\n---\n[用户检视指令]\n{human_feedback}\n请根据用户指令调整着色器效果。")
-
-        # 6. 修正指令
-        if previous_shader and feedback:
-            user_parts.append("\n请根据反馈修正着色器代码，保持整体结构不变，仅修改有问题的部分。")
-
-        user_prompt = "\n".join(user_parts)
-
-        temperature = 0.2 if previous_shader else 0.5
+        temperature = 0.2 if is_fix_mode else 0.5
         response = self.chat(
-            system_prompt=self.system_prompt,
+            system_prompt=system_prompt,
             user_prompt=user_prompt,
             temperature=temperature,
             max_tokens=16384,
@@ -114,7 +69,7 @@ class GenerateAgent(BaseAgent):
                     pipeline_id=pipeline_id,
                     agent_name="generate",
                     iteration=iteration,
-                    system_prompt=self.system_prompt,
+                    system_prompt=system_prompt,
                     user_prompt=user_prompt,
                     raw_response="",
                     parsed_result={"error": "LLM returned None"},
@@ -123,7 +78,6 @@ class GenerateAgent(BaseAgent):
                     max_tokens=16384,
                     model=self.model_config.model,
                     duration_ms=duration_ms,
-                    human_feedback=human_feedback,
                 )
             if return_raw:
                 return {"shader": "", "raw_response": "", "usage": None}
@@ -136,7 +90,7 @@ class GenerateAgent(BaseAgent):
         shader = self._extract_glsl(content)
 
         if shader is None or shader.strip() == "":
-            print(f"WARNING: Empty shader extracted from content (len={len(content)})")
+            print(f"WARNING: Empty shader extracted (len={len(content)})")
             shader = ""
 
         # 保存 session
@@ -146,7 +100,7 @@ class GenerateAgent(BaseAgent):
                 pipeline_id=pipeline_id,
                 agent_name="generate",
                 iteration=iteration,
-                system_prompt=self.system_prompt,
+                system_prompt=system_prompt,
                 user_prompt=user_prompt,
                 raw_response=content,
                 parsed_result={"shader": shader[:500] + "..." if len(shader) > 500 else shader},
@@ -155,7 +109,6 @@ class GenerateAgent(BaseAgent):
                 max_tokens=16384,
                 model=self.model_config.model,
                 duration_ms=duration_ms,
-                human_feedback=human_feedback,
             )
 
         if return_raw and isinstance(response, dict):
@@ -166,26 +119,6 @@ class GenerateAgent(BaseAgent):
             }
 
         return shader
-
-    @staticmethod
-    def _format_context_history(history: list[dict]) -> str:
-        """格式化 Generate Agent 的历史上下文"""
-        lines = []
-        for entry in history:
-            iteration = entry.get("iteration", 0)
-            feedback_received = entry.get("feedback_received", "")
-            shader = entry.get("shader", "")
-            duration_ms = entry.get("duration_ms", 0)
-
-            lines.append(f"\n### 第 {iteration} 轮")
-            if feedback_received:
-                fb_preview = feedback_received[:300] + "..." if len(feedback_received) > 300 else feedback_received
-                lines.append(f"收到反馈：{fb_preview}")
-            if shader:
-                lines.append(f"生成的 shader：\n```glsl\n{shader}\n```")
-            lines.append(f"耗时：{duration_ms}ms")
-
-        return "\n".join(lines)
 
     @staticmethod
     def _extract_glsl(text: str) -> str:
@@ -211,3 +144,55 @@ class GenerateAgent(BaseAgent):
             text = text[:-3].strip()
 
         return text
+
+
+# === 向后兼容接口 ===
+
+def run_legacy(
+    visual_description: dict,
+    previous_shader: str | None = None,
+    feedback: str | None = None,
+    context_history: list[dict] | None = None,
+    human_feedback: str | None = None,
+    pipeline_id: str | None = None,
+    iteration: int = 0,
+    return_raw: bool = False,
+) -> str | dict:
+    """向后兼容接口"""
+    from app.pipeline.state import create_initial_state
+
+    # 创建临时 state
+    temp_state = create_initial_state(
+        pipeline_id=pipeline_id or "temp",
+        input_type="text",
+        image_paths=[],
+    )
+
+    temp_state["snapshot"]["visual_description"] = visual_description
+    temp_state["snapshot"]["shader"] = previous_shader or ""
+    temp_state["snapshot"]["iteration"] = iteration
+
+    # 构造 inspect_feedback（从 feedback）
+    if feedback:
+        temp_state["snapshot"]["inspect_feedback"] = {
+            "visual_issues": [feedback],
+            "visual_goals": [],
+            "overall_score": 0,
+        }
+
+    # 构造 gradient_window（从 context_history）
+    if context_history:
+        temp_state["gradient_window"] = [
+            {
+                "iteration": e.get("iteration", 0),
+                "score": 0,
+                "feedback_summary": e.get("feedback_received", "")[:100] if e.get("feedback_received") else "",
+            }
+            for e in context_history[-3:]
+        ]
+
+    if human_feedback:
+        temp_state["human_feedback"] = human_feedback
+
+    agent = GenerateAgent()
+    return agent.run(temp_state, return_raw=return_raw)

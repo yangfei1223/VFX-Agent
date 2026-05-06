@@ -1,11 +1,9 @@
-"""Inspect Agent：对比渲染截图与设计参考，输出视觉分析
+"""Inspect Agent：对比渲染截图与设计参考，输出语义反馈
 
-此 Agent 加载 visual-effect-critique skill：
-- VFX Terminology（专业术语词典）
-- Dimension Analysis（8 维度详细分析）
-- Critique Examples（好坏描述示例）
+使用 ContextAssembler 组装专属上下文：
+- System Prompt + Skill Context + UX Reference + Render Screenshots + Shader + Gradient Window
 
-这些知识库在 run() 方法中动态注入到 user prompt。
+输出格式：visual_issues/visual_goals（自然语言，非参数调整）
 """
 
 import json
@@ -14,87 +12,43 @@ from pathlib import Path
 
 from app.agents.base import BaseAgent
 from app.config import settings
-from app.services.skill_loader import SkillLoader
+from app.services.context_assembler import ContextAssembler, build_inspect_prompt
 from app.services.session_logger import SessionLogger
+from app.pipeline.state import PipelineState
 
 
 class InspectAgent(BaseAgent):
     def __init__(self):
         super().__init__(model_config=settings.inspect)
-        # System prompt 只包含角色定义
         self.system_prompt = Path("app/prompts/inspect_system.md").read_text()
 
     def run(
         self,
-        design_images: list[str],
-        render_screenshots: list[str],
-        visual_description: dict | None = None,
-        iteration: int = 0,
-        inspect_history: list[dict] | None = None,
-        human_feedback: str | None = None,
-        human_iteration_mode: bool = False,
-        pipeline_id: str | None = None,
+        state: PipelineState,
         return_raw: bool = False,
     ) -> dict:
         """
-        对比渲染结果与设计参考，输出视觉分析。
-
-        visual-effect-critique skill 知识库动态注入到 user prompt，包含：
-        - VFX Terminology（专业术语词典）
-        - Dimension Analysis（8 维度详细分析）
-        - Critique Examples（好坏描述示例）
+        对比渲染结果与设计参考，输出语义反馈。
 
         Args:
-            design_images: 设计参考图片路径列表
-            render_screenshots: 渲染截图路径列表
-            visual_description: 视效语义描述（用于参考）
-            iteration: 当前迭代次数
-            inspect_history: Inspect Agent 自身的历史评估记录
-            human_feedback: 用户人工反馈（人工迭代模式）
-            human_iteration_mode: 是否为人工迭代模式
-            pipeline_id: Pipeline ID（用于保存 session）
+            state: PipelineState（包含 baseline + snapshot + gradient_window）
             return_raw: 如果 True，返回包含原始响应的 dict
 
         Returns:
-            评估结果 dict（包含 passed, overall_score, visual_issues 等）
+            inspect_feedback dict（包含 visual_issues/visual_goals/dimension_scores 等）
         """
         start_time = time.time()
-        parts = []
+        pipeline_id = state.get("pipeline_id", "")
+        snapshot = state.get("snapshot", {})
+        iteration = snapshot.get("iteration", 0)
 
-        # 1. 动态注入 Skill 知识库 context (visual-effect-critique)
-        skill_context = SkillLoader.build_inspect_context()
-        parts.append("--- Skill 知识库参考 ---\n")
-        parts.append(skill_context)
-        parts.append("\n---\n\n")
-
-        # 2. 任务描述
-        parts.append(f"请对比以下渲染结果与设计参考，进行第 {iteration + 1} 次评估。")
-
-        # 注入人工迭代模式提示
-        if human_iteration_mode and human_feedback:
-            parts.append(f"\n---\n[人工迭代模式]\n用户反馈：{human_feedback}\n请根据用户反馈评估当前效果是否满足要求。")
-
-        # 注入历史评估记录
-        if inspect_history and len(inspect_history) > 0:
-            history_summary = self._format_inspect_history(inspect_history)
-            parts.append(f"\n---\n你之前的历史评估记录：\n{history_summary}")
-
-        if visual_description:
-            parts.append(f"\n---\n视效语义描述：\n```json\n{json.dumps(visual_description, indent=2, ensure_ascii=False)}\n```")
-
-        user_prompt = "\n".join(parts)
-
-        # 收集图片路径（让 BaseAgent.chat() 处理编码）
-        all_image_paths = []
-        for img_path in design_images[:3]:
-            all_image_paths.append(img_path)
-        for img_path in render_screenshots[:3]:
-            all_image_paths.append(img_path)
+        # 使用 ContextAssembler 组装上下文
+        system_prompt, user_prompt, image_paths = build_inspect_prompt(state)
 
         response = self.chat(
-            system_prompt=self.system_prompt,
+            system_prompt=system_prompt,
             user_prompt=user_prompt,
-            image_paths=all_image_paths,  # 传递路径列表
+            image_paths=image_paths,
             temperature=0.2,
             return_raw=True,
         )
@@ -109,16 +63,15 @@ class InspectAgent(BaseAgent):
                     pipeline_id=pipeline_id,
                     agent_name="inspect",
                     iteration=iteration,
-                    system_prompt=self.system_prompt,
+                    system_prompt=system_prompt,
                     user_prompt=user_prompt,
-                    image_paths=all_image_paths,
+                    image_paths=image_paths,
                     raw_response="",
                     parsed_result={"error": "LLM returned None"},
                     usage=None,
                     temperature=0.2,
                     model=self.model_config.model,
                     duration_ms=duration_ms,
-                    human_feedback=human_feedback,
                 )
             default_result = self._default_result(iteration)
             if return_raw:
@@ -131,9 +84,6 @@ class InspectAgent(BaseAgent):
 
         result = self._parse_json(content)
         result["iteration"] = iteration
-        result["human_iteration"] = human_iteration_mode
-        if human_feedback:
-            result["human_feedback"] = human_feedback
 
         # 保存 session
         if pipeline_id:
@@ -142,16 +92,15 @@ class InspectAgent(BaseAgent):
                 pipeline_id=pipeline_id,
                 agent_name="inspect",
                 iteration=iteration,
-                system_prompt=self.system_prompt,
+                system_prompt=system_prompt,
                 user_prompt=user_prompt,
-                image_paths=all_image_paths,
+                image_paths=image_paths,
                 raw_response=content,
                 parsed_result=result,
                 usage=usage,
                 temperature=0.2,
                 model=self.model_config.model,
                 duration_ms=duration_ms,
-                human_feedback=human_feedback,
             )
 
         if return_raw and isinstance(response, dict):
@@ -185,30 +134,57 @@ class InspectAgent(BaseAgent):
         return {
             "passed": False,
             "overall_score": 0.0,
-            "dimensions": {
-                "shape": {"score": 0.0, "notes": "评估失败"},
-                "color": {"score": 0.0, "notes": "评估失败"},
-                "animation": {"score": 0.0, "notes": "评估失败"},
-                "performance": {"score": 0.0, "notes": "评估失败"},
-            },
-            "feedback_commands": [],
-            "feedback_summary": "评估失败，请重试",
-            "critical_issues": [],
+            "visual_issues": ["评估失败"],
+            "visual_goals": [],
+            "correct_aspects": [],
+            "dimension_scores": {},
+            "previous_score_reference": None,
+            "re_decompose_trigger": False,
             "iteration": iteration,
         }
 
-    def _format_inspect_history(self, history: list[dict]) -> str:
-        """格式化 Inspect Agent 的历史评估记录"""
-        lines = []
-        for entry in history:
-            iteration = entry.get("iteration", 0)
-            score = entry.get("overall_score", 0)
-            passed = entry.get("passed", False)
-            feedback_preview = entry.get("feedback_summary", "")[:100]
 
-            lines.append(f"\n### 第 {iteration} 次评估")
-            lines.append(f"评分：{score:.2f}，通过：{passed}")
-            if feedback_preview:
-                lines.append(f"反馈摘要：{feedback_preview}...")
+# === 向后兼容接口 ===
 
-        return "\n".join(lines)
+def run_legacy(
+    design_images: list[str],
+    render_screenshots: list[str],
+    visual_description: dict | None = None,
+    iteration: int = 0,
+    inspect_history: list[dict] | None = None,
+    human_feedback: str | None = None,
+    human_iteration_mode: bool = False,
+    pipeline_id: str | None = None,
+    return_raw: bool = False,
+) -> dict:
+    """向后兼容接口"""
+    from app.pipeline.state import create_initial_state
+
+    # 创建临时 state
+    temp_state = create_initial_state(
+        pipeline_id=pipeline_id or "temp",
+        input_type="image",
+        image_paths=design_images,
+    )
+
+    temp_state["snapshot"]["visual_description"] = visual_description or {}
+    temp_state["snapshot"]["render_screenshots"] = render_screenshots
+    temp_state["snapshot"]["iteration"] = iteration
+
+    # 构造 gradient_window（从 inspect_history）
+    if inspect_history:
+        temp_state["gradient_window"] = [
+            {
+                "iteration": e.get("iteration", 0),
+                "score": e.get("overall_score", 0),
+                "feedback_summary": e.get("feedback_summary", "")[:100] if e.get("feedback_summary") else "",
+            }
+            for e in inspect_history[-3:]
+        ]
+
+    if human_iteration_mode:
+        temp_state["human_iteration_mode"] = True
+        temp_state["human_feedback"] = human_feedback
+
+    agent = InspectAgent()
+    return agent.run(temp_state, return_raw=return_raw)
