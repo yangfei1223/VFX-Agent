@@ -38,6 +38,8 @@ class GenerateAgent(BaseAgent):
         Returns:
             shader str（完整 GLSL 代码）
         """
+        print("[GenerateAgent] run() called")
+        
         start_time = time.time()
         pipeline_id = state.get("pipeline_id", "")
         snapshot = state.get("snapshot", {})
@@ -46,11 +48,15 @@ class GenerateAgent(BaseAgent):
         # 判断是否为修正模式
         previous_shader = snapshot.get("shader", "")
         is_fix_mode = previous_shader and iteration > 0
+        
+        print(f"[GenerateAgent] is_fix_mode={is_fix_mode}, iteration={iteration}")
 
         # 使用 ContextAssembler 组装上下文
         system_prompt, user_prompt = build_generate_prompt(state)
 
         temperature = 0.2 if is_fix_mode else 0.5
+        print(f"[GenerateAgent] Calling chat() with temperature={temperature}")
+        
         response = self.chat(
             system_prompt=system_prompt,
             user_prompt=user_prompt,
@@ -58,6 +64,8 @@ class GenerateAgent(BaseAgent):
             max_tokens=16384,
             return_raw=True,
         )
+        
+        print(f"[GenerateAgent] chat() returned, processing response")
 
         duration_ms = int((time.time() - start_time) * 1000)
 

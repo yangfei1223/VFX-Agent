@@ -311,6 +311,8 @@ async def node_generate(state: PipelineState) -> dict:
     
     Gradient truncation: 禁止注入完整 shader 到 history
     """
+    print(f"[Generate Node] Starting...")
+    
     baseline = state.get("baseline", {})
     snapshot = state.get("snapshot", {})
     gradient_window = state.get("gradient_window", [])
@@ -319,6 +321,8 @@ async def node_generate(state: PipelineState) -> dict:
     
     iteration = snapshot.get("iteration", 0)
     compile_error_count = state.get("compile_retry_count", 0)
+    
+    print(f"[Generate Node] iteration={iteration}, compile_retry_count={compile_error_count}")
     
     phase_start = time.time()
     

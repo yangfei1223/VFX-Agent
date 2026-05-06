@@ -95,48 +95,55 @@ class PipelineConfig(TypedDict, total=False):
 
 
 class PipelineState(TypedDict, total=False):
-    """Pipeline State - V3.0 4-Region Architecture
+    """Pipeline State - V3.0 4-Region Architecture"""
     
-    === 1. Read-Only Baseline ===
+    # 1. Read-Only Baseline
     baseline: BaselineRegion
     
-    === 2. Current Snapshot ===
+    # 2. Current Snapshot
     snapshot: SnapshotRegion
     
-    === 3. Gradient Memory Window ===
+    # 3. Gradient Memory Window
     gradient_window: list[GradientEntry]
     
-    === 4. Checkpoint ===
+    # 4. Checkpoint
     checkpoint: CheckpointRegion
     
-    === Config ===
+    # Config
     config: PipelineConfig
     
-    === Pipeline Metadata ===
+    # Pipeline Metadata
     pipeline_id: str
     status: str
     error: str | None
     
-    === Phase tracking ===
+    # Phase tracking
     current_phase: str
     phase_status: str
     phase_message: str
     phase_start_time: float | None
     detailed_logs: list[PhaseLog]
     
-    === Human intervention ===
+    # Human intervention
     human_feedback: str | None
     human_iteration_mode: bool
     human_iteration_count: int
+    human_iteration_processed: bool
     
-    === Backward compatibility (migration phase) ===
+    # Backward compatibility (migration phase)
+    video_info: dict | None
+    keyframe_paths: list[str]
     design_screenshots: list[str]
+    current_shader: str
+    validation_errors: str | None
+    validation_warnings: str | None
+    compile_error: str | None
+    compile_retry_count: int
+    iteration: int
     passed: bool
     history: list[dict]
     generate_history: list[dict]
     inspect_history: list[dict]
-    """
-    pass
 
 
 # Default config
