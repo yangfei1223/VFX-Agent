@@ -6,6 +6,7 @@ import tempfile
 from pathlib import Path
 
 from playwright.async_api import async_playwright
+from playwright.sync_api import sync_playwright
 
 from app.config import settings
 
@@ -59,7 +60,7 @@ async def render_and_screenshot(
     return str(screenshot_path)
 
 
-async def render_multiple_frames(
+def render_multiple_frames(
     shader_code: str,
     times: list[float] | None = None,
     width: int | None = None,
@@ -80,29 +81,29 @@ async def render_multiple_frames(
     times = times or [0.0, 0.5, 1.0, 1.5, 2.0]
     screenshots = []
 
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        page = await browser.new_page(
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page(
             viewport={"width": width or settings.screenshot_width, "height": height or settings.screenshot_height}
         )
 
         shader_b64 = base64.urlsafe_b64encode(shader_code.encode()).decode()
-        await page.goto(f"{settings.frontend_url}?shader={shader_b64}", wait_until="networkidle")
-        await page.wait_for_timeout(500)
-        await page.wait_for_function(
+        page.goto(f"{settings.frontend_url}?shader={shader_b64}", wait_until="networkidle")
+        page.wait_for_timeout(500)
+        page.wait_for_function(
             "() => window.__shaderReady === true",
             timeout=settings.render_timeout_ms,
         )
 
         for t in times:
             # 通过 JS 设置渲染器时间并等待一帧
-            await page.evaluate(f"window.__setShaderTime({t})")
-            await page.wait_for_timeout(100)
+            page.evaluate(f"window.__setShaderTime({t})")
+            page.wait_for_timeout(100)
 
             path = Path(tempfile.mktemp(suffix=".png", prefix=f"vfx_t{t}_"))
-            await page.screenshot(path=str(path), type="png")
+            page.screenshot(path=str(path), type="png")
             screenshots.append(str(path))
 
-        await browser.close()
+        browser.close()
 
     return screenshots

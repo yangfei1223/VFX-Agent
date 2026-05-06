@@ -670,7 +670,7 @@ def node_render_and_screenshot(state: PipelineState) -> dict:
             "render_screenshots": screenshots,
         }
     
-    except asyncio.TimeoutError:
+    except TimeoutError:
         logs = _add_phase_log(
             {**state, "detailed_logs": logs},
             "render", "failed",
