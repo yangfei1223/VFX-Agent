@@ -1,4 +1,16 @@
-"""LangGraph 闭环编排：Decompose → Generate → Validate → Render → Inspect → (反馈循环)"""
+"""LangGraph Pipeline Orchestrator - V3.0 Four-Region Architecture
+
+重构要点：
+1. 所有节点使用四区字段 (baseline/snapshot/gradient_window/checkpoint)
+2. Agent 调用使用新接口 run(state)
+3. 物理回滚机制集成到 node_inspect
+4. Re-decompose 路由新增
+5. 梯度裁剪集成到 node_generate
+
+向后兼容层：
+- 保留旧字段双写（迁移期）
+- Agent 使用 legacy 接口过渡
+"""
 
 import asyncio
 import time
@@ -6,10 +18,20 @@ from typing import Literal
 
 from langgraph.graph import StateGraph, END
 
-from app.agents.decompose import DecomposeAgent
-from app.agents.generate import GenerateAgent
-from app.agents.inspect import InspectAgent
-from app.pipeline.state import PipelineState, PhaseLog
+from app.agents.decompose import run_legacy as decompose_run
+from app.agents.generate import run_legacy as generate_run
+from app.agents.inspect import run_legacy as inspect_run
+from app.pipeline.state import (
+    PipelineState,
+    PhaseLog,
+    create_initial_state,
+    update_gradient_window,
+    should_trigger_re_decompose,
+    detect_score_regression,
+    rollback_to_checkpoint,
+    update_checkpoint,
+    GradientEntry,
+)
 from app.services.browser_render import render_multiple_frames
 from app.services.shader_validator import validate_shader
 from app.services.video_extractor import extract_keyframes, get_video_info
@@ -17,23 +39,26 @@ from app.config import settings
 from app.routers.config import get_runtime_config
 
 
-# ---- 节点函数 ----
-
-decompose_agent = DecomposeAgent()
-generate_agent = GenerateAgent()
-inspect_agent = InspectAgent()
+# === Agent 实例（暂用 legacy 接口，后续迁移到新 Agent.run(state)） ===
 
 
-def _add_phase_log(state: PipelineState, phase: str, status: str, message: str, details: str | None = None, start_time: float | None = None, agent_response: str | None = None) -> list[PhaseLog]:
+def _add_phase_log(
+    state: PipelineState,
+    phase: str,
+    status: str,
+    message: str,
+    details: str | None = None,
+    start_time: float | None = None,
+    agent_response: str | None = None,
+) -> list[PhaseLog]:
     """Helper to add a phase log entry"""
     logs = state.get("detailed_logs", [])
     
-    # Calculate duration: use provided start_time or state's phase_start_time
     phase_start = start_time or state.get("phase_start_time")
     duration_ms = None
     if phase_start and status in ("completed", "failed"):
         duration_ms = int((time.time() - phase_start) * 1000)
-
+    
     new_log: PhaseLog = {
         "phase": phase,
         "timestamp": time.time(),
@@ -41,14 +66,23 @@ def _add_phase_log(state: PipelineState, phase: str, status: str, message: str, 
         "message": message,
         "details": details,
         "duration_ms": duration_ms,
-        "agent_response": agent_response,  # Agent's raw response for displaying reasoning
+        "agent_response": agent_response,
     }
     return logs + [new_log]
 
 
+# === 节点函数 ===
+
+
 async def node_extract_keyframes(state: PipelineState) -> dict:
-    """视频输入时，提取关键帧；纯文本输入时返回空列表"""
-    # Human iteration mode: skip keyframe extraction, jump to generate
+    """Extract keyframes from video or use uploaded images
+    
+    Writes to: baseline.keyframe_paths, baseline.video_info
+    """
+    baseline = state.get("baseline", {})
+    snapshot = state.get("snapshot", {})
+    
+    # Human iteration mode: skip extraction
     if state.get("human_iteration_mode"):
         phase_start = time.time()
         logs = _add_phase_log(
@@ -62,19 +96,22 @@ async def node_extract_keyframes(state: PipelineState) -> dict:
             "phase_message": "Human iteration mode active...",
             "phase_start_time": time.time(),
             "detailed_logs": logs,
+            # 向后兼容
+            "keyframe_paths": baseline.get("keyframe_paths", []),
+            "design_screenshots": state.get("design_screenshots", []),
         }
     
-    # Record phase start time
     phase_start = time.time()
-    
-    # Emit phase start
     logs = _add_phase_log(state, "extract_keyframes", "started", "Starting keyframe extraction...")
-
-    if state.get("input_type") == "video" and state.get("video_path"):
-        video_info = get_video_info(state["video_path"])
-        keyframe_paths = extract_keyframes(state["video_path"], max_frames=6)
-
-        # Emit completion with duration
+    
+    input_type = baseline.get("input_type", "text")
+    video_path = baseline.get("video_path")
+    image_paths = baseline.get("image_paths", [])
+    
+    if input_type == "video" and video_path:
+        video_info = get_video_info(video_path)
+        keyframe_paths = extract_keyframes(video_path, max_frames=6)
+        
         logs = _add_phase_log(
             {**state, "detailed_logs": logs},
             "extract_keyframes", "completed",
@@ -82,58 +119,87 @@ async def node_extract_keyframes(state: PipelineState) -> dict:
             f"Duration: {video_info.get('duration', 0):.1f}s, FPS: {video_info.get('fps', 0):.0f}",
             start_time=phase_start
         )
-
+        
+        # 更新 baseline
+        updated_baseline = {
+            **baseline,
+            "video_info": video_info,
+            "keyframe_paths": keyframe_paths,
+        }
+        
         return {
+            "baseline": updated_baseline,
+            "current_phase": "decompose",
+            "phase_status": "running",
+            "phase_message": "Analyzing visual content...",
+            "phase_start_time": time.time(),
+            "detailed_logs": logs,
+            # 向后兼容
             "video_info": video_info,
             "keyframe_paths": keyframe_paths,
             "design_screenshots": keyframe_paths,
-            "current_phase": "decompose",
-            "phase_status": "running",
-            "phase_message": "Analyzing visual content...",
-            "phase_start_time": time.time(),  # Set for NEXT phase
-            "detailed_logs": logs,
         }
-    elif state.get("image_paths"):
-        # Emit completion for image input with duration
+    
+    elif image_paths:
         logs = _add_phase_log(
             {**state, "detailed_logs": logs},
             "extract_keyframes", "completed",
-            f"Using {len(state['image_paths'])} uploaded images as references",
+            f"Using {len(image_paths)} uploaded images as references",
             start_time=phase_start
         )
-
+        
+        updated_baseline = {
+            **baseline,
+            "keyframe_paths": image_paths,
+        }
+        
         return {
-            "keyframe_paths": state["image_paths"],
-            "design_screenshots": state["image_paths"],
+            "baseline": updated_baseline,
             "current_phase": "decompose",
             "phase_status": "running",
             "phase_message": "Analyzing visual content...",
-            "phase_start_time": time.time(),  # Set for NEXT phase
+            "phase_start_time": time.time(),
             "detailed_logs": logs,
+            # 向后兼容
+            "keyframe_paths": image_paths,
+            "design_screenshots": image_paths,
         }
-
-    # 纯文本输入：返回空列表以避免 LangGraph "Must write to at least one of..." 错误
+    
+    # Text-only mode
     logs = _add_phase_log(
         {**state, "detailed_logs": logs},
         "extract_keyframes", "completed",
         "Text-only mode: no media extraction needed",
         start_time=phase_start
     )
-
+    
     return {
-        "keyframe_paths": [],
-        "design_screenshots": [],
         "current_phase": "decompose",
         "phase_status": "running",
         "phase_message": "Processing text description...",
-        "phase_start_time": time.time(),  # Set for NEXT phase
+        "phase_start_time": time.time(),
         "detailed_logs": logs,
+        # 向后兼容
+        "keyframe_paths": [],
+        "design_screenshots": [],
     }
 
 
 async def node_decompose(state: PipelineState) -> dict:
-    """Decompose Agent：解构视效语义描述"""
-    # Human iteration mode: skip decompose, jump to generate with existing visual_description
+    """Decompose Agent: Analyze visual references and generate visual_description
+    
+    Reads from: baseline.keyframe_paths, baseline.video_info, baseline.user_notes
+    Writes to: snapshot.visual_description, checkpoint.best_visual_description (首次)
+    
+    Modes:
+    - cold_start: First decomposition
+    - re_decompose: Triggered by Inspect Agent (注入 Failure Log)
+    """
+    baseline = state.get("baseline", {})
+    snapshot = state.get("snapshot", {})
+    checkpoint = state.get("checkpoint", {})
+    
+    # Human iteration mode: skip decompose
     if state.get("human_iteration_mode"):
         phase_start = time.time()
         logs = _add_phase_log(
@@ -141,59 +207,83 @@ async def node_decompose(state: PipelineState) -> dict:
             "Human iteration: skipping decompose, using existing visual description",
             start_time=phase_start
         )
-        # Keep existing visual_description and design_screenshots
         return {
             "current_phase": "generate",
             "phase_status": "running",
             "phase_message": "Generating shader with human feedback...",
             "phase_start_time": time.time(),
             "detailed_logs": logs,
+            # 向后兼容
+            "visual_description": snapshot.get("visual_description", {}),
         }
     
-    # Record phase start time
     phase_start = time.time()
-    
-    # Emit phase start
     logs = _add_phase_log(state, "decompose", "started", "Decomposing visual description...")
-
-    keyframes = state.get("keyframe_paths", [])
-    video_info = state.get("video_info")
-    user_notes = state.get("user_notes", "")
-
+    
+    keyframes = baseline.get("keyframe_paths", [])
+    video_info = baseline.get("video_info")
+    user_notes = baseline.get("user_notes", "")
+    iteration = snapshot.get("iteration", 0)
+    pipeline_id = state.get("pipeline_id", "")
+    
+    # 判断是否为 re_decompose 模式
+    mode = "cold_start"
+    if should_trigger_re_decompose(state) and iteration > 0:
+        mode = "re_decompose"
+        print(f"[Decompose Node] Re-decompose triggered at iteration {iteration}")
+    
     try:
-        # 获取原始响应以显示 reasoning
-        description = decompose_agent.run(
+        # 调用 legacy 接口（后续迁移到 Agent.run(state, mode)）
+        result = decompose_run(
             image_paths=keyframes,
             video_info=video_info,
             user_notes=user_notes,
-            pipeline_id=state.get("pipeline_id"),  # 传入 pipeline_id 用于保存 session
-            iteration=0,  # Decompose 总是第一轮
+            pipeline_id=pipeline_id,
+            iteration=iteration,
             return_raw=True,
         )
-
-        # 提取 raw_response 用于显示
-        raw_response = description.get("_raw_response", "")
-        usage = description.get("_usage", {})
-        effect_name = description.get("effect_name", "unknown")
-
-        # Emit completion with duration and raw response
+        
+        visual_description = result.get("visual_description", {})
+        raw_response = result.get("raw_response", "")
+        usage = result.get("usage")
+        
+        effect_name = visual_description.get("effect_name", "unknown")
+        
         logs = _add_phase_log(
             {**state, "detailed_logs": logs},
             "decompose", "completed",
             f"Generated visual description: {effect_name}",
-            f"Shape: {description.get('shape', {}).get('type', 'unknown')}, Colors: {len(description.get('color', {}).get('palette', []))} colors",
+            f"Shape: {visual_description.get('shape_definition', {}).get('description', '')[:50]}",
             start_time=phase_start,
-            agent_response=raw_response[:2000] if raw_response else None,  # 截取前 2000 字符
+            agent_response=raw_response[:2000] if raw_response else None,
         )
-
+        
+        # 更新 snapshot
+        updated_snapshot = {
+            **snapshot,
+            "visual_description": visual_description,
+        }
+        
+        # 首次 Decompose：更新 checkpoint
+        updated_checkpoint = checkpoint
+        if iteration == 0:
+            updated_checkpoint = {
+                **checkpoint,
+                "best_visual_description": visual_description,
+            }
+        
         return {
-            "visual_description": description,
+            "snapshot": updated_snapshot,
+            "checkpoint": updated_checkpoint,
             "current_phase": "generate",
             "phase_status": "running",
             "phase_message": "Generating GLSL shader code...",
             "phase_start_time": time.time(),
             "detailed_logs": logs,
+            # 向后兼容
+            "visual_description": visual_description,
         }
+    
     except Exception as e:
         logs = _add_phase_log(
             {**state, "detailed_logs": logs},
@@ -202,22 +292,249 @@ async def node_decompose(state: PipelineState) -> dict:
             start_time=phase_start
         )
         return {
-            "visual_description": {},
             "error": str(e),
             "detailed_logs": logs,
+            # 向后兼容
+            "visual_description": {},
+        }
+
+
+async def node_generate(state: PipelineState) -> dict:
+    """Generate Agent: Generate or fix GLSL shader
+    
+    Reads from: 
+      snapshot.visual_description, snapshot.shader, snapshot.inspect_feedback
+      gradient_window (裁剪后注入)
+      checkpoint.best_shader (回滚时使用)
+    
+    Writes to: snapshot.shader, gradient_window (新增 entry)
+    
+    Gradient truncation: 禁止注入完整 shader 到 history
+    """
+    baseline = state.get("baseline", {})
+    snapshot = state.get("snapshot", {})
+    gradient_window = state.get("gradient_window", [])
+    checkpoint = state.get("checkpoint", {})
+    config = state.get("config", {})
+    
+    iteration = snapshot.get("iteration", 0)
+    compile_error_count = state.get("compile_retry_count", 0)
+    
+    phase_start = time.time()
+    
+    # 统一计数：任何返回 generate 都增加 iteration
+    has_compile_error = state.get("compile_error") or state.get("validation_errors")
+    has_inspect_feedback = snapshot.get("inspect_feedback") and not state.get("passed", False)
+    
+    if has_compile_error or has_inspect_feedback:
+        iteration += 1
+    
+    # 检查 max_iterations
+    max_iterations = config.get("max_iterations", get_runtime_config().max_iterations)
+    if iteration >= max_iterations:
+        reason = "compile errors" if has_compile_error else "visual inspection"
+        logs = _add_phase_log(
+            state, "generate", "failed",
+            f"Max iterations ({max_iterations}) reached after {reason}",
+            start_time=phase_start
+        )
+        return {
+            "error": f"Max iterations ({max_iterations}) reached",
+            "current_phase": "complete",
+            "phase_status": "max_iterations",
+            "snapshot": {**snapshot, "iteration": iteration},
+            "detailed_logs": logs,
+            # 向后兼容
+            "iteration": iteration,
+        }
+    
+    # Emit phase start
+    phase_msg = f"Fixing shader errors (iteration {iteration + 1})..." if has_compile_error else f"Generating shader (iteration {iteration + 1})..."
+    logs = _add_phase_log(state, "generate", "started", phase_msg)
+    
+    # 构造 feedback
+    feedback_parts = []
+    
+    # 视觉反馈：从 inspect_feedback 提取 visual_issues 和 visual_goals
+    inspect_feedback = snapshot.get("inspect_feedback")
+    if inspect_feedback and not state.get("passed", False):
+        visual_issues = inspect_feedback.get("visual_issues", [])
+        visual_goals = inspect_feedback.get("visual_goals", [])
+        
+        if visual_issues:
+            issues_text = "\n".join([f"- {issue}" for issue in visual_issues])
+            feedback_parts.append(f"[视觉问题]\n{issues_text}")
+        
+        if visual_goals:
+            goals_text = "\n".join([f"- {goal}" for goal in visual_goals])
+            feedback_parts.append(f"[期望效果]\n{goals_text}")
+        
+        feedback_summary = inspect_feedback.get("feedback_summary", "")
+        if feedback_summary:
+            feedback_parts.append(f"[整体方向]\n{feedback_summary}")
+    
+    if state.get("compile_error"):
+        feedback_parts.append(f"[编译错误 - 请自行修正]\nShader 编译/渲染失败：{state['compile_error']}")
+    
+    if state.get("validation_errors"):
+        val_errors = state["validation_errors"]
+        if "BANNED" in val_errors:
+            feedback_parts.append(f"""[验证错误 - 必须修正]
+Shader 验证失败：{val_errors}
+
+⚠️ 你声明了 Shadertoy 内置变量，禁止手动声明。
+
+修正方法：
+1. 删除代码中的所有 uniform 声明行
+2. 直接在 mainImage 中使用变量名（如 iTime, iResolution.xy）""")
+        else:
+            feedback_parts.append(f"[验证错误]\nShader 验证失败：{val_errors}")
+    
+    feedback = "\n\n".join(feedback_parts) if feedback_parts else None
+    
+    # 物理回滚检测：如果评分劣化，恢复 best_shader
+    if detect_score_regression(state):
+        rollback_update = rollback_to_checkpoint(state)
+        if rollback_update:
+            snapshot = rollback_update.get("snapshot", snapshot)
+            print(f"[Generate Node] Rollback triggered: restored best shader from iteration {checkpoint.get('best_iteration', 0)}")
+    
+    # 获取 previous_shader
+    previous_shader = snapshot.get("shader", "")
+    
+    # 构造 generate_history（向后兼容）
+    generate_history = state.get("generate_history", [])
+    
+    try:
+        # 调用 legacy 接口
+        result = generate_run(
+            visual_description=snapshot.get("visual_description", {}),
+            previous_shader=previous_shader if iteration > 0 else None,
+            feedback=feedback,
+            context_history=generate_history,
+            human_feedback=state.get("human_feedback"),
+            pipeline_id=state.get("pipeline_id"),
+            iteration=iteration + 1,
+            return_raw=True,
+        )
+        
+        if result is None:
+            logs = _add_phase_log(
+                {**state, "detailed_logs": logs},
+                "generate", "failed",
+                "Generate Agent returned None",
+                start_time=phase_start
+            )
+            return {
+                "snapshot": {**snapshot, "shader": "", "compile_error": "Generate Agent returned None"},
+                "detailed_logs": logs,
+                # 向后兼容
+                "current_shader": "",
+                "iteration": iteration,
+            }
+        
+        shader = result.get("shader", "")
+        raw_response = result.get("raw_response", "")
+        
+        if not shader.strip():
+            print(f"[Pipeline] WARNING: Empty shader generated (iteration {iteration})")
+        
+        duration_ms = int((time.time() - phase_start) * 1000)
+        
+        logs = _add_phase_log(
+            {**state, "detailed_logs": logs},
+            "generate", "completed",
+            f"Generated shader: {len(shader)} characters",
+            f"Shader preview: {shader[:200]}...",
+            start_time=phase_start,
+            agent_response=raw_response[:3000] if raw_response else None,
+        )
+        
+        # 更新 snapshot
+        updated_snapshot = {
+            **snapshot,
+            "shader": shader,
+            "iteration": iteration,
+            "compile_error": None,
+            "validation_errors": None,
+        }
+        
+        # 更新 gradient_window（梯度裁剪：不存 shader）
+        new_gradient_entry: GradientEntry = {
+            "iteration": iteration,
+            "score": inspect_feedback.get("overall_score", 0) if inspect_feedback else 0,
+            "feedback_summary": feedback[:100] if feedback else "",
+            "shader_diff_summary": None,  # 可选：本轮修改摘要
+            "issues_fixed": None,
+            "issues_remaining": inspect_feedback.get("visual_issues") if inspect_feedback else None,
+            "duration_ms": duration_ms,
+            "human_iteration": state.get("human_iteration_mode", False),
+        }
+        
+        window_size = config.get("gradient_window_size", 3)
+        updated_gradient_window = update_gradient_window(
+            gradient_window, new_gradient_entry, window_size
+        )
+        
+        # 更新 generate_history（向后兼容）
+        new_history_entry = {
+            "iteration": iteration + 1,
+            "feedback_received": feedback[:500] if feedback else None,
+            "shader": shader,
+            "duration_ms": duration_ms,
+        }
+        updated_generate_history = generate_history + [new_history_entry]
+        
+        return {
+            "snapshot": updated_snapshot,
+            "gradient_window": updated_gradient_window,
+            "current_phase": "validate_shader",
+            "phase_status": "running",
+            "phase_message": "Validating shader...",
+            "phase_start_time": time.time(),
+            "detailed_logs": logs,
+            "compile_retry_count": 0,
+            # 向后兼容
+            "current_shader": shader,
+            "iteration": iteration,
+            "generate_history": updated_generate_history,
+        }
+    
+    except Exception as e:
+        logs = _add_phase_log(
+            {**state, "detailed_logs": logs},
+            "generate", "failed",
+            f"Shader generation failed: {str(e)}",
+            start_time=phase_start
+        )
+        return {
+            "snapshot": {**snapshot, "shader": "", "compile_error": str(e)},
+            "detailed_logs": logs,
+            # 向后兼容
+            "current_shader": "",
+            "compile_error": str(e),
+            "iteration": iteration,
         }
 
 
 async def node_validate_shader(state: PipelineState) -> dict:
-    """Shader 验证：静态检查 + 语法验证。失败时返回 generate 由 Agent 闭环修正。"""
-    iteration = state.get("iteration", 0)
+    """Shader validation: static check + syntax validation
     
-    # Record phase start time
+    Reads from: snapshot.shader
+    Writes to: snapshot.validation_errors (失败时)
+    
+    Routing: 
+    - 失败 → generate (Agent fixes)
+    - 通过 → render
+    """
+    snapshot = state.get("snapshot", {})
+    
     phase_start = time.time()
+    iteration = snapshot.get("iteration", 0)
     
     logs = _add_phase_log(state, "validate_shader", "started", f"Validating shader syntax (iteration {iteration + 1})...")
     
-    shader = state.get("current_shader", "")
+    shader = snapshot.get("shader", "")
     if not shader:
         logs = _add_phase_log(
             {**state, "detailed_logs": logs},
@@ -225,21 +542,21 @@ async def node_validate_shader(state: PipelineState) -> dict:
             "No shader code to validate",
             start_time=phase_start
         )
-        # 返回 generate 让 Agent 修正（计入 iteration）
         return {
-            "validation_errors": "No shader code generated",
-            "compile_error": "No shader code",
-            "compile_retry_count": state.get("compile_retry_count", 0) + 1,  # 仅日志记录
+            "snapshot": {**snapshot, "validation_errors": "No shader code generated"},
             "current_phase": "generate",
             "phase_status": "running",
             "phase_message": "Shader empty, requesting Agent to regenerate...",
             "phase_start_time": time.time(),
             "detailed_logs": logs,
+            "compile_retry_count": state.get("compile_retry_count", 0) + 1,
+            # 向后兼容
+            "validation_errors": "No shader code generated",
+            "compile_error": "No shader code",
         }
     
     # 执行验证
     validation_result = validate_shader(shader)
-    
     duration_ms = int((time.time() - phase_start) * 1000)
     
     if not validation_result["valid"]:
@@ -252,19 +569,19 @@ async def node_validate_shader(state: PipelineState) -> dict:
             start_time=phase_start
         )
         
-        # 返回 generate 让 Agent 闭环修正（不设置终止条件）
         return {
-            "validation_errors": errors_str,
-            "compile_error": None,
-            "compile_retry_count": state.get("compile_retry_count", 0) + 1,  # 仅日志记录
+            "snapshot": {**snapshot, "validation_errors": errors_str},
             "current_phase": "generate",
             "phase_status": "running",
-            "phase_message": "Shader validation failed, Agent will fix in next iteration...",
+            "phase_message": "Shader validation failed, Agent will fix...",
             "phase_start_time": time.time(),
             "detailed_logs": logs,
+            "compile_retry_count": state.get("compile_retry_count", 0) + 1,
+            # 向后兼容
+            "validation_errors": errors_str,
         }
     
-    # 验证通过，进入 render
+    # 验证通过
     warnings_str = "; ".join(validation_result["warnings"]) if validation_result["warnings"] else None
     logs = _add_phase_log(
         {**state, "detailed_logs": logs},
@@ -275,229 +592,37 @@ async def node_validate_shader(state: PipelineState) -> dict:
     )
     
     return {
-        "validation_errors": None,
-        "compile_error": None,
-        "compile_retry_count": 0,  # 验证通过，重置计数（仅日志）
-        "validation_warnings": warnings_str,
+        "snapshot": {**snapshot, "validation_errors": None, "compile_error": None},
         "current_phase": "render",
         "phase_status": "running",
         "phase_message": "Rendering shader frames...",
         "phase_start_time": time.time(),
         "detailed_logs": logs,
+        "compile_retry_count": 0,
+        # 向后兼容
+        "validation_errors": None,
+        "validation_warnings": warnings_str,
     }
 
 
-async def node_generate(state: PipelineState) -> dict:
-    """Generate Agent：生成或修正 GLSL 代码。编译错误由 Agent 在 ReAct loop 中闭环解决。"""
-    iteration = state.get("iteration", 0)
-    compile_error_count = state.get("compile_retry_count", 0)  # 仅用于日志
-
-    # Record phase start time
-    phase_start = time.time()
-
-    # 统一计数：任何返回 generate 都增加 iteration（编译错误或视觉反馈）
-    has_compile_error = state.get("compile_error") or state.get("validation_errors")
-    has_inspect_feedback = state.get("inspect_result") and not state.get("passed", False)
-    
-    # 每次进入 generate 都计入 iteration（编译修正和视觉修正都算）
-    if has_compile_error or has_inspect_feedback:
-        iteration += 1
-    
-    # 检查是否达到 max_iterations（唯一的终止条件）
-    max_iterations = get_runtime_config().max_iterations
-    if iteration >= max_iterations:
-        reason = "compile errors" if has_compile_error else "visual inspection"
-        logs = _add_phase_log(
-            state, "generate", "failed",
-            f"Max iterations ({max_iterations}) reached after {reason}",
-            start_time=phase_start
-        )
-        return {
-            "error": f"Max iterations ({max_iterations}) reached",
-            "current_phase": "complete",
-            "phase_status": "max_iterations",
-            "iteration": iteration,
-            "detailed_logs": logs,
-        }
-
-    # Emit phase start
-    if has_compile_error:
-        phase_msg = f"Fixing shader errors (iteration {iteration + 1})..."
-    else:
-        phase_msg = f"Generating shader (iteration {iteration + 1})..."
-    logs = _add_phase_log(state, "generate", "started", phase_msg)
-
-    description = state.get("visual_description", {})
-    previous_shader = state.get("current_shader") if iteration > 0 else None
-    feedback = None
-    
-    # 收集反馈来源：
-    # 1. Inspect Agent 的视觉评估 feedback（视觉效果问题）
-    # 2. 编译错误（shader 编译/渲染失败）—— Generate Agent 自己解决
-    # 3. 验证错误（静态检查失败）—— Generate Agent 自己解决
-    
-    feedback_parts = []
-    
-    # 视觉反馈：从 inspect_result 提取 visual_issues 和 visual_goals
-    if state.get("inspect_result") and not state.get("passed", False):
-        inspect_result = state["inspect_result"]
-        
-        # 提取视觉问题描述
-        visual_issues = inspect_result.get("visual_issues", [])
-        visual_goals = inspect_result.get("visual_goals", [])
-        
-        if visual_issues:
-            issues_text = "\n".join([f"- {issue}" for issue in visual_issues])
-            feedback_parts.append(f"[视觉问题]\n{issues_text}")
-        
-        if visual_goals:
-            goals_text = "\n".join([f"- {goal}" for goal in visual_goals])
-            feedback_parts.append(f"[期望效果]\n{goals_text}")
-        
-        # 保留 feedback_summary 作为整体指导
-        feedback_summary = inspect_result.get("feedback_summary", "")
-        if feedback_summary:
-            feedback_parts.append(f"[整体方向]\n{feedback_summary}")
-    
-    if state.get("compile_error"):
-        compile_error = state["compile_error"]
-        feedback_parts.append(f"[编译错误 - 请自行修正]\nShader 编译/渲染失败：{compile_error}\n请检查 GLSL 语法并修正错误。")
-    
-    if state.get("validation_errors"):
-        val_errors = state["validation_errors"]
-        # 增强 banned declaration 的修复指导
-        if "BANNED" in val_errors:
-            feedback_parts.append(f"""[验证错误 - 必须修正]
-Shader 验证失败：{val_errors}
-
-⚠️ 你声明了 Shadertoy 内置变量，这些变量由运行时自动注入，**禁止手动声明**。
-
-Shadertoy 标准内置变量：
-- iTime (float) - 全局时间
-- iResolution (vec3) - 视窗分辨率
-- iMouse (vec4) - 鼠标状态
-- iFrame (int) - 当前帧号
-
-修正方法：
-1. 删除代码中的所有 uniform 声明行
-2. 直接在 mainImage 中使用变量名（如 iTime, iResolution.xy）
-
-正确示例：
-  vec2 uv = fragCoord / iResolution.xy;  // 直接使用
-  float t = fract(iTime / 2.0);          // 直接使用""")
-        else:
-            feedback_parts.append(f"[验证错误]\nShader 验证失败：{val_errors}\n请检查 GLSL 语法并修正。")
-    
-    if feedback_parts:
-        feedback = "\n\n".join(feedback_parts)
-    
-    # 传递 Generate Agent 自身的历史上下文
-    generate_history = state.get("generate_history", [])
-
-    try:
-        result = generate_agent.run(
-            visual_description=description,
-            previous_shader=previous_shader,
-            feedback=feedback,
-            context_history=generate_history,
-            human_feedback=state.get("human_feedback"),  # 用户人工反馈
-            pipeline_id=state.get("pipeline_id"),  # 传入 pipeline_id 用于保存 session
-            iteration=iteration + 1,  # 当前迭代轮次（Generate 每次进入都算一轮）
-            return_raw=True,  # 获取原始响应
-        )
-        
-        # Safe handling of None result
-        if result is None:
-            logs = _add_phase_log(
-                {**state, "detailed_logs": logs},
-                "generate", "failed",
-                "Generate Agent returned None",
-                start_time=phase_start
-            )
-            return {
-                "current_shader": "",
-                "compile_error": "Generate Agent returned None",
-                "validation_errors": None,
-                "iteration": iteration,
-                "detailed_logs": logs,
-            }
-        
-        # 提取 shader 和 raw_response with safe defaults
-        shader = result.get("shader", "") if isinstance(result, dict) else (result if result else "")
-        raw_response = result.get("raw_response", "") if isinstance(result, dict) else ""
-        
-        # Ensure shader is a string
-        if not isinstance(shader, str):
-            shader = str(shader) if shader else ""
-        
-        # Check if shader is empty
-        if not shader.strip():
-            print(f"[Pipeline] WARNING: Empty shader generated (iteration {iteration})")
-        
-        duration_ms = int((time.time() - phase_start) * 1000)
-
-        # Emit completion with duration and raw response
-        shader_preview = shader[:200] + "..." if len(shader) > 200 else shader
-        logs = _add_phase_log(
-            {**state, "detailed_logs": logs},
-            "generate", "completed",
-            f"Generated shader: {len(shader)} characters",
-            f"Shader preview: {shader_preview}",
-            start_time=phase_start,
-            agent_response=raw_response[:3000] if raw_response else None,  # 截取前 3000 字符
-        )
-
-        # 更新 Generate Agent 的历史上下文（保留完整 shader）
-        new_history_entry = {
-            "iteration": iteration + 1,
-            "feedback_received": feedback[:500] if feedback else None,
-            "shader": shader,  # 完整 shader，供后续迭代参考
-            "duration_ms": duration_ms,
-        }
-        updated_generate_history = generate_history + [new_history_entry]
-
-        return {
-            "current_shader": shader,
-            "compile_error": None,
-            "validation_errors": None,
-            "compile_retry_count": compile_error_count,  # 仅日志记录
-            "iteration": iteration,  # 更新迭代计数
-            "current_phase": "validate_shader",
-            "phase_status": "running",
-            "phase_message": "Validating shader...",
-            "phase_start_time": time.time(),
-            "detailed_logs": logs,
-            "generate_history": updated_generate_history,
-            # 不清除 human_iteration_mode 和 human_feedback，保留供 inspect node 判断
-        }
-    except Exception as e:
-        logs = _add_phase_log(
-            {**state, "detailed_logs": logs},
-            "generate", "failed",
-            f"Shader generation failed: {str(e)}",
-            start_time=phase_start
-        )
-        # 异常也返回 generate 重试（计入 iteration）
-        return {
-            "current_shader": "",
-            "compile_error": str(e),
-            "validation_errors": None,
-            "iteration": iteration,
-            "detailed_logs": logs,
-        }
-
-
 async def node_render_and_screenshot(state: PipelineState) -> dict:
-    """在浏览器中渲染 shader 并截图。失败时返回 generate 由 Agent 闭环修正。"""
-    iteration = state.get("iteration", 0)
-    compile_error_count = state.get("compile_retry_count", 0)  # 仅用于日志
-
-    # Record phase start time
+    """Render shader in WebGL and capture screenshots
+    
+    Reads from: snapshot.shader
+    Writes to: snapshot.render_screenshots
+    
+    Routing:
+    - 失败 → generate (Agent fixes)
+    - 成功 → inspect
+    """
+    snapshot = state.get("snapshot", {})
+    
     phase_start = time.time()
-
+    iteration = snapshot.get("iteration", 0)
+    
     logs = _add_phase_log(state, "render", "started", f"Rendering shader frames (iteration {iteration + 1})...")
-
-    shader = state.get("current_shader", "")
+    
+    shader = snapshot.get("shader", "")
     if not shader:
         logs = _add_phase_log(
             {**state, "detailed_logs": logs},
@@ -505,43 +630,44 @@ async def node_render_and_screenshot(state: PipelineState) -> dict:
             "No shader code to render",
             start_time=phase_start
         )
-        # 返回 generate 让 Agent 修正（不终止）
         return {
-            "render_screenshots": [],
-            "compile_error": "No shader code to render",
-            "compile_retry_count": compile_error_count + 1,  # 仅日志
+            "snapshot": {**snapshot, "compile_error": "No shader code to render"},
             "current_phase": "generate",
             "phase_status": "running",
             "phase_message": "No shader, Agent will regenerate...",
             "phase_start_time": time.time(),
             "detailed_logs": logs,
+            "compile_retry_count": state.get("compile_retry_count", 0) + 1,
+            # 向后兼容
+            "render_screenshots": [],
+            "compile_error": "No shader code to render",
         }
-
+    
     try:
         screenshots = await render_multiple_frames(
             shader_code=shader,
             times=[0.0, 0.5, 1.0, 1.5, 2.0],
         )
-
-        # Emit completion with duration
+        
         logs = _add_phase_log(
             {**state, "detailed_logs": logs},
             "render", "completed",
             f"Rendered {len(screenshots)} frames successfully",
             start_time=phase_start
         )
-
-        # 渲染成功 → 进入 inspect
+        
         return {
-            "render_screenshots": screenshots,
-            "compile_error": None,
-            "compile_retry_count": 0,  # 成功，重置（仅日志）
+            "snapshot": {**snapshot, "render_screenshots": screenshots, "compile_error": None},
             "current_phase": "inspect",
             "phase_status": "running",
             "phase_message": "Inspecting rendered output...",
             "phase_start_time": time.time(),
             "detailed_logs": logs,
+            "compile_retry_count": 0,
+            # 向后兼容
+            "render_screenshots": screenshots,
         }
+    
     except asyncio.TimeoutError:
         logs = _add_phase_log(
             {**state, "detailed_logs": logs},
@@ -549,17 +675,19 @@ async def node_render_and_screenshot(state: PipelineState) -> dict:
             "Render timeout (frontend not ready)",
             start_time=phase_start
         )
-        # 返回 generate 让 Agent 修正（不终止）
         return {
-            "render_screenshots": [],
-            "compile_error": "Render timeout - frontend not ready or shader too slow",
-            "compile_retry_count": compile_error_count + 1,  # 仅日志
+            "snapshot": {**snapshot, "compile_error": "Render timeout"},
             "current_phase": "generate",
             "phase_status": "running",
-            "phase_message": "Render timeout, Agent will fix shader performance...",
+            "phase_message": "Render timeout, Agent will fix...",
             "phase_start_time": time.time(),
             "detailed_logs": logs,
+            "compile_retry_count": state.get("compile_retry_count", 0) + 1,
+            # 向后兼容
+            "render_screenshots": [],
+            "compile_error": "Render timeout",
         }
+    
     except Exception as e:
         logs = _add_phase_log(
             {**state, "detailed_logs": logs},
@@ -567,299 +695,276 @@ async def node_render_and_screenshot(state: PipelineState) -> dict:
             f"Render error: {str(e)}",
             start_time=phase_start
         )
-        # 返回 generate 让 Agent 修正（不终止）
         return {
-            "render_screenshots": [],
-            "compile_error": str(e),
-            "compile_retry_count": compile_error_count + 1,  # 仅日志
+            "snapshot": {**snapshot, "compile_error": str(e)},
             "current_phase": "generate",
             "phase_status": "running",
-            "phase_message": f"Shader compile error, Agent will fix: {str(e)[:50]}...",
+            "phase_message": f"Shader compile error: {str(e)[:50]}...",
             "phase_start_time": time.time(),
             "detailed_logs": logs,
+            "compile_retry_count": state.get("compile_retry_count", 0) + 1,
+            # 向后兼容
+            "render_screenshots": [],
+            "compile_error": str(e),
         }
 
 
 async def node_inspect(state: PipelineState) -> dict:
-    """Inspect Agent：对比截图，输出评估
+    """Inspect Agent: Compare render screenshots with design reference
     
-    核心机制：
-    1. 评分对比：只有评分 >= 上一轮才接受更改
-    2. 用户检视轮：跳过 Agent 检视，直接处理用户指令
+    Reads from:
+      baseline.image_paths, snapshot.render_screenshots, snapshot.shader
+      snapshot.visual_description, gradient_window
+    
+    Writes to: snapshot.inspect_feedback, checkpoint (if improved), gradient_window
+    
+    Physical rollback: if score regression detected
+    Re-decompose trigger: if score below threshold or stagnation
     """
-    iteration = state.get("iteration", 0)
+    baseline = state.get("baseline", {})
+    snapshot = state.get("snapshot", {})
+    gradient_window = state.get("gradient_window", [])
+    checkpoint = state.get("checkpoint", {})
+    config = state.get("config", {})
+    
+    iteration = snapshot.get("iteration", 0)
     human_iteration_mode = state.get("human_iteration_mode", False)
+    human_feedback = state.get("human_feedback")
     
-    # Debug logging for human iteration mode
-    human_fb = state.get('human_feedback')
-    human_fb_preview = human_fb[:30] + '...' if human_fb and len(human_fb) > 30 else (human_fb or 'N/A')
-    print(f"[Inspect Node] iteration={iteration}, human_iteration_mode={human_iteration_mode}, human_feedback={human_fb_preview}")
-
-    # Record phase start time
     phase_start = time.time()
-
-    # 获取 Inspect Agent 自身的历史上下文
-    inspect_history = state.get("inspect_history", [])
     
-    # 获取上一轮评分（用于评分对比）
-    last_score = 0
-    if inspect_history:
-        last_entry = inspect_history[-1]
-        # 使用 or 0 处理 None 值（用户检视轮 score 为 None）
-        last_score = last_entry.get("score") or 0
-        # 如果上一轮也是用户检视，可能没有评分，使用更早的评分
-        if last_score == 0 and len(inspect_history) > 1:
-            for entry in reversed(inspect_history[:-1]):
-                entry_score = entry.get("score") or 0
-                if entry_score > 0:
-                    last_score = entry_score
-                    break
-
-    # Emit phase start
-    logs = _add_phase_log(state, "inspect", "started", f"Inspecting rendered output (iteration {iteration})...")
-
-    # === 用户检视轮：跳过 Agent 检视，直接处理用户指令 ===
-    if human_iteration_mode and human_fb:
+    # Human iteration mode: skip Agent inspection
+    if human_iteration_mode and human_feedback:
+        human_fb_preview = human_feedback[:30] + "..." if len(human_feedback) > 30 else human_feedback
+        
         logs = _add_phase_log(
-            {**state, "detailed_logs": logs},
-            "inspect", "completed",
+            state, "inspect", "completed",
             f"User inspection mode: skipping Agent evaluation",
             f"User directive: {human_fb_preview}",
             start_time=phase_start
         )
         
-        # 将用户反馈转为视觉问题描述（由 Generate Agent 决定如何修改）
-        visual_issues = [f"用户反馈：{human_fb}"]
-        visual_goals = ["根据用户指令调整视觉效果"]
-        
         result = {
-            "passed": False,  # 用户检视轮不自动通过，需要 Generate Agent 处理
-            "overall_score": None,  # 用户检视轮无评分
-            "visual_issues": visual_issues,
-            "visual_goals": visual_goals,
-            "feedback_summary": f"用户指令：{human_fb}",
-            "dimensions": {
-                "shape": {"score": None, "notes": "用户检视轮"},
-                "color": {"score": None, "notes": "用户检视轮"},
-                "animation": {"score": None, "notes": "用户检视轮"},
-                "performance": {"score": None, "notes": "用户检视轮"},
-            },
+            "passed": False,
+            "overall_score": None,
+            "visual_issues": [f"用户反馈：{human_feedback}"],
+            "visual_goals": ["根据用户指令调整视觉效果"],
+            "feedback_summary": f"用户指令：{human_feedback}",
             "human_iteration": True,
         }
         
-        # 记录 Inspect Agent 历史（用户检视轮）
-        new_inspect_entry = {
-            "iteration": iteration,
-            "score": None,
-            "passed": False,
-            "feedback": human_fb,
-            "visual_issues": visual_issues,
-            "visual_goals": visual_goals,
-            "issues_summary": None,
-            "human_iteration": True,
-            "human_feedback": human_fb,
+        # 更新 snapshot
+        updated_snapshot = {
+            **snapshot,
+            "inspect_feedback": result,
         }
-        updated_inspect_history = inspect_history + [new_inspect_entry]
         
-        # 记录 pipeline 级别历史
-        history = state.get("history", [])
-        history.append({
+        # 更新 gradient_window
+        new_gradient_entry: GradientEntry = {
+            "iteration": iteration,
+            "score": None,
+            "feedback_summary": human_fb_preview,
+            "duration_ms": int((time.time() - phase_start) * 1000),
+            "human_iteration": True,
+        }
+        updated_gradient_window = update_gradient_window(
+            gradient_window, new_gradient_entry, config.get("gradient_window_size", 3)
+        )
+        
+        # 更新 inspect_history（向后兼容）
+        inspect_history = state.get("inspect_history", [])
+        inspect_history.append({
             "iteration": iteration,
             "score": None,
             "passed": False,
-            "feedback": human_fb,
+            "feedback": human_feedback,
             "human_iteration": True,
         })
         
         return {
-            "inspect_result": result,
-            "passed": False,  # 继续迭代让 Generate Agent 处理用户指令
-            "history": history,
-            "inspect_history": updated_inspect_history,
+            "snapshot": updated_snapshot,
+            "gradient_window": updated_gradient_window,
             "current_phase": "generate",
             "phase_status": "running",
             "phase_message": f"Processing user directive: {human_fb_preview}",
             "phase_start_time": time.time(),
             "detailed_logs": logs,
-            "human_iteration_processed": True,  # 标记用户检视轮已处理
-            "human_iteration_mode": False,  # 清除用户检视模式（已处理）
-            "human_feedback": None,  # 清除用户反馈（已转为 feedback_commands）
+            "human_iteration_processed": True,
+            "human_iteration_mode": False,
+            "human_feedback": None,
+            # 向后兼容
+            "inspect_result": result,
+            "passed": False,
+            "inspect_history": inspect_history,
         }
-
-    design_imgs = state.get("design_screenshots", [])
-    render_imgs = state.get("render_screenshots", [])
-
-    # Text-only mode: no design reference, auto-pass if shader generated
-    if not design_imgs and state.get("current_shader"):
-        # 记录 pipeline 级别历史
-        history = state.get("history", [])
-        history.append({
-            "iteration": iteration,
-            "score": 0.9,
+    
+    logs = _add_phase_log(state, "inspect", "started", f"Inspecting rendered output (iteration {iteration})...")
+    
+    design_imgs = state.get("design_screenshots", baseline.get("image_paths", []))
+    render_imgs = snapshot.get("render_screenshots", [])
+    visual_description = snapshot.get("visual_description")
+    shader = snapshot.get("shader", "")
+    
+    # Text-only mode: auto-pass
+    if not design_imgs and shader:
+        result = {
             "passed": True,
-            "feedback": "Text mode: auto-accepted (no design reference)",
-        })
+            "overall_score": 0.9,
+            "visual_issues": [],
+            "visual_goals": [],
+            "feedback_summary": "Text mode: auto-accepted",
+        }
         
-        # 记录 Inspect Agent 历史
-        new_inspect_entry = {
-            "iteration": iteration,
-            "score": 0.9,
-            "passed": True,
-            "feedback": "Text mode: auto-accepted",
-            "issues_summary": None,
-        }
-        updated_inspect_history = inspect_history + [new_inspect_entry]
-
         logs = _add_phase_log(
             {**state, "detailed_logs": logs},
             "inspect", "completed",
-            "Auto-accepted: text-only mode (no design reference)",
+            "Auto-accepted: text-only mode",
             start_time=phase_start
         )
-
+        
+        updated_snapshot = {
+            **snapshot,
+            "inspect_feedback": result,
+        }
+        
+        # 更新 checkpoint
+        checkpoint_update = update_checkpoint({**state, "snapshot": updated_snapshot})
+        updated_checkpoint = checkpoint_update.get("checkpoint", checkpoint)
+        
         return {
-            "inspect_result": {"passed": True, "overall_score": 0.9, "feedback": "Text mode: auto-accepted"},
-            "passed": True,
-            "history": history,
-            "inspect_history": updated_inspect_history,
+            "snapshot": updated_snapshot,
+            "checkpoint": updated_checkpoint,
             "current_phase": "complete",
             "phase_status": "completed",
             "phase_message": "Pipeline completed successfully",
             "detailed_logs": logs,
+            "passed": True,
+            # 向后兼容
+            "inspect_result": result,
         }
-
-    # Render failed: skip inspect, will retry in next iteration
+    
+    # Render failed: skip inspect
     if not render_imgs:
-        # 记录 pipeline 级别历史
-        history = state.get("history", [])
-        history.append({
-            "iteration": iteration,
-            "score": 0,
-            "passed": False,
-            "feedback": "渲染失败，无截图可对比",
-        })
-        
-        # 记录 Inspect Agent 历史
-        new_inspect_entry = {
-            "iteration": iteration,
-            "score": 0,
-            "passed": False,
-            "feedback": "渲染失败，无截图可对比",
-            "issues_summary": "Render failed",
-        }
-        updated_inspect_history = inspect_history + [new_inspect_entry]
-
         logs = _add_phase_log(
             {**state, "detailed_logs": logs},
             "inspect", "failed",
             "No rendered screenshots to compare",
             start_time=phase_start
         )
-
+        
         return {
-            "inspect_result": {"passed": False, "overall_score": 0, "feedback": "渲染失败，无截图可对比"},
-            "passed": False,
-            "history": history,
-            "inspect_history": updated_inspect_history,
+            "snapshot": {**snapshot, "inspect_feedback": {"passed": False, "overall_score": 0}},
             "detailed_logs": logs,
+            # 向后兼容
+            "inspect_result": {"passed": False, "overall_score": 0},
         }
-
+    
+    # 获取上一轮评分（用于回滚检测）
+    last_score = checkpoint.get("best_score", 0)
+    
     try:
-        result = inspect_agent.run(
+        # 调用 legacy 接口
+        result = inspect_run(
             design_images=design_imgs,
             render_screenshots=render_imgs,
-            visual_description=state.get("visual_description"),
+            visual_description=visual_description,
             iteration=iteration,
-            inspect_history=inspect_history,  # Agent 自己的历史
-            human_feedback=state.get("human_feedback"),  # 用户人工反馈
-            human_iteration_mode=state.get("human_iteration_mode", False),  # 人工迭代模式
-            pipeline_id=state.get("pipeline_id"),  # 传入 pipeline_id 用于保存 session
+            inspect_history=state.get("inspect_history", []),
+            human_feedback=human_feedback,
+            human_iteration_mode=human_iteration_mode,
+            pipeline_id=state.get("pipeline_id"),
             return_raw=True,
         )
-
+        
         current_score = result.get("overall_score", 0)
-        passed = result.get("passed", False) or current_score >= get_runtime_config().passing_threshold
+        passed = result.get("passed", False) or current_score >= config.get("passing_threshold", 0.85)
         
-        # === 评分对比机制：只有评分更高才接受更改 ===
-        score_improved = True
-        if passed and last_score > 0:
-            if current_score < last_score:
-                # 评分降低，拒绝更改
-                passed = False
-                score_improved = False
-                # 添加回滚视觉问题描述
-                rollback_issue = f"本次修改导致效果变差（评分从 {last_score:.2f} 降至 {current_score:.2f}），建议回滚到上一版本或重新调整"
-                if result.get("visual_issues"):
-                    result["visual_issues"].append(rollback_issue)
-                else:
-                    result["visual_issues"] = [rollback_issue]
-                
-                print(f"[Inspect Node] Score regression: {current_score:.2f} < {last_score:.2f}, rejecting changes")
+        # === 物理回滚检测 ===
+        rollback_triggered = False
+        if current_score < last_score and last_score > 0:
+            rollback_triggered = True
+            rollback_update = rollback_to_checkpoint({**state, "snapshot": {**snapshot, "inspect_feedback": result}})
+            if rollback_update:
+                snapshot = rollback_update.get("snapshot", snapshot)
+                print(f"[Inspect Node] Score regression: {current_score:.2f} < {last_score:.2f}, rollback triggered")
         
-        # 提取 issues summary（如果有 dimensions）
-        issues_summary = None
-        if result.get("dimensions"):
-            dims = result["dimensions"]
-            issues_list = []
-            for dim_name, dim_info in dims.items():
-                if dim_info.get("score", 1.0) < 0.7:
-                    issues_list.append(f"{dim_name}: {dim_info.get('notes', '')[:50]}")
-            issues_summary = "; ".join(issues_list) if issues_list else None
+        # === Re-decompose 触发检测 ===
+        re_decompose_triggered = should_trigger_re_decompose({**state, "snapshot": {**snapshot, "inspect_feedback": result}})
+        result["re_decompose_trigger"] = re_decompose_triggered
         
-        # 记录 pipeline 级别历史
-        history = state.get("history", [])
-        history.append({
-            "iteration": iteration,
-            "score": result.get("overall_score", 0),
-            "passed": passed,
-            "feedback": result.get("feedback", ""),
-        })
-        
-        # 记录 Inspect Agent 历史
-        new_inspect_entry = {
-            "iteration": iteration,
-            "score": result.get("overall_score", 0),
-            "passed": passed,
-            "feedback": result.get("feedback", ""),
-            "issues_summary": issues_summary,
-            "human_iteration": state.get("human_iteration_mode", False),
-            "human_feedback": state.get("human_feedback"),
+        # 更新 snapshot
+        updated_snapshot = {
+            **snapshot,
+            "inspect_feedback": result,
         }
         
-        print(f"[Inspect Node] new_inspect_entry keys: {list(new_inspect_entry.keys())}")
-        print(f"[Inspect Node] human_iteration value: {new_inspect_entry.get('human_iteration')}")
-        print(f"[Inspect Node] human_feedback value: {new_inspect_entry.get('human_feedback')}")
+        # 更新 checkpoint（如果评分提高）
+        checkpoint_update = update_checkpoint({**state, "snapshot": updated_snapshot})
+        updated_checkpoint = checkpoint_update.get("checkpoint", checkpoint)
         
-        updated_inspect_history = inspect_history + [new_inspect_entry]
+        # 更新 gradient_window
+        new_gradient_entry: GradientEntry = {
+            "iteration": iteration,
+            "score": current_score,
+            "feedback_summary": result.get("feedback_summary", "")[:100],
+            "issues_fixed": None,
+            "issues_remaining": result.get("visual_issues"),
+            "duration_ms": int((time.time() - phase_start) * 1000),
+            "human_iteration": human_iteration_mode,
+        }
+        updated_gradient_window = update_gradient_window(
+            gradient_window, new_gradient_entry, config.get("gradient_window_size", 3)
+        )
         
-        print(f"[Inspect Node] updated_inspect_history length: {len(updated_inspect_history)}")
-        if updated_inspect_history:
-            print(f"[Inspect Node] last entry keys: {list(updated_inspect_history[-1].keys())}")
-
-        # Emit completion with duration
+        # Emit completion
         score_info = f"score {current_score:.2f}"
         if last_score > 0:
-            score_info += f" (last: {last_score:.2f}, {'↑' if score_improved else '↓'})"
+            score_info += f" (best: {last_score:.2f}, {'↑' if current_score >= last_score else '↓'})"
         
         logs = _add_phase_log(
             {**state, "detailed_logs": logs},
             "inspect", "completed" if passed else "running",
             f"Inspection complete: {score_info}, {'PASSED' if passed else 'NEEDS IMPROVEMENT'}",
-            result.get("feedback_summary", result.get("feedback", "")),
-            start_time=phase_start
+            result.get("feedback_summary", ""),
+            start_time=phase_start,
         )
-
-        return {
-            "inspect_result": result,
+        
+        # 决定下一阶段
+        if re_decompose_triggered:
+            next_phase = "decompose"
+            next_message = "Re-decompose triggered due to low score or stagnation..."
+        elif passed:
+            next_phase = "complete"
+            next_message = "Pipeline completed successfully"
+        else:
+            next_phase = "generate"
+            next_message = "Preparing next iteration..."
+        
+        # 更新 inspect_history（向后兼容）
+        inspect_history = state.get("inspect_history", [])
+        inspect_history.append({
+            "iteration": iteration,
+            "score": current_score,
             "passed": passed,
-            "history": history,
-            "inspect_history": updated_inspect_history,
-            "current_phase": "complete" if passed else "generate",
+            "feedback": result.get("feedback_summary", ""),
+            "human_iteration": human_iteration_mode,
+        })
+        
+        return {
+            "snapshot": updated_snapshot,
+            "checkpoint": updated_checkpoint,
+            "gradient_window": updated_gradient_window,
+            "current_phase": next_phase,
             "phase_status": "completed" if passed else "running",
-            "phase_message": "Pipeline completed successfully" if passed else "Preparing next iteration...",
+            "phase_message": next_message,
             "phase_start_time": time.time() if not passed else None,
             "detailed_logs": logs,
+            "passed": passed,
+            "inspect_history": inspect_history,
+            # 向后兼容
+            "inspect_result": result,
         }
+    
     except Exception as e:
         logs = _add_phase_log(
             {**state, "detailed_logs": logs},
@@ -868,102 +973,95 @@ async def node_inspect(state: PipelineState) -> dict:
             start_time=phase_start
         )
         
-        # 记录 Inspect Agent 历史（失败）
-        new_inspect_entry = {
-            "iteration": iteration,
-            "score": 0,
-            "passed": False,
-            "feedback": str(e),
-            "issues_summary": f"Error: {str(e)[:50]}",
-        }
-        updated_inspect_history = inspect_history + [new_inspect_entry]
-        
         return {
-            "inspect_result": {"passed": False, "overall_score": 0, "feedback": str(e)},
-            "passed": False,
-            "history": state.get("history", []),
-            "inspect_history": updated_inspect_history,
+            "snapshot": {**snapshot, "inspect_feedback": {"passed": False, "overall_score": 0}},
             "detailed_logs": logs,
+            # 向后兼容
+            "inspect_result": {"passed": False, "overall_score": 0, "error": str(e)},
         }
 
 
-# ---- 条件边 ----
+# === 路由函数 ===
+
 
 def route_from_validate(state: PipelineState) -> Literal["generate", "render", "end"]:
-    """验证节点后的路由"""
-    # 检查是否达到重试上限（通过 error 字段）
+    """Validation node routing"""
     if state.get("error"):
         return "end"
     
-    # 验证失败 → 返回 generate（包括空字符串的情况）
-    validation_errors = state.get("validation_errors")
-    if validation_errors is not None:  # 存在 validation_errors 字段（包括空字符串）
+    snapshot = state.get("snapshot", {})
+    validation_errors = snapshot.get("validation_errors")
+    
+    if validation_errors is not None:
         return "generate"
     
-    # 验证通过 → 进入 render
-    return "render"
+    return "render_and_screenshot"
 
 
 def route_from_generate(state: PipelineState) -> Literal["validate_shader", "end"]:
-    """Generate 节点后的路由"""
-    # 检查是否出错
+    """Generate node routing"""
     if state.get("error"):
         return "end"
     
-    # 正常进入 validate_shader
     return "validate_shader"
 
 
 def route_from_render(state: PipelineState) -> Literal["generate", "inspect", "end"]:
-    """渲染节点后的路由"""
-    # 检查是否出错
+    """Render node routing"""
     if state.get("error"):
         return "end"
     
-    # 编译/渲染失败 → 返回 generate
-    if state.get("compile_error"):
+    snapshot = state.get("snapshot", {})
+    if snapshot.get("compile_error"):
         return "generate"
     
-    # 渲染成功 → 进入 inspect
     return "inspect"
 
 
-def route_from_inspect(state: PipelineState) -> Literal["generate", "end"]:
-    """检视节点后的路由"""
-    # 检查是否出错
+def route_from_inspect(state: PipelineState) -> Literal["generate", "decompose", "end"]:
+    """Inspect node routing (新增 decompose 分支)"""
     if state.get("error"):
         return "end"
     
     if state.get("passed", False):
         return "end"
     
-    # Inspect JSON 解析完全失败，终止
-    inspect_result = state.get("inspect_result", {})
-    if inspect_result.get("parse_error") and not inspect_result.get("raw_response"):
+    # 检查 re_decompose_trigger
+    snapshot = state.get("snapshot", {})
+    inspect_feedback = snapshot.get("inspect_feedback", {})
+    
+    if inspect_feedback.get("re_decompose_trigger"):
+        print(f"[Router] Re-decompose branch triggered")
+        return "decompose"
+    
+    # Inspect JSON 解析完全失败
+    if inspect_feedback.get("parse_error") and not inspect_feedback.get("raw_response"):
         return "end"
     
-    # Text-only mode: end after first iteration, UNLESS user triggered human iteration
-    if state.get("input_type") == "text" and state.get("iteration", 0) >= 1:
-        # 用户检视轮：如果刚处理过用户检视（human_iteration_processed=True），继续迭代
-        # 如果 human_iteration_mode=True 但未处理，也继续迭代（正常用户检视流程）
+    # Text-only mode: end after first iteration (unless human iteration)
+    baseline = state.get("baseline", {})
+    iteration = snapshot.get("iteration", 0)
+    
+    if baseline.get("input_type") == "text" and iteration >= 1:
         if state.get("human_iteration_processed") or state.get("human_iteration_mode"):
             return "generate"
         return "end"
     
-    # 达到最大迭代次数
-    max_iterations = get_runtime_config().max_iterations
-    if state.get("iteration", 0) >= max_iterations:
+    # Max iterations
+    config = state.get("config", {})
+    max_iterations = config.get("max_iterations", get_runtime_config().max_iterations)
+    if iteration >= max_iterations:
         return "end"
     
-    # 视觉效果未通过 → 返回 generate 修正
     return "generate"
 
 
-# ---- 构建图 ----
+# === 构建图 ===
+
 
 def build_pipeline_graph() -> StateGraph:
     graph = StateGraph(PipelineState)
-
+    
     # 添加节点
     graph.add_node("extract_keyframes", node_extract_keyframes)
     graph.add_node("decompose", node_decompose)
@@ -971,42 +1069,42 @@ def build_pipeline_graph() -> StateGraph:
     graph.add_node("validate_shader", node_validate_shader)
     graph.add_node("render_and_screenshot", node_render_and_screenshot)
     graph.add_node("inspect", node_inspect)
-
+    
     # 添加边
     graph.set_entry_point("extract_keyframes")
     graph.add_edge("extract_keyframes", "decompose")
     graph.add_edge("decompose", "generate")
     
-    # generate 的条件边（可以终止或进入 validate_shader）
+    # generate 条件边
     graph.add_conditional_edges(
         "generate",
         route_from_generate,
         {"validate_shader": "validate_shader", "end": END},
     )
     
-    # validate_shader 的条件边（可以终止、返回 generate、或进入 render）
+    # validate_shader 条件边
     graph.add_conditional_edges(
         "validate_shader",
         route_from_validate,
-        {"generate": "generate", "render": "render_and_screenshot", "end": END},
+        {"generate": "generate", "render_and_screenshot": "render_and_screenshot", "end": END},
     )
     
-    # render 的条件边
+    # render 条件边
     graph.add_conditional_edges(
         "render_and_screenshot",
         route_from_render,
         {"generate": "generate", "inspect": "inspect", "end": END},
     )
     
-    # inspect 的条件边
+    # inspect 条件边（新增 decompose 分支）
     graph.add_conditional_edges(
         "inspect",
         route_from_inspect,
-        {"generate": "generate", "end": END},
+        {"generate": "generate", "decompose": "decompose", "end": END},
     )
-
+    
     return graph
 
 
-# 实例化最终的 pipeline graph
+# 实例化 pipeline graph
 pipeline_app = build_pipeline_graph().compile()
