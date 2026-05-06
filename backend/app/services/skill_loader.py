@@ -42,7 +42,7 @@ class SkillLoader:
     # visual-effect-decomposition (Decompose Agent)
     DECOMPOSE_REFERENCES = {
         "operator_catalog": "references/operator-catalog.md",
-        "dsl_schema": "references/dsl-schema.md",
+        "natural_language_schema": "references/natural-language-schema.md",  # 替代 DSL Schema
     }
 
     _cache: dict[str, str] = {}
@@ -89,14 +89,14 @@ class SkillLoader:
 
         在 run() 方法中动态注入到 user prompt，包含：
         - Operator Catalog（GLSL 算子库）
-        - DSL Schema（完整 DSL 规范）
+        - Natural Language Schema（自然语言描述规范）
         """
         parts = [
             "### Operator Catalog\n",
             cls.load_reference("decompose", "operator_catalog"),
             "\n---\n\n",
-            "### DSL Schema\n",
-            cls.load_reference("decompose", "dsl_schema"),
+            "### Natural Language Schema\n",
+            cls.load_reference("decompose", "natural_language_schema"),
         ]
 
         return "\n".join(parts)
