@@ -56,7 +56,7 @@ class GenerateAgent(BaseAgent):
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             temperature=temperature,
-            max_tokens=16384,
+            max_tokens=2048,  # Reduced from 16384 for faster response
             return_raw=True,
         )
 
