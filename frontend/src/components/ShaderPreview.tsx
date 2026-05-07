@@ -11,7 +11,6 @@ import {
   Loader2,
   Download,
   Image as ImageIcon,
-  GitCompare,
   Trophy,
   TrendingDown
 } from "lucide-react";
@@ -230,25 +229,35 @@ export default function ShaderPreview({
           </div>
         </div>
         <div className="flex items-center gap-1">
-          {/* Version Toggle Button */}
-          {checkpointShader && onToggleCheckpoint && (
+          {/* Version Toggle Switch - Segmented Control Style */}
+          {checkpointShader && checkpointShader.trim() && onToggleCheckpoint && (
             <>
-              <button
-                onClick={onToggleCheckpoint}
-                className={`
-                  flex items-center gap-1 px-2 py-1 rounded-lg
-                  transition-all duration-200
-                  ${showCheckpoint
-                    ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40'
-                    : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]'}
-                `}
-                title={showCheckpoint ? 'Show current shader' : 'Show best checkpoint shader'}
-              >
-                <GitCompare className="w-3 h-3" />
-                <span className="text-xs font-medium">
-                  {showCheckpoint ? 'Checkpoint' : 'Current'}
-                </span>
-              </button>
+              <div className="flex items-center gap-0.5 bg-[var(--bg-tertiary)] rounded-lg p-0.5">
+                <button
+                  onClick={() => showCheckpoint && onToggleCheckpoint()}
+                  className={`
+                    px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-200
+                    ${!showCheckpoint 
+                      ? 'bg-[var(--accent-primary)] text-white shadow-sm' 
+                      : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}
+                  `}
+                  title="Show current shader"
+                >
+                  Current
+                </button>
+                <button
+                  onClick={() => !showCheckpoint && onToggleCheckpoint()}
+                  className={`
+                    px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-200
+                    ${showCheckpoint 
+                      ? 'bg-amber-500 text-white shadow-sm' 
+                      : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}
+                  `}
+                  title="Show best checkpoint shader"
+                >
+                  Best
+                </button>
+              </div>
               <div className="w-px h-5 bg-[var(--border-color)] mx-1" />
             </>
           )}
