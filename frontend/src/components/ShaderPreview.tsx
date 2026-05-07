@@ -50,6 +50,11 @@ export default function ShaderPreview({
   useEffect(() => {
     if (containerRef.current && !rendererRef.current) {
       rendererRef.current = new ShaderRenderer(containerRef.current);
+      
+      // Set frame callback for FPS tracking
+      rendererRef.current.setFrameCallback(() => {
+        frameCountRef.current++;
+      });
     }
 
     // Expose time setting function for Playwright

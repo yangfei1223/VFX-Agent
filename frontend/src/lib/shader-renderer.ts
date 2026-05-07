@@ -48,6 +48,7 @@ export class ShaderRenderer {
   private backdropTexture: THREE.Texture | null = null;
   private userTexture: THREE.Texture | null = null;
   private defaultTexture: THREE.Texture;
+  private onFrameCallback: (() => void) | null = null;
 
   constructor(container: HTMLElement) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -130,8 +131,17 @@ export class ShaderRenderer {
         );
       }
       this.renderer.render(this.scene, this.camera);
+      
+      // Call frame callback for FPS tracking
+      if (this.onFrameCallback) {
+        this.onFrameCallback();
+      }
     };
     animate();
+  }
+  
+  setFrameCallback(callback: () => void) {
+    this.onFrameCallback = callback;
   }
 
   stopRendering() {
