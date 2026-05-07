@@ -53,11 +53,78 @@
 - **渐变过渡**：无断层，平滑连续
 - **背景纯度**：若要求纯色，RGB 误差 <0.05
 
-### 术语约定
-- **Specular highlight**：点状高光，dot(reflect, viewDir)
-- **Fresnel**：边缘光，pow(1.0-dot(N,V), power)
-- **Glow**：光晕，exp(-d * intensity)
-- **Smoothstep**：边缘过渡，smoothstep(edge-softness, edge+softness, d)
+### VFX Terminology（高频术语）
+
+以下术语是 Decompose/Generate/Inspect 共享的专业词汇，确保协作时使用统一语言。
+
+#### Lighting & Shadow
+
+| Term | Definition | Usage in Description |
+|------|------------|----------------------|
+| **Specular highlight** | 点状高光（dot(reflect, viewDir)） | "高光位置：顶部，强度 0.8" |
+| **Fresnel** | 边缘光（pow(1.0-dot(N,V), power)） | "Fresnel 边缘光，强度 2.0" |
+| **Glow** | 柔和光晕（exp(-d * intensity)） | "中心向外光晕，半径 0.3" |
+| **Bloom** | 光晕扩散（blur + additive） | "Bloom 效果，扩散半径 0.1" |
+| **Rim light** | 背光边缘发光 | "Rim light 逆光效果" |
+| **Ambient light** | 基础照明 | "环境光强度 0.2" |
+| **Hard shadow** | 锐利阴影（step function） | "硬阴影，边缘锐利" |
+| **Soft shadow** | 柔和阴影（smoothstep/blur） | "软阴影，过渡宽度 0.05" |
+
+#### Color & Tone
+
+| Term | Definition | Usage in Description |
+|------|------------|----------------------|
+| **Hue** | 色相（RGB→HSV） | "主色调：蓝色（Hue 0.6）" |
+| **Saturation** | 饱和度（0-1） | "饱和度 0.8（鲜艳）" |
+| **Luminance** | 明度（灰度强度） | "明度 0.5（中等亮度）" |
+| **Linear gradient** | 线性渐变（mix） | "线性渐变：左→右，蓝→白" |
+| **Radial gradient** | 径向渐变（距离） | "径向渐变：中心向外" |
+| **Contrast** | 对比度（明暗差异） | "高对比度（明暗分明）" |
+
+#### Geometry & Shape
+
+| Term | Definition | Usage in Description |
+|------|------------|----------------------|
+| **SDF** | 有符号距离场 | "SDF 形状：圆形/矩形" |
+| **Circle SDF** | 圆形距离函数 | "圆形主体，半径 0.3" |
+| **Box SDF** | 矩形距离函数 | "矩形主体，尺寸 0.5×0.3" |
+| **Outline** | 边框（SDF edge） | "描边宽度 0.02，白色" |
+| **Hard edge** | 锐利边缘（step） | "硬边缘（无过渡）" |
+| **Soft edge** | 柔和边缘（smoothstep） | "软边缘（过渡 0.05）" |
+| **Smooth union** | 柔和融合（smin） | "形状柔和融合" |
+
+#### Animation & Motion
+
+| Term | Definition | Usage in Description |
+|------|------------|----------------------|
+| **Ripple** | 涟漪（圆波扩散） | "涟漪效果，扩散速度 1.5" |
+| **Wave** | 波动（sin/cos） | "波动动画，频率 2.0" |
+| **Pulse** | 脉冲（周期强度） | "脉冲效果，周期 2 秒" |
+| **Flow** | 流动（持续移动） | "流光效果，速度 0.8" |
+| **Linear** | 线性速度（t） | "线性动画（匀速）" |
+| **Ease-in** | 缓入（慢→快） | "Ease-in 缓入效果" |
+| **Ease-out** | 缓出（快→慢） | "Ease-out 缓出效果" |
+| **Loop** | 循环（fract） | "循环动画，周期 3 秒" |
+
+#### Texture & Material
+
+| Term | Definition | Usage in Description |
+|------|------------|----------------------|
+| **Perlin noise** | 平滑梯度噪声 | "Perlin 噪声纹理" |
+| **FBM** | 分形布朗运动（多 octave） | "FBM 噪声，octave 4" |
+| **Frosted glass** | 磨砂玻璃（blur + alpha） | "磨砂玻璃效果" |
+| **Vignette** | 边缘暗化（距离 fade） | "暗角效果，强度 0.3" |
+| **Alpha blending** | 透明度混合 | "半透明，alpha 0.5" |
+| **Additive blending** | 加法混合（颜色叠加） | "加法混合光晕" |
+
+#### Composition
+
+| Term | Definition | Usage in Description |
+|------|------------|----------------------|
+| **Focal point** | 视觉焦点 | "焦点位置：中心" |
+| **Background** | 背景区域 | "背景颜色：白色 RGB 1.0" |
+| **Foreground** | 前景元素 | "前景层叠加" |
+| **Hierarchy** | 视觉层次 | "层次分明（主体突出）" |
 
 ---
 
@@ -382,510 +449,6 @@ Inspect Agent 输出 `visual_issues` 和 `visual_goals`（自然语言描述）�
 
 # Skill Knowledge Base
 
-## SDF Operators Reference
-
-> All 2D SDF formulations are based on Inigo Quilez's canonical definitions:
-> https://iquilezles.org/articles/distfunctions2d/
-> Smooth min/max: https://iquilezles.org/articles/smoothmin/
-
-### Primitives
-
-#### sdCircle
-```glsl
-float sdCircle(vec2 p, float r) {
-    return length(p) - r;
-}
-```
-- `r`: radius (0.0–1.0), default 0.3
-- Use for: circles, rings, ripples, radial masks
-- Compose with: smooth_union, fresnel, rotation
-
-#### sdBox
-```glsl
-float sdBox(vec2 p, vec2 b) {
-    vec2 d = abs(p) - b;
-    return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
-}
-```
-- `b`: half-extents (vec2), default vec2(0.3, 0.2)
-- Use for: rectangles, cards, panels, rounded backgrounds
-
-#### sdRoundedBox
-```glsl
-float sdRoundedBox(vec2 p, vec2 b, float r) {
-    vec2 q = abs(p) - b + r;
-    return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
-}
-```
-- `b`: half-extents, `r`: corner radius
-- Use for: OS UI elements, cards with rounded corners
-
-#### sdRing
-```glsl
-float sdRing(vec2 p, float r, float w) {
-    return abs(length(p) - r) - w;
-}
-```
-- `r`: ring radius, `w`: ring width (thin = 0.01–0.05)
-- Use for: selection rings, progress indicators, halos
-
-#### sdArc
-```glsl
-float sdArc(vec2 p, float r, float w, float a1, float a2) {
-    float a = atan(p.y, p.x);
-    a = clamp(a, a1, a2);
-    vec2 q = vec2(cos(a), sin(a)) * r;
-    return length(p - q) - w;
-}
-```
-- Use for: progress arcs, gauge indicators
-
-### Boolean Operations
-
-#### opSmoothUnion
-```glsl
-float opSmoothUnion(float d1, float d2, float k) {
-    float h = clamp(0.5 + 0.5 * (d2 - d1) / k, 0.0, 1.0);
-    return mix(d2, d1, h) - k * h * (1.0 - h);
-}
-```
-- `k`: blend smoothness (0.01 = sharp, 0.3 = very soft)
-- Use for: organic shape merging, blob effects
-
-#### opSmoothSubtraction
-```glsl
-float opSmoothSubtraction(float d1, float d2, float k) {
-    float h = clamp(0.5 - 0.5 * (d2 + d1) / k, 0.0, 1.0);
-    return mix(d2, -d1, h) + k * h * (1.0 - h);
-}
-```
-- Use for: cutouts, hollow shapes, windows
-
-#### opSmoothIntersection
-```glsl
-float opSmoothIntersection(float d1, float d2, float k) {
-    float h = clamp(0.5 - 0.5 * (d2 - d1) / k, 0.0, 1.0);
-    return mix(d2, d1, h) + k * h * (1.0 - h);
-}
-```
-- Use for: constrained regions, overlap masks
-
-## Noise Operators Reference
-
-### Hash Functions (building blocks)
-
-```glsl
-float hash21(vec2 p) {
-    p = fract(p * vec2(234.34, 435.345));
-    p += dot(p, p + 34.23);
-    return fract(p.x * p.y);
-}
-
-vec2 hash22(vec2 p) {
-    p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
-    return -1.0 + 2.0 * fract(sin(p) * 43758.5453123);
-}
-```
-
-### Value Noise
-```glsl
-float valueNoise(vec2 p) {
-    vec2 i = floor(p);
-    vec2 f = fract(p);
-    vec2 u = f * f * (3.0 - 2.0 * f);
-    return mix(mix(hash21(i), hash21(i + vec2(1.0, 0.0)), u.x),
-               mix(hash21(i + vec2(0.0, 1.0)), hash21(i + vec2(1.0, 1.0)), u.x),
-               u.y);
-}
-```
-- Output: [0, 1], cheap, blocky appearance
-- Best for: subtle grain, low-detail textures
-
-### Perlin Gradient Noise
-```glsl
-float perlinNoise(vec2 p) {
-    vec2 i = floor(p);
-    vec2 f = fract(p);
-    vec2 u = f * f * (3.0 - 2.0 * f);
-    return mix(mix(dot(hash22(i + vec2(0,0)), f - vec2(0,0)),
-                   dot(hash22(i + vec2(1,0)), f - vec2(1,0)), u.x),
-               mix(dot(hash22(i + vec2(0,1)), f - vec2(0,1)),
-                   dot(hash22(i + vec2(1,1)), f - vec2(1,1)), u.x),
-               u.y);
-}
-```
-- Output: ~[-1, 1], natural, directional
-- Best for: clouds, fire, water, natural textures
-
-### Simplex Noise
-```glsl
-float simplexNoise(vec2 p) {
-    // Skew and unskew factors
-    const vec2 F = vec2(0.5 * (sqrt(3.0) - 1.0));
-    const vec2 G = vec2((3.0 - sqrt(3.0)) / 6.0);
-
-    vec2 s = floor(p + dot(p, F));
-    vec2 i = s - floor(s * G);
-    vec2 f = p - i - dot(i, G);
-
-    vec2 o1 = (f.x > f.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
-    vec2 o2 = i + vec2(0.0, 1.0) - floor((i + vec2(0.0, 1.0)) * G);
-    vec2 o3 = i + vec2(1.0, 1.0) - floor((i + vec2(1.0, 1.0)) * G);
-
-    float n0 = 0.0, n1 = 0.0, n2 = 0.0;
-    vec2 d0 = f - vec2(0,0);
-    vec2 d1 = f - o1;
-    vec2 d2 = f - o2;
-
-    float t0 = 0.5 - dot(d0, d0);
-    if (t0 > 0.0) n0 = t0 * t0 * t0 * t0 * dot(hash22(s), d0);
-    float t1 = 0.5 - dot(d1, d1);
-    if (t1 > 0.0) n1 = t1 * t1 * t1 * t1 * dot(hash22(s + o1), d1);
-    float t2 = 0.5 - dot(d2, d2);
-    if (t2 > 0.0) n2 = t2 * t2 * t2 * t2 * dot(hash22(s + o2), d2);
-
-    return 70.0 * (n0 + n1 + n2);
-}
-```
-- Output: ~[-1, 1], isotropic, no directional artifacts
-- Best for: high-quality organic textures, less grid bias
-
-### Voronoi / Worley
-```glsl
-vec3 voronoi(vec2 p) {
-    vec2 i = floor(p);
-    vec2 f = fract(p);
-    float d1 = 8.0, d2 = 8.0;
-    vec2 closestCell = vec2(0.0);
-
-    for (int y = -1; y <= 1; y++) {
-        for (int x = -1; x <= 1; x++) {
-            vec2 neighbor = vec2(float(x), float(y));
-            vec2 point = hash22(i + neighbor);
-            point = 0.5 + 0.5 * sin(u_time + 6.2831 * point);
-            vec2 diff = neighbor + point - f;
-            float dist = length(diff);
-            if (dist < d1) { d2 = d1; d1 = dist; closestCell = i + neighbor; }
-            else if (dist < d2) { d2 = dist; }
-        }
-    }
-    return vec3(d1, d2, hash21(closestCell)); // F1, F2, cell_id
-}
-```
-- `voronoi(p).x` = F1 (nearest cell distance)
-- `voronoi(p).y` = F2 (second nearest)
-- `voronoi(p).z` = cell random ID
-- Use for: cells, cracks, crystals, organic partitions
-
-### FBM (Fractal Brownian Motion)
-```glsl
-float fbm(vec2 p, int octaves) {
-    float val = 0.0;
-    float amp = 0.5;
-    float freq = 1.0;
-    for (int i = 0; i < 6; i++) {
-        if (i >= octaves) break;
-        val += amp * perlinNoise(p * freq); // or valueNoise/simplexNoise
-        freq *= 2.0;
-        amp *= 0.5;
-    }
-    return val;
-}
-```
-- `octaves`: 2 = very soft, 4 = standard, 6 = detailed (performance cost)
-- Use for: complex natural textures, layered effects
-
-## Shader Templates Reference
-
-Each template is a complete effect skeleton. Customize parameters based on the visual description.
-
-### Template: Basic Gradient
-```glsl
-void mainImage(out vec4 fragColor, in vec2 fragCoord) {
-    vec2 uv = fragCoord / u_resolution.xy;
-    vec3 colA = vec3(0.1, 0.1, 0.18); // top color
-    vec3 colB = vec3(0.06, 0.2, 0.38); // bottom color
-    vec3 col = mix(colB, colA, uv.y); // linear vertical
-    // For radial: float d = length(uv - 0.5); col = mix(colA, colB, d * 2.0);
-    // For angular: float a = atan(uv.y-0.5, uv.x-0.5); col = mix(colA, colB, (a/6.28+0.5));
-    fragColor = vec4(col, 1.0);
-}
-```
-
-### Template: Ripple
-```glsl
-float sdCircle(vec2 p, float r) { return length(p) - r; }
-
-void mainImage(out vec4 fragColor, in vec2 fragCoord) {
-    vec2 uv = fragCoord / u_resolution.xy;
-    vec2 center = u_mouse / u_resolution.xy;
-    float t = u_time;
-
-    float speed = 0.8;
-    float wavelength = 0.05;
-    float decay = 3.0;
-
-    vec2 p = uv - center;
-    float dist = length(p);
-    float wave = sin((dist - t * speed) / wavelength * 6.2832);
-    float attenuation = exp(-dist * decay) * exp(-fract(t * 0.3) * 2.0);
-    float ripple = wave * attenuation;
-
-    vec3 baseColor = vec3(0.1, 0.3, 0.6);
-    vec3 rippleColor = vec3(0.4, 0.7, 1.0);
-    vec3 col = mix(baseColor, rippleColor, ripple * 0.5 + 0.5);
-    fragColor = vec4(col, 1.0);
-}
-```
-- Customizable: speed, wavelength, decay, baseColor, rippleColor
-
-### Template: Frosted Glass (with backdrop texture)
-```glsl
-vec3 backdropBlur(vec2 uv, float radius) {
-    vec3 sum = vec3(0.0);
-    float total = 0.0;
-    for (int i = -4; i <= 4; i++) {
-        for (int j = -4; j <= 4; j++) {
-            vec2 offset = vec2(float(i), float(j)) * radius / u_resolution.xy;
-            float w = 1.0 - length(vec2(float(i), float(j))) / 6.0;
-            w = max(w, 0.0);
-            sum += texture(iChannel0, uv + offset).rgb * w;
-            total += w;
-        }
-    }
-    return sum / max(total, 0.001);
-}
-
-void mainImage(out vec4 fragColor, in vec2 fragCoord) {
-    vec2 uv = fragCoord / u_resolution.xy;
-    vec3 blurred = backdropBlur(uv, 4.0);
-    float noise = 0.5 + 0.5 * perlinNoise(uv * 20.0 + u_time * 0.1);
-    vec3 col = blurred * (0.85 + 0.15 * noise);
-    col += vec3(0.8, 0.85, 0.95) * 0.08; // cool tint
-    fragColor = vec4(col, 0.92);
-}
-```
-- Requires: iChannel0 (backdrop texture)
-- Customizable: blur radius, noise scale, tint color, opacity
-
-### Template: Aurora
-```glsl
-float perlinNoise(vec2 p) { /* see noise-operators */ }
-float fbm(vec2 p) { float v=0.0; float a=0.5; for(int i=0;i<5;i++){v+=a*perlinNoise(p);p*=2.0;a*=0.5;} return v; }
-
-void mainImage(out vec4 fragColor, in vec2 fragCoord) {
-    vec2 uv = fragCoord / u_resolution.xy;
-    float t = u_time * 0.3;
-
-    float n1 = fbm(vec2(uv.x * 3.0 + t, uv.y * 2.0 + t * 0.5));
-    float n2 = fbm(vec2(uv.x * 2.0 - t * 0.7, uv.y * 3.0));
-
-    vec3 col1 = vec3(0.1, 0.8, 0.4); // green
-    vec3 col2 = vec3(0.2, 0.4, 0.9); // blue
-    vec3 col3 = vec3(0.7, 0.2, 0.8); // purple
-
-    float band = smoothstep(0.3, 0.7, uv.y + n1 * 0.3);
-    vec3 col = mix(col1, col2, band);
-    col = mix(col, col3, smoothstep(0.5, 0.8, n2));
-
-    col *= smoothstep(0.0, 0.3, uv.y) * smoothstep(1.0, 0.5, uv.y);
-    col *= 0.7 + 0.3 * sin(t * 2.0 + uv.x * 6.28);
-
-    fragColor = vec4(col, 1.0);
-}
-```
-- Customizable: color bands, flow speed, vertical distribution
-
-### Template: Glow Pulse
-```glsl
-void mainImage(out vec4 fragColor, in vec2 fragCoord) {
-    vec2 uv = fragCoord / u_resolution.xy;
-    vec2 center = vec2(0.5);
-    float dist = length(uv - center);
-
-    float pulse = 0.5 + 0.5 * sin(u_time * 2.0); // breathing
-    float glow = exp(-dist * (4.0 + 2.0 * pulse));
-
-    vec3 glowColor = vec3(0.3, 0.6, 1.0);
-    vec3 baseColor = vec3(0.02, 0.02, 0.05);
-
-    vec3 col = baseColor + glowColor * glow * (0.5 + 0.5 * pulse);
-    fragColor = vec4(col, 1.0);
-}
-```
-- Customizable: pulse speed, glow radius, glow color, base color
-
-## Aesthetics Rules Reference
-
-> Target: 2D/2.5D UI visual effects on mobile devices (Mali/Adreno/Apple GPU) and web.
-> Authority: Shadertoy (https://www.shadertoy.com/) for visual patterns and implementation approaches.
-
-### Color Harmony
-
-#### Complementary (180° apart)
-- High contrast, use sparingly: base 70%, accent 30%
-- Shader: `mix(base, complement, factor)` with factor 0.1–0.3
-- Example: blue #1a1a2e + orange #e94560
-
-#### Analogous (30°–60° apart)
-- Natural, harmonious — safe default
-- Shader: `cos(uv.x * 6.28 + offset)` for color bands
-- Example: deep blue #0f3460 + indigo #16213e + purple #533483
-
-#### Triadic (120° apart)
-- Rich but needs hierarchy: 1 primary 70%, 2 accents 15% each
-- Shader: assign one color per SDF region
-
-#### Readability
-- Background-foreground luminance difference > 0.4 (WCAG AA)
-- In motion: > 0.3 acceptable
-- Luminance: `dot(col, vec3(0.299, 0.587, 0.114))`
-
-#### Dark Theme Safe
-- Background luminance < 0.15
-- Highlight luminance > 0.5
-- Never pure black #000000 — use `vec3(0.02, 0.02, 0.05)` minimum
-
-### Motion Principles
-
-#### Easing Selection
-| Motion Type | Easing | Shader Function |
-|-------------|--------|----------------|
-| Appear/expand | ease-out | `1.0 - (1.0 - t) * (1.0 - t)` |
-| Disappear/shrink | ease-in | `t * t` |
-| Natural/organic | ease-in-out | `t * t * (3.0 - 2.0 * t)` |
-| Bounce/spring | spring | `1.0 - pow(cos(t * 3.14159 * 0.5), 2.0) * exp(-t * 4.0)` |
-| Smooth loop | cosine | `0.5 - 0.5 * cos(t * 6.2832)` |
-
-#### Timing
-- Micro-interactions: 150–400ms
-- Transitions: 300–800ms
-- Ambient effects: 2–6s loop
-- Never instant (0ms) — even subtle motion feels better than none
-
-#### Rhythm
-- Use `fract(u_time / duration)` for perfect loops
-- Vary frequencies to avoid mechanical feel: `sin(t * 1.0) + sin(t * 1.7) * 0.5`
-- Layer 2–3 speeds: slow drift + medium pulse + fast shimmer
-
-### Performance Budget (Mobile/Web)
-
-> These are **mobile** budgets — significantly tighter than desktop.
-> A 2022 mid-range phone (e.g. Snapdragon 778G, Mali-G78) is the reference device.
-
-| Metric | Mobile Limit | Desktop/Dev Limit | Notes |
-|--------|-------------|-------------------|-------|
-| ALU instructions | ≤ 256 | ≤ 512 | Fragment shader instruction count |
-| Texture fetches per fragment | ≤ 8 | ≤ 16 | Mobile memory bandwidth is the bottleneck |
-| For-loop iterations (total) | ≤ 32 | ≤ 64 | Hard limit, no dynamic bounds |
-| Target frame time | < 2ms @ 1080p | < 4ms @ 1440p | 60fps budget with headroom for OS UI |
-| FBM octaves | ≤ 4 | ≤ 6 | Each octave doubles cost |
-| Blur kernel | ≤ 7×7 (49 samples) | ≤ 9×9 (81 samples) | Multi-sample blur is very expensive on mobile |
-
-#### Optimization Tips (Mobile-First)
-- Prefer `smoothstep` over conditional branches
-- Use `step()` for binary masks instead of `if`
-- Precompute constants outside `mainImage`
-- Use `mix` instead of branching where possible
-- **Prefer mipmap LOD blur over multi-sample blur** — single texture fetch vs. 49+
-- Downsample expensive effects: render at half resolution when precision allows
-- Avoid dependent texture reads on mobile (compute UV, then sample, don't sample-then-recompute)
-- Keep FBM at 4 octaves max on mobile; 5+ causes visible jank
-- Use `lowp`/`mediump` for colors where precision loss is acceptable (but not for UVs or SDF distances)
-
-## GLSL Constraints Reference
-
-> Target platform: **Mobile GPU (Mali/Adreno/Apple GPU) + WebGL** — not desktop.
-> Target frame budget: **< 2ms per frame at 1080p** on mid-range mobile.
-> Scope: **2D/2.5D flat effects only** — no 3D raymarching, no volumetric, no scene graphs.
-
-### Mandatory Rules
-
-1. **Do NOT declare** `u_time`, `u_resolution`, `u_mouse` — these are injected by runtime
-2. **Must implement** `void mainImage(out vec4 fragColor, in vec2 fragCoord)` — entry point
-3. **Output must be** complete, compilable GLSL ES 3.0 — no `#include`, no undefined functions
-4. **2D only** — all coordinates are `vec2 uv`, all SDF operations are 2D, no `vec3` position/ray/direction for 3D scene rendering
-
-### Banned Patterns
-
-| Pattern | Reason | Alternative |
-|---------|--------|-------------|
-| **3D raymarching** (`rayDirection`, `marchRay`, `castRay`, `sceneSDF(vec3)`) | Mobile GPU too slow, not our scope | Use 2D SDF + layered composition |
-| **3D SDF primitives** (`sdSphere(vec3)`, `sdBox(vec3)`) | Outside 2D/2.5D scope | Use 2D equivalents |
-| **Path tracing / BRDF / PBR** | Desktop-only, not mobile real-time | Use Fresnel rim, fake AO, procedural lighting |
-| **Volumetric / fog / clouds** (ray-step loops > 8) | Too expensive on mobile | Layer 2D noise with depth fade |
-| `for` loops with > 8 iterations or dynamic bounds | GPU divergence, timeout | Unroll or use fixed-count loops |
-| Recursion | Not supported in GLSL | Refactor to iterative |
-| `discard` | Kills early-Z, hurts performance | Use alpha blending or `step()` mask |
-| Dynamic array indexing | GPU register pressure | Constant-index or texture lookup |
-| `while` loops | Infinite loop risk | Fixed `for` loop |
-| `textureLod` in fragment | Not universally supported | `texture()` with bias parameter |
-
-### Mobile Performance Budget
-
-| Metric | Limit | Rationale |
-|--------|-------|-----------|
-| Fragment shader ALU instructions | ≤ 256 | Mid-range mobile at 1080p |
-| Texture fetches per fragment | ≤ 8 | Mobile memory bandwidth limited |
-| For-loop iterations (total across all loops) | ≤ 32 | Prevents GPU timeout |
-| Target frame time | < 2ms at 1080p | 60fps budget with headroom for UI |
-| FBM octaves | ≤ 4 | Each octave doubles cost; 4 is already heavy on mobile |
-| Blur kernel | ≤ 7×7 (49 samples) | 9×9 is too slow on mobile GPU |
-| Total fragment shader complexity | "simple" to "moderate" | If it wouldn't run smoothly on a 2022 mid-range phone, simplify |
-
-#### Mobile Optimization Tips
-
-- **Prefer `smoothstep` and `step` over branching** — GPUs hate divergent branches
-- **Use `mix()` instead of `if/else`** — both branches execute anyway on GPU
-- **Reduce texture samples**: prefer mipmap LOD over multi-sample blur
-- **Downsample expensive effects**: render at half resolution when possible
-- **Avoid dependent texture reads**: compute UV before sampling, not after
-- **Keep FBM octaves ≤ 4** on mobile; 5+ is desktop-only
-- **Use `pow(x, 2.0)` instead of `x * x` only when the compiler won't optimize** — usually `x * x` is fine
-
-### Math Safety
-
-```glsl
-// Division — always guard
-float safe = a / max(b, 0.0001);
-
-// Square root — ensure non-negative
-float safe = sqrt(max(val, 0.0));
-
-// Log — ensure positive
-float safe = log(max(val, 0.0001));
-
-// Pow with negative base — use abs
-float safe = pow(abs(base), exp);
-
-// Normalize — guard zero-length
-vec2 safe = length(v) > 0.0001 ? normalize(v) : vec2(0.0);
-
-// Clamp all outputs
-fragColor = vec4(clamp(col, 0.0, 1.0), clamp(alpha, 0.0, 1.0));
-```
-
-### Cross-Platform Quirks
-
-| Issue | GLSL (WebGL/Vulkan) | MSL (Metal) | Notes |
-|-------|---------------------|-------------|-------|
-| Fragment output | `out vec4 fragColor` | `return vec4` | Our runtime wraps to handle this |
-| Texture function | `texture(sampler, uv)` | `sampler.sample(uv)` | Use `texture()` — transpiler handles |
-| Uniform declarations | Must declare in code | Declared in shader signature | Our runtime auto-injects common uniforms |
-| Precision | Need `precision highp float` | Implicit | Always include precision qualifier |
-| Half-float framebuffers | May not support | Supported | Assume `highp` only; don't rely on `mediump` FBO |
-
-### Texture Support
-
-- Textures are supported via `iChannel0`–`iChannel3` (Shadertoy convention)
-- Use `texture(iChannelN, uv)` for sampling
-- Our runtime will bind system textures to channels automatically
-- For backdrop blur effects, iChannel0 is the system framebuffer
-- For user-uploaded textures, iChannel1 is available
-- Always handle the case where a channel may not be bound — use fallback procedural
-- **Mobile**: keep texture samples ≤ 8 per fragment; prefer mipmap LOD blur over multi-sample
-
-## Operator Catalog
 
 Complete catalog of GLSL operators for visual effect composition.
 
@@ -1445,4 +1008,507 @@ vec4 alphaBlend(vec4 src, vec4 dst) {
 | **Flow Light** | `Noise` + `Flow` + `ColorMix` | High |
 | **Particle Effect** | `Voronoi` + `Animation` + `Alpha` | High |
 
----
+## SDF Operators Reference
+
+> All 2D SDF formulations are based on Inigo Quilez's canonical definitions:
+> https://iquilezles.org/articles/distfunctions2d/
+> Smooth min/max: https://iquilezles.org/articles/smoothmin/
+
+### Primitives
+
+#### sdCircle
+```glsl
+float sdCircle(vec2 p, float r) {
+    return length(p) - r;
+}
+```
+- `r`: radius (0.0–1.0), default 0.3
+- Use for: circles, rings, ripples, radial masks
+- Compose with: smooth_union, fresnel, rotation
+
+#### sdBox
+```glsl
+float sdBox(vec2 p, vec2 b) {
+    vec2 d = abs(p) - b;
+    return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+}
+```
+- `b`: half-extents (vec2), default vec2(0.3, 0.2)
+- Use for: rectangles, cards, panels, rounded backgrounds
+
+#### sdRoundedBox
+```glsl
+float sdRoundedBox(vec2 p, vec2 b, float r) {
+    vec2 q = abs(p) - b + r;
+    return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
+}
+```
+- `b`: half-extents, `r`: corner radius
+- Use for: OS UI elements, cards with rounded corners
+
+#### sdRing
+```glsl
+float sdRing(vec2 p, float r, float w) {
+    return abs(length(p) - r) - w;
+}
+```
+- `r`: ring radius, `w`: ring width (thin = 0.01–0.05)
+- Use for: selection rings, progress indicators, halos
+
+#### sdArc
+```glsl
+float sdArc(vec2 p, float r, float w, float a1, float a2) {
+    float a = atan(p.y, p.x);
+    a = clamp(a, a1, a2);
+    vec2 q = vec2(cos(a), sin(a)) * r;
+    return length(p - q) - w;
+}
+```
+- Use for: progress arcs, gauge indicators
+
+### Boolean Operations
+
+#### opSmoothUnion
+```glsl
+float opSmoothUnion(float d1, float d2, float k) {
+    float h = clamp(0.5 + 0.5 * (d2 - d1) / k, 0.0, 1.0);
+    return mix(d2, d1, h) - k * h * (1.0 - h);
+}
+```
+- `k`: blend smoothness (0.01 = sharp, 0.3 = very soft)
+- Use for: organic shape merging, blob effects
+
+#### opSmoothSubtraction
+```glsl
+float opSmoothSubtraction(float d1, float d2, float k) {
+    float h = clamp(0.5 - 0.5 * (d2 + d1) / k, 0.0, 1.0);
+    return mix(d2, -d1, h) + k * h * (1.0 - h);
+}
+```
+- Use for: cutouts, hollow shapes, windows
+
+#### opSmoothIntersection
+```glsl
+float opSmoothIntersection(float d1, float d2, float k) {
+    float h = clamp(0.5 - 0.5 * (d2 - d1) / k, 0.0, 1.0);
+    return mix(d2, d1, h) + k * h * (1.0 - h);
+}
+```
+- Use for: constrained regions, overlap masks
+
+## Noise Operators Reference
+
+### Hash Functions (building blocks)
+
+```glsl
+float hash21(vec2 p) {
+    p = fract(p * vec2(234.34, 435.345));
+    p += dot(p, p + 34.23);
+    return fract(p.x * p.y);
+}
+
+vec2 hash22(vec2 p) {
+    p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
+    return -1.0 + 2.0 * fract(sin(p) * 43758.5453123);
+}
+```
+
+### Value Noise
+```glsl
+float valueNoise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash21(i), hash21(i + vec2(1.0, 0.0)), u.x),
+               mix(hash21(i + vec2(0.0, 1.0)), hash21(i + vec2(1.0, 1.0)), u.x),
+               u.y);
+}
+```
+- Output: [0, 1], cheap, blocky appearance
+- Best for: subtle grain, low-detail textures
+
+### Perlin Gradient Noise
+```glsl
+float perlinNoise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(dot(hash22(i + vec2(0,0)), f - vec2(0,0)),
+                   dot(hash22(i + vec2(1,0)), f - vec2(1,0)), u.x),
+               mix(dot(hash22(i + vec2(0,1)), f - vec2(0,1)),
+                   dot(hash22(i + vec2(1,1)), f - vec2(1,1)), u.x),
+               u.y);
+}
+```
+- Output: ~[-1, 1], natural, directional
+- Best for: clouds, fire, water, natural textures
+
+### Simplex Noise
+```glsl
+float simplexNoise(vec2 p) {
+    // Skew and unskew factors
+    const vec2 F = vec2(0.5 * (sqrt(3.0) - 1.0));
+    const vec2 G = vec2((3.0 - sqrt(3.0)) / 6.0);
+
+    vec2 s = floor(p + dot(p, F));
+    vec2 i = s - floor(s * G);
+    vec2 f = p - i - dot(i, G);
+
+    vec2 o1 = (f.x > f.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+    vec2 o2 = i + vec2(0.0, 1.0) - floor((i + vec2(0.0, 1.0)) * G);
+    vec2 o3 = i + vec2(1.0, 1.0) - floor((i + vec2(1.0, 1.0)) * G);
+
+    float n0 = 0.0, n1 = 0.0, n2 = 0.0;
+    vec2 d0 = f - vec2(0,0);
+    vec2 d1 = f - o1;
+    vec2 d2 = f - o2;
+
+    float t0 = 0.5 - dot(d0, d0);
+    if (t0 > 0.0) n0 = t0 * t0 * t0 * t0 * dot(hash22(s), d0);
+    float t1 = 0.5 - dot(d1, d1);
+    if (t1 > 0.0) n1 = t1 * t1 * t1 * t1 * dot(hash22(s + o1), d1);
+    float t2 = 0.5 - dot(d2, d2);
+    if (t2 > 0.0) n2 = t2 * t2 * t2 * t2 * dot(hash22(s + o2), d2);
+
+    return 70.0 * (n0 + n1 + n2);
+}
+```
+- Output: ~[-1, 1], isotropic, no directional artifacts
+- Best for: high-quality organic textures, less grid bias
+
+### Voronoi / Worley
+```glsl
+vec3 voronoi(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    float d1 = 8.0, d2 = 8.0;
+    vec2 closestCell = vec2(0.0);
+
+    for (int y = -1; y <= 1; y++) {
+        for (int x = -1; x <= 1; x++) {
+            vec2 neighbor = vec2(float(x), float(y));
+            vec2 point = hash22(i + neighbor);
+            point = 0.5 + 0.5 * sin(u_time + 6.2831 * point);
+            vec2 diff = neighbor + point - f;
+            float dist = length(diff);
+            if (dist < d1) { d2 = d1; d1 = dist; closestCell = i + neighbor; }
+            else if (dist < d2) { d2 = dist; }
+        }
+    }
+    return vec3(d1, d2, hash21(closestCell)); // F1, F2, cell_id
+}
+```
+- `voronoi(p).x` = F1 (nearest cell distance)
+- `voronoi(p).y` = F2 (second nearest)
+- `voronoi(p).z` = cell random ID
+- Use for: cells, cracks, crystals, organic partitions
+
+### FBM (Fractal Brownian Motion)
+```glsl
+float fbm(vec2 p, int octaves) {
+    float val = 0.0;
+    float amp = 0.5;
+    float freq = 1.0;
+    for (int i = 0; i < 6; i++) {
+        if (i >= octaves) break;
+        val += amp * perlinNoise(p * freq); // or valueNoise/simplexNoise
+        freq *= 2.0;
+        amp *= 0.5;
+    }
+    return val;
+}
+```
+- `octaves`: 2 = very soft, 4 = standard, 6 = detailed (performance cost)
+- Use for: complex natural textures, layered effects
+
+## Shader Templates Reference
+
+Each template is a complete effect skeleton. Customize parameters based on the visual description.
+
+### Template: Basic Gradient
+```glsl
+void mainImage(out vec4 fragColor, in vec2 fragCoord) {
+    vec2 uv = fragCoord / u_resolution.xy;
+    vec3 colA = vec3(0.1, 0.1, 0.18); // top color
+    vec3 colB = vec3(0.06, 0.2, 0.38); // bottom color
+    vec3 col = mix(colB, colA, uv.y); // linear vertical
+    // For radial: float d = length(uv - 0.5); col = mix(colA, colB, d * 2.0);
+    // For angular: float a = atan(uv.y-0.5, uv.x-0.5); col = mix(colA, colB, (a/6.28+0.5));
+    fragColor = vec4(col, 1.0);
+}
+```
+
+### Template: Ripple
+```glsl
+float sdCircle(vec2 p, float r) { return length(p) - r; }
+
+void mainImage(out vec4 fragColor, in vec2 fragCoord) {
+    vec2 uv = fragCoord / u_resolution.xy;
+    vec2 center = u_mouse / u_resolution.xy;
+    float t = u_time;
+
+    float speed = 0.8;
+    float wavelength = 0.05;
+    float decay = 3.0;
+
+    vec2 p = uv - center;
+    float dist = length(p);
+    float wave = sin((dist - t * speed) / wavelength * 6.2832);
+    float attenuation = exp(-dist * decay) * exp(-fract(t * 0.3) * 2.0);
+    float ripple = wave * attenuation;
+
+    vec3 baseColor = vec3(0.1, 0.3, 0.6);
+    vec3 rippleColor = vec3(0.4, 0.7, 1.0);
+    vec3 col = mix(baseColor, rippleColor, ripple * 0.5 + 0.5);
+    fragColor = vec4(col, 1.0);
+}
+```
+- Customizable: speed, wavelength, decay, baseColor, rippleColor
+
+### Template: Frosted Glass (with backdrop texture)
+```glsl
+vec3 backdropBlur(vec2 uv, float radius) {
+    vec3 sum = vec3(0.0);
+    float total = 0.0;
+    for (int i = -4; i <= 4; i++) {
+        for (int j = -4; j <= 4; j++) {
+            vec2 offset = vec2(float(i), float(j)) * radius / u_resolution.xy;
+            float w = 1.0 - length(vec2(float(i), float(j))) / 6.0;
+            w = max(w, 0.0);
+            sum += texture(iChannel0, uv + offset).rgb * w;
+            total += w;
+        }
+    }
+    return sum / max(total, 0.001);
+}
+
+void mainImage(out vec4 fragColor, in vec2 fragCoord) {
+    vec2 uv = fragCoord / u_resolution.xy;
+    vec3 blurred = backdropBlur(uv, 4.0);
+    float noise = 0.5 + 0.5 * perlinNoise(uv * 20.0 + u_time * 0.1);
+    vec3 col = blurred * (0.85 + 0.15 * noise);
+    col += vec3(0.8, 0.85, 0.95) * 0.08; // cool tint
+    fragColor = vec4(col, 0.92);
+}
+```
+- Requires: iChannel0 (backdrop texture)
+- Customizable: blur radius, noise scale, tint color, opacity
+
+### Template: Aurora
+```glsl
+float perlinNoise(vec2 p) { /* see noise-operators */ }
+float fbm(vec2 p) { float v=0.0; float a=0.5; for(int i=0;i<5;i++){v+=a*perlinNoise(p);p*=2.0;a*=0.5;} return v; }
+
+void mainImage(out vec4 fragColor, in vec2 fragCoord) {
+    vec2 uv = fragCoord / u_resolution.xy;
+    float t = u_time * 0.3;
+
+    float n1 = fbm(vec2(uv.x * 3.0 + t, uv.y * 2.0 + t * 0.5));
+    float n2 = fbm(vec2(uv.x * 2.0 - t * 0.7, uv.y * 3.0));
+
+    vec3 col1 = vec3(0.1, 0.8, 0.4); // green
+    vec3 col2 = vec3(0.2, 0.4, 0.9); // blue
+    vec3 col3 = vec3(0.7, 0.2, 0.8); // purple
+
+    float band = smoothstep(0.3, 0.7, uv.y + n1 * 0.3);
+    vec3 col = mix(col1, col2, band);
+    col = mix(col, col3, smoothstep(0.5, 0.8, n2));
+
+    col *= smoothstep(0.0, 0.3, uv.y) * smoothstep(1.0, 0.5, uv.y);
+    col *= 0.7 + 0.3 * sin(t * 2.0 + uv.x * 6.28);
+
+    fragColor = vec4(col, 1.0);
+}
+```
+- Customizable: color bands, flow speed, vertical distribution
+
+### Template: Glow Pulse
+```glsl
+void mainImage(out vec4 fragColor, in vec2 fragCoord) {
+    vec2 uv = fragCoord / u_resolution.xy;
+    vec2 center = vec2(0.5);
+    float dist = length(uv - center);
+
+    float pulse = 0.5 + 0.5 * sin(u_time * 2.0); // breathing
+    float glow = exp(-dist * (4.0 + 2.0 * pulse));
+
+    vec3 glowColor = vec3(0.3, 0.6, 1.0);
+    vec3 baseColor = vec3(0.02, 0.02, 0.05);
+
+    vec3 col = baseColor + glowColor * glow * (0.5 + 0.5 * pulse);
+    fragColor = vec4(col, 1.0);
+}
+```
+- Customizable: pulse speed, glow radius, glow color, base color
+
+## Aesthetics Rules Reference
+
+> Target: 2D/2.5D UI visual effects on mobile devices (Mali/Adreno/Apple GPU) and web.
+> Authority: Shadertoy (https://www.shadertoy.com/) for visual patterns and implementation approaches.
+
+### Color Harmony
+
+#### Complementary (180° apart)
+- High contrast, use sparingly: base 70%, accent 30%
+- Shader: `mix(base, complement, factor)` with factor 0.1–0.3
+- Example: blue #1a1a2e + orange #e94560
+
+#### Analogous (30°–60° apart)
+- Natural, harmonious — safe default
+- Shader: `cos(uv.x * 6.28 + offset)` for color bands
+- Example: deep blue #0f3460 + indigo #16213e + purple #533483
+
+#### Triadic (120° apart)
+- Rich but needs hierarchy: 1 primary 70%, 2 accents 15% each
+- Shader: assign one color per SDF region
+
+#### Readability
+- Background-foreground luminance difference > 0.4 (WCAG AA)
+- In motion: > 0.3 acceptable
+- Luminance: `dot(col, vec3(0.299, 0.587, 0.114))`
+
+#### Dark Theme Safe
+- Background luminance < 0.15
+- Highlight luminance > 0.5
+- Never pure black #000000 — use `vec3(0.02, 0.02, 0.05)` minimum
+
+### Motion Principles
+
+#### Easing Selection
+| Motion Type | Easing | Shader Function |
+|-------------|--------|----------------|
+| Appear/expand | ease-out | `1.0 - (1.0 - t) * (1.0 - t)` |
+| Disappear/shrink | ease-in | `t * t` |
+| Natural/organic | ease-in-out | `t * t * (3.0 - 2.0 * t)` |
+| Bounce/spring | spring | `1.0 - pow(cos(t * 3.14159 * 0.5), 2.0) * exp(-t * 4.0)` |
+| Smooth loop | cosine | `0.5 - 0.5 * cos(t * 6.2832)` |
+
+#### Timing
+- Micro-interactions: 150–400ms
+- Transitions: 300–800ms
+- Ambient effects: 2–6s loop
+- Never instant (0ms) — even subtle motion feels better than none
+
+#### Rhythm
+- Use `fract(u_time / duration)` for perfect loops
+- Vary frequencies to avoid mechanical feel: `sin(t * 1.0) + sin(t * 1.7) * 0.5`
+- Layer 2–3 speeds: slow drift + medium pulse + fast shimmer
+
+### Performance Budget (Mobile/Web)
+
+> These are **mobile** budgets — significantly tighter than desktop.
+> A 2022 mid-range phone (e.g. Snapdragon 778G, Mali-G78) is the reference device.
+
+| Metric | Mobile Limit | Desktop/Dev Limit | Notes |
+|--------|-------------|-------------------|-------|
+| ALU instructions | ≤ 256 | ≤ 512 | Fragment shader instruction count |
+| Texture fetches per fragment | ≤ 8 | ≤ 16 | Mobile memory bandwidth is the bottleneck |
+| For-loop iterations (total) | ≤ 32 | ≤ 64 | Hard limit, no dynamic bounds |
+| Target frame time | < 2ms @ 1080p | < 4ms @ 1440p | 60fps budget with headroom for OS UI |
+| FBM octaves | ≤ 4 | ≤ 6 | Each octave doubles cost |
+| Blur kernel | ≤ 7×7 (49 samples) | ≤ 9×9 (81 samples) | Multi-sample blur is very expensive on mobile |
+
+#### Optimization Tips (Mobile-First)
+- Prefer `smoothstep` over conditional branches
+- Use `step()` for binary masks instead of `if`
+- Precompute constants outside `mainImage`
+- Use `mix` instead of branching where possible
+- **Prefer mipmap LOD blur over multi-sample blur** — single texture fetch vs. 49+
+- Downsample expensive effects: render at half resolution when precision allows
+- Avoid dependent texture reads on mobile (compute UV, then sample, don't sample-then-recompute)
+- Keep FBM at 4 octaves max on mobile; 5+ causes visible jank
+- Use `lowp`/`mediump` for colors where precision loss is acceptable (but not for UVs or SDF distances)
+
+## GLSL Constraints Reference
+
+> Target platform: **Mobile GPU (Mali/Adreno/Apple GPU) + WebGL** — not desktop.
+> Target frame budget: **< 2ms per frame at 1080p** on mid-range mobile.
+> Scope: **2D/2.5D flat effects only** — no 3D raymarching, no volumetric, no scene graphs.
+
+### Mandatory Rules
+
+1. **Do NOT declare** `u_time`, `u_resolution`, `u_mouse` — these are injected by runtime
+2. **Must implement** `void mainImage(out vec4 fragColor, in vec2 fragCoord)` — entry point
+3. **Output must be** complete, compilable GLSL ES 3.0 — no `#include`, no undefined functions
+4. **2D only** — all coordinates are `vec2 uv`, all SDF operations are 2D, no `vec3` position/ray/direction for 3D scene rendering
+
+### Banned Patterns
+
+| Pattern | Reason | Alternative |
+|---------|--------|-------------|
+| **3D raymarching** (`rayDirection`, `marchRay`, `castRay`, `sceneSDF(vec3)`) | Mobile GPU too slow, not our scope | Use 2D SDF + layered composition |
+| **3D SDF primitives** (`sdSphere(vec3)`, `sdBox(vec3)`) | Outside 2D/2.5D scope | Use 2D equivalents |
+| **Path tracing / BRDF / PBR** | Desktop-only, not mobile real-time | Use Fresnel rim, fake AO, procedural lighting |
+| **Volumetric / fog / clouds** (ray-step loops > 8) | Too expensive on mobile | Layer 2D noise with depth fade |
+| `for` loops with > 8 iterations or dynamic bounds | GPU divergence, timeout | Unroll or use fixed-count loops |
+| Recursion | Not supported in GLSL | Refactor to iterative |
+| `discard` | Kills early-Z, hurts performance | Use alpha blending or `step()` mask |
+| Dynamic array indexing | GPU register pressure | Constant-index or texture lookup |
+| `while` loops | Infinite loop risk | Fixed `for` loop |
+| `textureLod` in fragment | Not universally supported | `texture()` with bias parameter |
+
+### Mobile Performance Budget
+
+| Metric | Limit | Rationale |
+|--------|-------|-----------|
+| Fragment shader ALU instructions | ≤ 256 | Mid-range mobile at 1080p |
+| Texture fetches per fragment | ≤ 8 | Mobile memory bandwidth limited |
+| For-loop iterations (total across all loops) | ≤ 32 | Prevents GPU timeout |
+| Target frame time | < 2ms at 1080p | 60fps budget with headroom for UI |
+| FBM octaves | ≤ 4 | Each octave doubles cost; 4 is already heavy on mobile |
+| Blur kernel | ≤ 7×7 (49 samples) | 9×9 is too slow on mobile GPU |
+| Total fragment shader complexity | "simple" to "moderate" | If it wouldn't run smoothly on a 2022 mid-range phone, simplify |
+
+#### Mobile Optimization Tips
+
+- **Prefer `smoothstep` and `step` over branching** — GPUs hate divergent branches
+- **Use `mix()` instead of `if/else`** — both branches execute anyway on GPU
+- **Reduce texture samples**: prefer mipmap LOD over multi-sample blur
+- **Downsample expensive effects**: render at half resolution when possible
+- **Avoid dependent texture reads**: compute UV before sampling, not after
+- **Keep FBM octaves ≤ 4** on mobile; 5+ is desktop-only
+- **Use `pow(x, 2.0)` instead of `x * x` only when the compiler won't optimize** — usually `x * x` is fine
+
+### Math Safety
+
+```glsl
+// Division — always guard
+float safe = a / max(b, 0.0001);
+
+// Square root — ensure non-negative
+float safe = sqrt(max(val, 0.0));
+
+// Log — ensure positive
+float safe = log(max(val, 0.0001));
+
+// Pow with negative base — use abs
+float safe = pow(abs(base), exp);
+
+// Normalize — guard zero-length
+vec2 safe = length(v) > 0.0001 ? normalize(v) : vec2(0.0);
+
+// Clamp all outputs
+fragColor = vec4(clamp(col, 0.0, 1.0), clamp(alpha, 0.0, 1.0));
+```
+
+### Cross-Platform Quirks
+
+| Issue | GLSL (WebGL/Vulkan) | MSL (Metal) | Notes |
+|-------|---------------------|-------------|-------|
+| Fragment output | `out vec4 fragColor` | `return vec4` | Our runtime wraps to handle this |
+| Texture function | `texture(sampler, uv)` | `sampler.sample(uv)` | Use `texture()` — transpiler handles |
+| Uniform declarations | Must declare in code | Declared in shader signature | Our runtime auto-injects common uniforms |
+| Precision | Need `precision highp float` | Implicit | Always include precision qualifier |
+| Half-float framebuffers | May not support | Supported | Assume `highp` only; don't rely on `mediump` FBO |
+
+### Texture Support
+
+- Textures are supported via `iChannel0`–`iChannel3` (Shadertoy convention)
+- Use `texture(iChannelN, uv)` for sampling
+- Our runtime will bind system textures to channels automatically
+- For backdrop blur effects, iChannel0 is the system framebuffer
+- For user-uploaded textures, iChannel1 is available
+- Always handle the case where a channel may not be bound — use fallback procedural
+- **Mobile**: keep texture samples ≤ 8 per fragment; prefer mipmap LOD blur over multi-sample
+
+## Operator Catalog

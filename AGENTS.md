@@ -48,11 +48,23 @@
 
 ### Agent 角色分工
 
-| Agent | 输入 | 输出 | 模型要求 |
-|-------|------|------|----------|
-| **Decompose** | 关键帧图片 + 视频元信息 + 用户标注 | visual_description (JSON DSL) | 多模态 LLM |
-| **Generate** | visual_description + effect-dev Skill + 前轮代码 + 反馈 | GLSL Shader (Shadertoy 格式) | 强 coding 能力 |
-| **Inspect** | 渲染截图 + 设计参考截图 + visual_description | 对比评分 + 修正指令 | 多模态 LLM |
+| Agent | Role (职业定位) | 输入 | 输出 | 模型要求 |
+|-------|----------------|------|------|----------|
+| **Decompose** | 视觉分析专家 | 关键帧图片 + 视频元信息 + 用户标注 | visual_description (JSON) | 多模态 LLM |
+| **Generate** | 图形程序开发专家 | visual_description + 算子知识库 + 前轮代码 + 反馈 | GLSL Shader (Shadertoy 格式) | 强 coding 能力 |
+| **Inspect** | 视效技术总监 | 渲染截图 + 设计参考截图 + visual_description | 对比评分 + 语义反馈 | 多模态 LLM |
+
+**System Prompt 架构**（参考 Google GenerativeUI 论文 arXiv:2604.09577）：
+```
+Role → Philosophy → Common Info → Planning Instructions → Skill → Failure Examples
+```
+
+**核心设计**：
+- **Role**：真实职业定位（而非虚构角色如"代码生成专家"）
+- **Philosophy**：方法论 + 目标导向 + 协作理念（30-35 行）
+- **Common Info**：平台、协作规则、视觉标准、术语约定（三 Agent 共享）
+- **Planning Instructions**：7 步内部思考流程（而非简单推理流程）
+- **Failure Examples**：反例警示（展示错误行为的后果）
 
 ### Pipeline 阶段流程
 
@@ -79,7 +91,9 @@
 | **BaseAgent (多 API 支持)** | ✅ | `backend/app/agents/base.py` |
 | **视频关键帧提取** | ✅ | `backend/app/services/video_extractor.py` |
 | **浏览器截图服务** | ✅ | `backend/app/services/browser_render.py` |
-| **effect-dev Skill** | ✅ | `.claude/skills/effect-dev/SKILL.md` + 7 references |
+| **System Prompt 架构** | ✅ | `backend/app/prompts/*.md`（Role → Philosophy → Common Info → Planning → Skill → Failure Examples） |
+| **算子知识库** | ✅ | Operator Catalog 嵌入 generate_system.md |
+| **VFX 术语库** | ✅ | VFX Terminology 嵌入 inspect_system.md |
 | **WebGL Shader 渲染** | ✅ | `frontend/src/lib/shader-renderer.ts` |
 | **WebUI 三栏布局** | ✅ | `frontend/src/App.tsx` |
 | **Agent Process Log** | ✅ | `frontend/src/components/AgentLog.tsx` |
@@ -127,6 +141,33 @@
 | **配置 API** | ✅ | GET/PUT `/config` 动态配置 |
 | **Agent 上下文历史** | ✅ | 每个 Agent 保留工作记录 (generate_history, inspect_history) |
 | **历史上下文注入** | ✅ | Agent prompt 注入历史上下文，避免重复错误 |
+
+### ✅ System Prompt 架构优化 (V3.0)
+
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| **Role 真实职业定位** | ✅ | 视觉分析专家 / 图形程序开发专家 / 视效技术总监（而非虚构角色） |
+| **Philosophy 补充** | ✅ | 方法论 + 目标导向 + 协作理念（30-35 行，而非之前仅 3 行） |
+| **Common Info 共享** | ✅ | 平台、协作规则、视觉标准、术语约定（三 Agent 共享） |
+| **Planning Instructions** | ✅ | 7 步内部思考流程（替代简单的推理流程） |
+| **Failure Examples** | ✅ | 反例警示（展示错误行为的后果，而非仅正面示例） |
+| **历史内容删除** | ✅ | 移除 DSL vs 自然语言对比表（System Prompt 只关心当前方法） |
+
+### ✅ Skill 系统简化
+
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| **内容合并到 prompts** | ✅ | Skill 内容静态 → 合并到 system prompts（无需动态加载） |
+| **SkillLoader 删除** | ✅ | 移除动态加载机制，直接嵌入 system prompt |
+| **职责边界修正** | ✅ | Operator Catalog 归 Generate（Decompose 只做语义描述） |
+
+### ✅ API 修复
+
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| **build_*_prompt 返回值** | ✅ | 函数返回 3 个值（system_prompt, user_prompt, image_paths） |
+| **Form data 使用纠正** | ✅ | API 期待 Form data 而非 JSON body |
+| **SessionLogger 结构** | ✅ | Session 文件使用嵌套结构（input/output 字段） |
 
 ---
 
@@ -358,33 +399,18 @@ VFX-Agent/
 │   │   ├── services/
 │   │   │   ├── video_extractor.py  # FFmpeg 关键帧提取
 │   │   │   ├── browser_render.py   # Playwright 截图
+│   │   │   ├── context_assembler.py # Prompt 构建器
 │   │   │   └ __init__.py
 │   │   ├── prompts/
-│   │   │   ├── decompose_system.md # Decompose system prompt
-│   │   │   ├── generate_system.md  # Generate system prompt
-│   │   │   └ inspect_system.md    # Inspect system prompt
+│   │   │   ├── decompose_system.md # Decompose system prompt (737 lines)
+│   │   │   ├── generate_system.md  # Generate system prompt (1447 lines) + Operator Catalog
+│   │   │   └ inspect_system.md    # Inspect system prompt (1516 lines) + VFX Terminology
 │   │   └── __init__.py
 │   ├── requirements.txt
 │   ├── .env                        # 实际配置 (不提交)
 │   ├── .env.example                # 配置模板
 │   ├── test_agents.py              # Agent 逐步调试脚本
 │   └── debug_output/               # 调试输出目录
-├── .claude/
-│   └── skills/
-│       └── effect-dev/
-│           ├── SKILL.md            # Skill 主文件
-│           ├── references/
-│           │   ├── sdf-operators.md
-│           │   ├── noise-operators.md
-│           │   ├── lighting-transforms.md
-│           │   ├── texture-sampling.md
-│           │   ├── shader-templates.md
-│           │   ├── aesthetics-rules.md
-│           │   ├── gls-constraints.md
-│           ├── assets/
-│           │   └ shader-skeleton.glsl
-│           └── scripts/
-│               └ validate-shader.py
 ├── frontend/
 │   ├── src/
 │   │   ├── App.tsx                 # 主布局 (三栏)
@@ -419,9 +445,29 @@ VFX-Agent/
 
 ---
 
-## Git Commits (29)
+## Git Commits (69)
 
 ```
+3744e5a fix: remove historical comparison content from system prompt
+ca32306 feat: complete prompt architecture optimization for all 3 Agents
+6b072c4 fix: strengthen Role section with clear responsibility and goal
+f400fce feat: add Philosophy + Common Info + Planning Instructions + Failure Examples to decompose
+ea6eb9a fix: build_inspect_prompt return value mismatch (same issue as decompose)
+b395f6e fix: build_decompose_prompt return value mismatch
+da9f4f0 refactor: correct decompose/generate responsibility boundaries
+562a910 chore: clear skill directory after content merged
+0b48228 refactor: simplify skill system - merge content to system prompts
+bc11ca1 feat: configurable agent parameters with file-based config
+7eaea58 fix: increase httpx timeout and reduce max_tokens for Qwen API
+17bb935 fix: render_multiple_frames to sync + Pipeline monitoring tool
+38e7d9d fix: convert all pipeline nodes to sync functions (async issue resolved)
+06325e5 feat: complete Phase 4 - config parameters API
+70a8820 fix: correct TypedDict format in PipelineState + debug logs
+9a21663 feat: complete graph.py refactoring with 4-region state (Phase 3 done)
+94497a0 feat: Agent adaptation to new 4-region state (Phase 3 partial)
+e63bbe3 feat: context system refactoring phase 1+2 (V3.0)
+0edace6 feat: add agent session logging for debugging and analysis
+d85ca2a fix: handle None score in inspect history for human iteration mode
 69b41b4 fix: duration tracking in all pipeline nodes
 b4dc435 fix: add missing isFullscreen state to AgentLog
 c0cf6bd feat: add fullscreen toggle to AgentLog component
@@ -502,7 +548,7 @@ PROXY=http://127.0.0.1:7890
 
 - **设计方案**: `基于 AI Agent 的操作系统级自定义视效生成管线设计方案.md`
 - **MVP 实施计划**: `docs/superpowers/plans/2026-04-24-vfx-agent-mvp.md`
-- **effect-dev Skill**: `.claude/skills/effect-dev/SKILL.md`
+- **System Prompts**: Operator Catalog 已嵌入 `backend/app/prompts/generate_system.md`，VFX Terminology 已嵌入 `backend/app/prompts/inspect_system.md`
 - **iq SDF 算子**: https://iquilezles.org/articles/distfunctions2d/
 - **Shadertoy 案例**: https://www.shadertoy.com/
 
@@ -512,12 +558,12 @@ PROXY=http://127.0.0.1:7890
 
 | 指标 | 数值 |
 |------|------|
-| **总代码文件** | ~42 个核心文件 |
-| **代码行数** | ~4300 行 |
-| **Git Commits** | 29 条 |
-| **已实现功能** | 30+ 项 ✅ |
+| **总代码文件** | ~43 个核心文件 (25 Python + 15 TSX + 3 Prompts) |
+| **代码行数** | ~10,500 行 (3466 Python + 3363 TSX + 3700 Prompts) |
+| **Git Commits** | 69 条 |
+| **已实现功能** | 40+ 项 ✅ |
 | **设计方案差距** | 6 项待补充（开发态） |
 
 ---
 
-*最后更新: 2026-04-27*
+*最后更新: 2026-05-07*

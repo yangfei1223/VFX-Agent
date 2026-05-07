@@ -60,6 +60,81 @@
 
 ---
 
+### VFX Terminology（高频术语）
+
+以下术语是 Decompose/Generate/Inspect 共享的专业词汇，确保协作时使用统一语言。
+
+#### Lighting & Shadow
+
+| Term | Definition | Usage in Feedback |
+|------|------------|-------------------|
+| **Specular highlight** | 点状高光（dot(reflect, viewDir)） | "高光强度需要调整" |
+| **Fresnel** | 边缘光（pow(1.0-dot(N,V), power)） | "Fresnel 边缘光不明显" |
+| **Glow** | 柔和光晕（exp(-d * intensity)） | "光晕半径过大" |
+| **Bloom** | 光晕扩散（blur + additive） | "Bloom 扩散过度" |
+| **Rim light** | 背光边缘发光 | "Rim light 逆光效果缺失" |
+| **Ambient light** | 基础照明 | "环境光不足" |
+| **Hard shadow** | 锐利阴影（step function） | "阴影边缘过于锐利" |
+| **Soft shadow** | 柔和阴影（smoothstep/blur） | "阴影过渡柔和" |
+
+#### Color & Tone
+
+| Term | Definition | Usage in Feedback |
+|------|------------|-------------------|
+| **Hue** | 色相（RGB→HSV） | "主色调偏移" |
+| **Saturation** | 饱和度（0-1） | "饱和度过高" |
+| **Luminance** | 明度（灰度强度） | "明度偏低" |
+| **Linear gradient** | 线性渐变（mix） | "渐变过渡不平滑" |
+| **Radial gradient** | 径向渐变（距离） | "径向渐变中心偏移" |
+| **Contrast** | 对比度（明暗差异） | "对比度不足" |
+
+#### Geometry & Shape
+
+| Term | Definition | Usage in Feedback |
+|------|------------|-------------------|
+| **SDF** | 有符号距离场 | "SDF 形状不匹配" |
+| **Circle SDF** | 圆形距离函数 | "圆形半径偏差" |
+| **Box SDF** | 矩形距离函数 | "矩形比例错误" |
+| **Outline** | 边框（SDF edge） | "描边宽度不一致" |
+| **Hard edge** | 锐利边缘（step） | "边缘过于锐利" |
+| **Soft edge** | 柔和边缘（smoothstep） | "边缘过渡柔和" |
+| **Smooth union** | 柔和融合（smin） | "形状融合不自然" |
+
+#### Animation & Motion
+
+| Term | Definition | Usage in Feedback |
+|------|------------|-------------------|
+| **Ripple** | 涟漪（圆波扩散） | "涟漪扩散速度过慢" |
+| **Wave** | 波动（sin/cos） | "波动频率不匹配" |
+| **Pulse** | 脉冲（周期强度） | "脉冲周期不正确" |
+| **Flow** | 流动（持续移动） | "流光速度偏差" |
+| **Linear** | 线性速度（t） | "动画节奏不流畅" |
+| **Ease-in** | 缓入（慢→快） | "缓入效果不明显" |
+| **Ease-out** | 缓出（快→慢） | "缓出过渡不自然" |
+| **Loop** | 循环（fract） | "循环衔接不流畅" |
+
+#### Texture & Material
+
+| Term | Definition | Usage in Feedback |
+|------|------------|-------------------|
+| **Perlin noise** | 平滑梯度噪声 | "噪声纹理不细腻" |
+| **FBM** | 分形布朗运动（多 octave） | "FBM 层数过多" |
+| **Frosted glass** | 磨砂玻璃（blur + alpha） | "磨砂效果过强" |
+| **Vignette** | 边缘暗化（距离 fade） | "暗角强度过大" |
+| **Alpha blending** | 透明度混合 | "透明度不自然" |
+| **Additive blending** | 加法混合（颜色叠加） | "加法混合过度" |
+
+#### Composition
+
+| Term | Definition | Usage in Feedback |
+|------|------------|-------------------|
+| **Focal point** | 视觉焦点 | "焦点位置偏移" |
+| **Background** | 背景区域 | "背景颜色偏差" |
+| **Foreground** | 前景元素 | "前景遮挡主体" |
+| **Hierarchy** | 视觉层次 | "层次不清晰" |
+
+---
+
 ## 输出规则
 
 **输出 JSON 格式**：
@@ -411,6 +486,8 @@
 # Skill Knowledge Base
 
 ## VFX Terminology
+
+以下为完整 VFX Terminology 供深度分析使用。**高频术语见 Common Info（所有 Agent 共享）**。
 
 Professional visual effects terminology for shader critique and analysis.
 

@@ -52,11 +52,78 @@
 - **渐变过渡**：无断层，平滑连续
 - **背景纯度**：若要求纯色，RGB 误差 <0.05
 
-### 术语约定
-- **Specular highlight**：点状高光，dot(reflect, viewDir)
-- **Fresnel**：边缘光，pow(1.0-dot(N,V), power)
-- **Glow**：光晕，exp(-d * intensity)
-- **Smoothstep**：边缘过渡，smoothstep(edge-softness, edge+softness, d)
+### VFX Terminology（高频术语）
+
+以下术语是 Decompose/Generate/Inspect 共享的专业词汇，确保协作时使用统一语言。
+
+#### Lighting & Shadow
+
+| Term | Definition | Usage in Description |
+|------|------------|----------------------|
+| **Specular highlight** | 点状高光（dot(reflect, viewDir)） | "高光位置：顶部，强度 0.8" |
+| **Fresnel** | 边缘光（pow(1.0-dot(N,V), power)） | "Fresnel 边缘光，强度 2.0" |
+| **Glow** | 柔和光晕（exp(-d * intensity)） | "中心向外光晕，半径 0.3" |
+| **Bloom** | 光晕扩散（blur + additive） | "Bloom 效果，扩散半径 0.1" |
+| **Rim light** | 背光边缘发光 | "Rim light 逆光效果" |
+| **Ambient light** | 基础照明 | "环境光强度 0.2" |
+| **Hard shadow** | 锐利阴影（step function） | "硬阴影，边缘锐利" |
+| **Soft shadow** | 柔和阴影（smoothstep/blur） | "软阴影，过渡宽度 0.05" |
+
+#### Color & Tone
+
+| Term | Definition | Usage in Description |
+|------|------------|----------------------|
+| **Hue** | 色相（RGB→HSV） | "主色调：蓝色（Hue 0.6）" |
+| **Saturation** | 饱和度（0-1） | "饱和度 0.8（鲜艳）" |
+| **Luminance** | 明度（灰度强度） | "明度 0.5（中等亮度）" |
+| **Linear gradient** | 线性渐变（mix） | "线性渐变：左→右，蓝→白" |
+| **Radial gradient** | 径向渐变（距离） | "径向渐变：中心向外" |
+| **Contrast** | 对比度（明暗差异） | "高对比度（明暗分明）" |
+
+#### Geometry & Shape
+
+| Term | Definition | Usage in Description |
+|------|------------|----------------------|
+| **SDF** | 有符号距离场 | "SDF 形状：圆形/矩形" |
+| **Circle SDF** | 圆形距离函数 | "圆形主体，半径 0.3" |
+| **Box SDF** | 矩形距离函数 | "矩形主体，尺寸 0.5×0.3" |
+| **Outline** | 边框（SDF edge） | "描边宽度 0.02，白色" |
+| **Hard edge** | 锐利边缘（step） | "硬边缘（无过渡）" |
+| **Soft edge** | 柔和边缘（smoothstep） | "软边缘（过渡 0.05）" |
+| **Smooth union** | 柔和融合（smin） | "形状柔和融合" |
+
+#### Animation & Motion
+
+| Term | Definition | Usage in Description |
+|------|------------|----------------------|
+| **Ripple** | 涟漪（圆波扩散） | "涟漪效果，扩散速度 1.5" |
+| **Wave** | 波动（sin/cos） | "波动动画，频率 2.0" |
+| **Pulse** | 脉冲（周期强度） | "脉冲效果，周期 2 秒" |
+| **Flow** | 流动（持续移动） | "流光效果，速度 0.8" |
+| **Linear** | 线性速度（t） | "线性动画（匀速）" |
+| **Ease-in** | 缓入（慢→快） | "Ease-in 缓入效果" |
+| **Ease-out** | 缓出（快→慢） | "Ease-out 缓出效果" |
+| **Loop** | 循环（fract） | "循环动画，周期 3 秒" |
+
+#### Texture & Material
+
+| Term | Definition | Usage in Description |
+|------|------------|----------------------|
+| **Perlin noise** | 平滑梯度噪声 | "Perlin 噪声纹理" |
+| **FBM** | 分形布朗运动（多 octave） | "FBM 噪声，octave 4" |
+| **Frosted glass** | 磨砂玻璃（blur + alpha） | "磨砂玻璃效果" |
+| **Vignette** | 边缘暗化（距离 fade） | "暗角效果，强度 0.3" |
+| **Alpha blending** | 透明度混合 | "半透明，alpha 0.5" |
+| **Additive blending** | 加法混合（颜色叠加） | "加法混合光晕" |
+
+#### Composition
+
+| Term | Definition | Usage in Description |
+|------|------------|----------------------|
+| **Focal point** | 视觉焦点 | "焦点位置：中心" |
+| **Background** | 背景区域 | "背景颜色：白色 RGB 1.0" |
+| **Foreground** | 前景元素 | "前景层叠加" |
+| **Hierarchy** | 视觉层次 | "层次分明（主体突出）" |
 
 ---
 
@@ -217,6 +284,114 @@
 ---
 
 ## 重要提醒
+## 反例警示：第一次不准的常见问题
+
+### ❌ 问题案例 1：背景颜色偏差（评分从 0.9 降至 0.4）
+
+**错误描述**：
+```json
+"background_definition": {
+  "description": "白色背景",
+  "important": "背景干净"
+}
+```
+
+**后果**：
+- Generate 使用 `vec3(0.9, 0.9, 0.9)`（偏灰）
+- Inspect 评分 0.4（background 维度失败）
+- 触发 re_decompose（评分 <0.5）
+
+**修正方法**：
+```json
+"background_definition": {
+  "description": "纯白色背景 (RGB 1.0, 1.0, 1.0)，无纹理，不透明",
+  "important": "背景必须纯白，RGB 误差 <0.05"
+}
+```
+
+---
+
+### ❌ 问题案例 2：边缘描述不清（Generate 无法判断技术方向）
+
+**错误描述**：
+```json
+"shape_definition": {
+  "description": "圆形，边缘柔和"
+}
+```
+
+**后果**：
+- Generate 不知道"柔和"是 smoothstep(0.01) 还是 smoothstep(0.05)
+- 渲染结果边缘过于模糊或过于锐利
+- Inspect 评分 0.6（geometry 维度失败）
+
+**修正方法**：
+```json
+"shape_definition": {
+  "description": "圆形涟漪，边缘柔和过渡宽度约 0.02-0.03 UV 单位",
+  "suggested_technique": "圆形形状，边缘柔和过渡"
+}
+```
+
+---
+
+### ❌ 问题案例 3：动画时长模糊（节奏错误）
+
+**错误描述**：
+```json
+"animation_definition": {
+  "description": "涟漪扩散动画，节奏自然"
+}
+```
+
+**后果**：
+- Generate 使用 1 秒周期（过快）或 6 秒周期（过慢）
+- Inspect 评分 0.5（animation 维度失败）
+- 用户体验不佳（节奏不对）
+
+**修正方法**：
+```json
+"animation_definition": {
+  "description": "涟漪扩散动画，从中心向外，ease-out 缓出曲线，约 3-4 秒无缝循环",
+  "suggested_technique": "时间驱动的动画，半径逐渐扩展，平滑循环"
+}
+```
+
+---
+
+### ❌ 问题案例 4：颜色渐变未量化（主色调偏差）
+
+**错误描述**：
+```json
+"color_definition": {
+  "description": "蓝色渐变，从中心到边缘"
+}
+```
+
+**后果**：
+- Generate 不知道中心颜色和边缘颜色的具体 RGB
+- 可能使用 RGB(0.0, 0.0, 1.0)（过饱和）或 RGB(0.1, 0.1, 0.5)（过灰）
+- Inspect 评分 0.7（color 维度失败）
+
+**修正方法**：
+```json
+"color_definition": {
+  "description": "蓝色系主色 (RGB 约 0.2, 0.5, 1.0)，径向渐变从中心（深蓝）到边缘（浅蓝 RGB 约 0.1, 0.3, 0.8)",
+  "suggested_technique": "颜色从中心向外渐变，叠加光晕效果"
+}
+```
+
+---
+
+### ✅ 正确示例对比
+
+参考上文"四、完整输出示例"中的涟漪扩散效果（第377-425行），该示例：
+- ✅ 背景纯白明确 RGB(1.0, 1.0, 1.0)
+- ✅ 边缘柔和量化宽度约 2-3 像素
+- ✅ 动画时长明确 3-4 秒循环
+- ✅ 颜色渐变提供 RGB 参考值
+
+---
 
 **背景处理是关键**：
 - 仔细观察背景区域（主体周围、画面边缘）
@@ -626,113 +801,3 @@ Inspect 输出自然语言语义描述，不局限于参数调整：
 
 ---
 
-## 反例警示：第一次不准的常见问题
-
-### ❌ 问题案例 1：背景颜色偏差（评分从 0.9 降至 0.4）
-
-**错误描述**：
-```json
-"background_definition": {
-  "description": "白色背景",
-  "important": "背景干净"
-}
-```
-
-**后果**：
-- Generate 使用 `vec3(0.9, 0.9, 0.9)`（偏灰）
-- Inspect 评分 0.4（background 维度失败）
-- 触发 re_decompose（评分 <0.5）
-
-**修正方法**：
-```json
-"background_definition": {
-  "description": "纯白色背景 (RGB 1.0, 1.0, 1.0)，无纹理，不透明",
-  "important": "背景必须纯白，RGB 误差 <0.05"
-}
-```
-
----
-
-### ❌ 问题案例 2：边缘描述不清（Generate 无法判断技术方向）
-
-**错误描述**：
-```json
-"shape_definition": {
-  "description": "圆形，边缘柔和"
-}
-```
-
-**后果**：
-- Generate 不知道"柔和"是 smoothstep(0.01) 还是 smoothstep(0.05)
-- 渲染结果边缘过于模糊或过于锐利
-- Inspect 评分 0.6（geometry 维度失败）
-
-**修正方法**：
-```json
-"shape_definition": {
-  "description": "圆形涟漪，边缘柔和过渡宽度约 0.02-0.03 UV 单位",
-  "suggested_technique": "圆形形状，边缘柔和过渡"
-}
-```
-
----
-
-### ❌ 问题案例 3：动画时长模糊（节奏错误）
-
-**错误描述**：
-```json
-"animation_definition": {
-  "description": "涟漪扩散动画，节奏自然"
-}
-```
-
-**后果**：
-- Generate 使用 1 秒周期（过快）或 6 秒周期（过慢）
-- Inspect 评分 0.5（animation 维度失败）
-- 用户体验不佳（节奏不对）
-
-**修正方法**：
-```json
-"animation_definition": {
-  "description": "涟漪扩散动画，从中心向外，ease-out 缓出曲线，约 3-4 秒无缝循环",
-  "suggested_technique": "时间驱动的动画，半径逐渐扩展，平滑循环"
-}
-```
-
----
-
-### ❌ 问题案例 4：颜色渐变未量化（主色调偏差）
-
-**错误描述**：
-```json
-"color_definition": {
-  "description": "蓝色渐变，从中心到边缘"
-}
-```
-
-**后果**：
-- Generate 不知道中心颜色和边缘颜色的具体 RGB
-- 可能使用 RGB(0.0, 0.0, 1.0)（过饱和）或 RGB(0.1, 0.1, 0.5)（过灰）
-- Inspect 评分 0.7（color 维度失败）
-
-**修正方法**：
-```json
-"color_definition": {
-  "description": "蓝色系主色 (RGB 约 0.2, 0.5, 1.0)，径向渐变从中心（深蓝）到边缘（浅蓝 RGB 约 0.1, 0.3, 0.8)",
-  "suggested_technique": "颜色从中心向外渐变，叠加光晕效果"
-}
-```
-
----
-
-### ✅ 正确示例对比
-
-参考上文"四、完整输出示例"中的涟漪扩散效果（第377-425行），该示例：
-- ✅ 背景纯白明确 RGB(1.0, 1.0, 1.0)
-- ✅ 边缘柔和量化宽度约 2-3 像素
-- ✅ 动画时长明确 3-4 秒循环
-- ✅ 颜色渐变提供 RGB 参考值
-
----
-
-*版本：V3.0*
