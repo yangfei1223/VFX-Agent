@@ -220,12 +220,12 @@ def build_generate_prompt(state: PipelineState) -> tuple[str, str]:
     return system_prompt, user_prompt
 
 
-def build_inspect_prompt(state: PipelineState) -> tuple[str, str]:
+def build_inspect_prompt(state: PipelineState) -> tuple[str, str, list[str]]:
     """
     构建 Inspect Agent 的 prompt
     
     Returns:
-        (system_prompt, user_prompt)
+        (system_prompt, user_prompt, image_paths)
     """
     baseline = state.get("baseline", {})
     snapshot = state.get("snapshot", {})
@@ -263,4 +263,7 @@ def build_inspect_prompt(state: PipelineState) -> tuple[str, str]:
     
     user_prompt = "\n\n".join(user_parts)
     
-    return system_prompt, user_prompt
+    # 合并图片路径（设计参考 + 渲染截图）
+    image_paths = design_screenshots + render_screenshots
+    
+    return system_prompt, user_prompt, image_paths
