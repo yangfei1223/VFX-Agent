@@ -76,6 +76,8 @@ async def run_pipeline(
     media: list[UploadFile] = File([]),  # 支持 media 参数名（兼容前端）
     notes: str = Form(""),
     description: str = Form(""),  # 支持 description 参数名
+    max_iterations: int | None = Form(None),  # 用户可自定义最大迭代次数
+    passing_threshold: float | None = Form(None),  # 用户可自定义通过阈值
 ):
     """触发 Pipeline 执行"""
     pipeline_id = str(uuid.uuid4())
@@ -106,11 +108,11 @@ async def run_pipeline(
     # 构建初始状态（使用 V3.0 4-region state）
     from app.pipeline.state import create_initial_state, PipelineConfig
     
-    # 从 runtime_config 构造 config
+    # 从 runtime_config 构造 config（用户参数优先）
     runtime_config = get_runtime_config()
     config: PipelineConfig = {
-        "max_iterations": runtime_config.max_iterations,
-        "passing_threshold": runtime_config.passing_threshold,
+        "max_iterations": max_iterations if max_iterations is not None else runtime_config.max_iterations,
+        "passing_threshold": passing_threshold if passing_threshold is not None else runtime_config.passing_threshold,
         "re_decompose_threshold": runtime_config.re_decompose_threshold,
         "gradient_window_size": runtime_config.gradient_window_size,
         "stagnation_variance": runtime_config.stagnation_variance,
