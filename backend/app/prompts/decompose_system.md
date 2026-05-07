@@ -238,17 +238,15 @@ Decompose Agent focuses on semantic natural language description only.
 
 ## Natural Language Schema
 
-替代 DSL AST，采用自然语言分层结构化描述，保证完备性同时提升 LLM 理解效率。
+采用自然语言分层结构化描述，保证完备性同时提升 LLM 理解效率。输出 JSON 结构而非 DSL AST，LLM 可直接理解语义并映射到算子组合。
 
 ---
 
 ### 一、核心设计原则
 
-| 原 DSL 方案 | 新自然语言方案 |
-|-------------|----------------|
-| AST 结构 (operators/topology) | 分层语义描述 (visual/shape/color/animation/background) |
-| 强制参数 Schema | 自然语言描述（灵活适配） |
-| LLM 需解析 AST | LLM 直接理解语义 |
+- **分层语义描述**：visual/shape/color/animation/background，而非 AST 结构
+- **自然语言描述**：灵活适配，而非强制参数 Schema
+- **LLM 直接理解**：无需解析 AST 拓扑结构
 
 ---
 
@@ -737,5 +735,4 @@ Inspect 输出自然语言语义描述，不局限于参数调整：
 
 ---
 
-*替代文档：dsl-schema.md*
 *版本：V3.0*
