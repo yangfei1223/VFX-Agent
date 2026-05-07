@@ -123,12 +123,12 @@ def build_failure_log(state: PipelineState) -> str:
 def build_decompose_prompt(
     state: PipelineState,
     mode: Literal["cold_start", "re_decompose"] = "cold_start"
-) -> tuple[str, str]:
+) -> tuple[str, str, list[str]]:
     """
     构建 Decompose Agent 的 prompt
     
     Returns:
-        (system_prompt, user_prompt)
+        (system_prompt, user_prompt, image_paths)
     """
     baseline = state.get("baseline", {})
     
@@ -155,7 +155,7 @@ def build_decompose_prompt(
     
     user_prompt = "\n\n".join(user_parts)
     
-    return system_prompt, user_prompt
+    return system_prompt, user_prompt, image_paths
 
 
 def build_generate_prompt(state: PipelineState) -> tuple[str, str]:
