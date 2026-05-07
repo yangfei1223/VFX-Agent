@@ -875,21 +875,27 @@ def node_inspect(state: PipelineState) -> dict:
         current_score = result.get("overall_score", 0)
         passed = result.get("passed", False) or current_score >= config.get("passing_threshold", 0.85)
         
-        # === 物理回滚检测 ===
+        # === Re-decompose 触发检测（优先级最高）===
+        # 如果技术方向错误，跳过 rollback（Decompose 会覆盖）
+        re_decompose_triggered = should_trigger_re_decompose({**state, "snapshot": {**snapshot, "inspect_feedback": result}})
+        result["re_decompose_trigger"] = re_decompose_triggered
+        
+        # === 物理回滚检测（仅在 Re-decompose 不触发时执行）===
         rollback_triggered = False
         rollback_snapshot = snapshot  # 默认使用当前 snapshot
         
-        if current_score < last_score and last_score > 0:
-            rollback_triggered = True
-            rollback_update = rollback_to_checkpoint({**state, "snapshot": {**snapshot, "inspect_feedback": result}})
-            if rollback_update:
-                rollback_snapshot = rollback_update.get("snapshot", snapshot)
-                print(f"[Inspect Node] Score regression: {current_score:.2f} < {last_score:.2f}, rollback triggered")
-                print(f"[Inspect Node] Restored best shader from iteration {checkpoint.get('best_iteration', 0)}")
-        
-        # === Re-decompose 触发检测 ===
-        re_decompose_triggered = should_trigger_re_decompose({**state, "snapshot": {**rollback_snapshot, "inspect_feedback": result}})
-        result["re_decompose_trigger"] = re_decompose_triggered
+        if re_decompose_triggered:
+            # Re-decompose 时跳过 rollback（避免冗余）
+            print(f"[Inspect Node] Re-decompose triggered (score {current_score:.2f}), skip rollback")
+        else:
+            # 正常 rollback 检测
+            if current_score < last_score and last_score > 0:
+                rollback_triggered = True
+                rollback_update = rollback_to_checkpoint({**state, "snapshot": {**snapshot, "inspect_feedback": result}})
+                if rollback_update:
+                    rollback_snapshot = rollback_update.get("snapshot", snapshot)
+                    print(f"[Inspect Node] Score regression: {current_score:.2f} < {last_score:.2f}, rollback triggered")
+                    print(f"[Inspect Node] Restored best shader from iteration {checkpoint.get('best_iteration', 0)}")
         
         # 更新 snapshot（使用 rollback 后的 snapshot）
         updated_snapshot = {
