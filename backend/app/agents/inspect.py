@@ -12,7 +12,7 @@ from pathlib import Path
 
 from app.agents.base import BaseAgent
 from app.config import settings
-from app.services.context_assembler import ContextAssembler, build_inspect_prompt
+from app.services.context_assembler import build_inspect_prompt
 from app.services.session_logger import SessionLogger
 from app.pipeline.state import PipelineState
 

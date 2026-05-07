@@ -310,8 +310,6 @@ def node_generate(state: PipelineState) -> dict:
     
     Gradient truncation: 禁止注入完整 shader 到 history
     """
-    print(f"[node_generate] Called with state keys: {list(state.keys())[:5]}")
-    
     baseline = state.get("baseline", {})
     snapshot = state.get("snapshot", {})
     gradient_window = state.get("gradient_window", [])
