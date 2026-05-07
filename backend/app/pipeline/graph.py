@@ -391,12 +391,8 @@ Shader 验证失败：{val_errors}
     
     feedback = "\n\n".join(feedback_parts) if feedback_parts else None
     
-    # 物理回滚检测：如果评分劣化，恢复 best_shader
-    if detect_score_regression(state):
-        rollback_update = rollback_to_checkpoint(state)
-        if rollback_update:
-            snapshot = rollback_update.get("snapshot", snapshot)
-            print(f"[Generate Node] Rollback triggered: restored best shader from iteration {checkpoint.get('best_iteration', 0)}")
+    # 物理回滚检测已移到 node_inspect（正确位置）
+    # node_generate 不再检测回滚（避免时序错位）
     
     # 获取 previous_shader
     previous_shader = snapshot.get("shader", "")
@@ -881,20 +877,23 @@ def node_inspect(state: PipelineState) -> dict:
         
         # === 物理回滚检测 ===
         rollback_triggered = False
+        rollback_snapshot = snapshot  # 默认使用当前 snapshot
+        
         if current_score < last_score and last_score > 0:
             rollback_triggered = True
             rollback_update = rollback_to_checkpoint({**state, "snapshot": {**snapshot, "inspect_feedback": result}})
             if rollback_update:
-                snapshot = rollback_update.get("snapshot", snapshot)
+                rollback_snapshot = rollback_update.get("snapshot", snapshot)
                 print(f"[Inspect Node] Score regression: {current_score:.2f} < {last_score:.2f}, rollback triggered")
+                print(f"[Inspect Node] Restored best shader from iteration {checkpoint.get('best_iteration', 0)}")
         
         # === Re-decompose 触发检测 ===
-        re_decompose_triggered = should_trigger_re_decompose({**state, "snapshot": {**snapshot, "inspect_feedback": result}})
+        re_decompose_triggered = should_trigger_re_decompose({**state, "snapshot": {**rollback_snapshot, "inspect_feedback": result}})
         result["re_decompose_trigger"] = re_decompose_triggered
         
-        # 更新 snapshot
+        # 更新 snapshot（使用 rollback 后的 snapshot）
         updated_snapshot = {
-            **snapshot,
+            **rollback_snapshot,
             "inspect_feedback": result,
         }
         
