@@ -25,6 +25,21 @@ export interface PhaseLog {
   rollback_triggered?: boolean;  // Inspect Agent: flag indicating score regression
 }
 
+export interface InspectResult {
+  passed: boolean;
+  overall_score: number;
+  feedback_summary?: string;
+  visual_issues?: string[];
+  visual_goals?: string[];
+  correct_aspects?: string[];
+}
+
+export interface CheckpointData {
+  best_score: number;
+  best_shader: string;
+  best_iteration: number;
+}
+
 export interface PipelineResult {
   status: string;
   current_shader: string;
@@ -32,7 +47,7 @@ export interface PipelineResult {
   iteration: number;
   passed: boolean;
   history: PipelineIteration[];
-  inspect_result: Record<string, unknown> | null;
+  inspect_result: InspectResult | null;
   error: string | null;
   // Phase tracking fields
   current_phase?: string;
@@ -41,6 +56,8 @@ export interface PipelineResult {
   detailed_logs?: PhaseLog[];
   // Extended fields for detailed logging
   logs?: PipelineLogEntry[];
+  // Checkpoint data for version comparison
+  checkpoint?: CheckpointData;
 }
 
 export interface PipelineLogEntry {

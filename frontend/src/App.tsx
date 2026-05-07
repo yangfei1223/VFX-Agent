@@ -20,6 +20,7 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [shaderCode, setShaderCode] = useState<string | null>(null);
   const [editedCode, setEditedCode] = useState<string | null>(null);
+  const [showCheckpoint, setShowCheckpoint] = useState(false); // Toggle between current and checkpoint shader
 
   // Support direct shader rendering via URL params (for Playwright screenshots)
   useEffect(() => {
@@ -41,6 +42,7 @@ function App() {
     if (result?.current_shader) {
       setShaderCode(result.current_shader);
       setEditedCode(result.current_shader);
+      setShowCheckpoint(false); // Reset to current version when new result arrives
     }
   }, [result?.current_shader]);
 
@@ -91,10 +93,18 @@ function App() {
     clearPipeline();
     setShaderCode(null);
     setEditedCode(null);
+    setShowCheckpoint(false);
   }, [clearPipeline]);
 
+  // Get checkpoint shader and scores
+  const checkpointShader = result?.checkpoint?.best_shader || null;
+  const checkpointScore = result?.checkpoint?.best_score ?? 0;
+  const currentScore = result?.inspect_result?.overall_score ?? 0;
+
   // Determine which code to use for preview
-  const previewCode = editedCode || shaderCode;
+  const previewCode = showCheckpoint && checkpointShader
+    ? checkpointShader
+    : (editedCode || shaderCode);
 
   return (
     <div className="min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)] font-sans">
@@ -201,6 +211,11 @@ function App() {
                 shaderCode={previewCode}
                 width={512}
                 height={512}
+                checkpointShader={checkpointShader}
+                checkpointScore={checkpointScore}
+                currentScore={currentScore}
+                showCheckpoint={showCheckpoint}
+                onToggleCheckpoint={() => setShowCheckpoint(!showCheckpoint)}
               />
             </div>
             

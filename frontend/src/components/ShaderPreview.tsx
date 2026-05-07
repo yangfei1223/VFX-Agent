@@ -10,7 +10,10 @@ import {
   CheckCircle2,
   Loader2,
   Download,
-  Image as ImageIcon
+  Image as ImageIcon,
+  GitCompare,
+  Trophy,
+  TrendingDown
 } from "lucide-react";
 import { ShaderRenderer } from "../lib/shader-renderer";
 
@@ -19,6 +22,12 @@ interface ShaderPreviewProps {
   width?: number;
   height?: number;
   customUniforms?: Record<string, number | number[]>;
+  // Version comparison props
+  checkpointShader?: string | null;
+  checkpointScore?: number;
+  currentScore?: number;
+  showCheckpoint?: boolean;
+  onToggleCheckpoint?: () => void;
 }
 
 // Global type declarations for Playwright
@@ -35,7 +44,12 @@ export default function ShaderPreview({
   shaderCode,
   width = 512,
   height = 512,
-  customUniforms
+  customUniforms,
+  checkpointShader,
+  checkpointScore = 0,
+  currentScore = 0,
+  showCheckpoint = false,
+  onToggleCheckpoint
 }: ShaderPreviewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<ShaderRenderer | null>(null);
@@ -216,6 +230,29 @@ export default function ShaderPreview({
           </div>
         </div>
         <div className="flex items-center gap-1">
+          {/* Version Toggle Button */}
+          {checkpointShader && onToggleCheckpoint && (
+            <>
+              <button
+                onClick={onToggleCheckpoint}
+                className={`
+                  flex items-center gap-1 px-2 py-1 rounded-lg
+                  transition-all duration-200
+                  ${showCheckpoint
+                    ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40'
+                    : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]'}
+                `}
+                title={showCheckpoint ? 'Show current shader' : 'Show best checkpoint shader'}
+              >
+                <GitCompare className="w-3 h-3" />
+                <span className="text-xs font-medium">
+                  {showCheckpoint ? 'Checkpoint' : 'Current'}
+                </span>
+              </button>
+              <div className="w-px h-5 bg-[var(--border-color)] mx-1" />
+            </>
+          )}
+          
           {shaderCode && (
             <>
               <button
@@ -313,9 +350,42 @@ export default function ShaderPreview({
       {shaderCode && status === 'running' && (
         <div className="px-4 py-2 border-t border-[var(--border-color)] bg-[var(--bg-tertiary)]/30">
           <div className="flex items-center justify-between text-xs text-[var(--text-muted)]">
-            <span>WebGL 2.0</span>
-            <span>Mouse interaction enabled</span>
-            <span>{width}x{height}</span>
+            <div className="flex items-center gap-3">
+              <span>WebGL 2.0</span>
+              <span>Mouse interaction enabled</span>
+              <span>{width}x{height}</span>
+            </div>
+            
+            {/* Score comparison display */}
+            {checkpointShader && checkpointScore > 0 && (
+              <div className="flex items-center gap-2">
+                {showCheckpoint ? (
+                  <div className="flex items-center gap-1">
+                    <Trophy className="w-3 h-3 text-amber-400" />
+                    <span className="text-amber-400 font-medium">
+                      Best: {checkpointScore.toFixed(2)}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1">
+                      <span className="text-[var(--text-muted)]">Current:</span>
+                      <span className={`font-medium ${currentScore < checkpointScore ? 'text-red-400' : 'text-green-400'}`}>
+                        {currentScore.toFixed(2)}
+                      </span>
+                    </div>
+                    {currentScore < checkpointScore && (
+                      <div className="flex items-center gap-1">
+                        <TrendingDown className="w-3 h-3 text-red-400" />
+                        <span className="text-red-400 text-xs">
+                          ↓ {checkpointScore.toFixed(2)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
