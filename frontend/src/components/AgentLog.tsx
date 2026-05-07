@@ -17,7 +17,8 @@ import {
   Clock,
   Maximize2,
   Minimize2,
-  MessageSquare
+  MessageSquare,
+  Target
 } from "lucide-react";
 import type { PipelineResult, PipelineIteration, PipelineLogEntry, PhaseLog } from "../hooks/usePipeline";
 
@@ -46,6 +47,11 @@ interface LogEntry {
   agent_response?: string;  // Agent's raw response for displaying reasoning
   human_iteration?: boolean;  // Whether this was a human-triggered iteration
   human_feedback?: string;  // User feedback for human iterations
+  visual_issues?: string[];  // Inspect Agent: visual problems detected
+  visual_goals?: string[];  // Inspect Agent: expected visual goals
+  correct_aspects?: string[];  // Inspect Agent: aspects to preserve
+  re_decompose_triggered?: boolean;  // Inspect Agent: flag to re-decompose
+  rollback_triggered?: boolean;  // Inspect Agent: flag indicating score regression
 }
 
 // Phase configuration for the timeline
@@ -131,6 +137,11 @@ export default function AgentLog({
         agent_response: (log as unknown as { agent_response?: string }).agent_response,
         human_iteration: (log as unknown as { human_iteration?: boolean }).human_iteration,
         human_feedback: (log as unknown as { human_feedback?: string }).human_feedback,
+        visual_issues: (log as unknown as { visual_issues?: string[] }).visual_issues,
+        visual_goals: (log as unknown as { visual_goals?: string[] }).visual_goals,
+        correct_aspects: (log as unknown as { correct_aspects?: string[] }).correct_aspects,
+        re_decompose_triggered: (log as unknown as { re_decompose_triggered?: boolean }).re_decompose_triggered,
+        rollback_triggered: (log as unknown as { rollback_triggered?: boolean }).rollback_triggered,
       }));
       setLogs(convertedLogs);
     }
@@ -415,6 +426,12 @@ export default function AgentLog({
                   <span className="text-sm font-medium text-[var(--text-primary)]">
                     {log.message}
                   </span>
+                  {/* re-decompose 标记 */}
+                  {log.type === 'decompose' && log.message.toLowerCase().includes('re-decompose') && (
+                    <span className="text-xs bg-orange-500/20 text-orange-400 px-1.5 py-0.5 rounded font-medium ml-2">
+                      Re-decompose
+                    </span>
+                  )}
                   {log.duration_ms !== undefined && log.duration_ms !== null && (
                     <span className="text-xs text-[var(--text-muted)] font-mono">
                       {log.duration_ms > 1000
@@ -457,6 +474,82 @@ export default function AgentLog({
                     <pre className="whitespace-pre-wrap break-words">
                       {log.details}
                     </pre>
+                  </div>
+                )}
+
+                {/* Inspect 结构化反馈 */}
+                {(log.visual_issues || log.visual_goals || log.correct_aspects) && expandedLog === log.id && (
+                  <div className="mt-2 space-y-2">
+                    {/* Re-decompose 警告 */}
+                    {log.re_decompose_triggered && (
+                      <div className="flex items-center gap-1.5 text-xs text-orange-400 bg-orange-500/10 rounded p-2 border border-orange-500/30">
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span className="font-semibold">⚠️ Re-decompose 已触发</span>
+                        <span className="text-xs text-orange-400/70 ml-1">— 将重新分析视觉描述</span>
+                      </div>
+                    )}
+                    
+                    {/* 回滚警告 */}
+                    {log.rollback_triggered && (
+                      <div className="flex items-center gap-1.5 text-xs text-red-400 bg-red-500/10 rounded p-2 border border-red-500/30">
+                        <AlertCircle className="w-3.5 h-3.5" />
+                        <span className="font-semibold">↩️ 分数回退 — 已回滚到最佳版本</span>
+                      </div>
+                    )}
+
+                    {/* 视觉问题 */}
+                    {log.visual_issues && log.visual_issues.length > 0 && (
+                      <div>
+                        <div className="flex items-center gap-1.5 text-xs text-red-400 mb-1">
+                          <XCircle className="w-3 h-3" />
+                          <span className="font-medium">视觉问题 ({log.visual_issues.length})</span>
+                        </div>
+                        <div className="text-xs text-[var(--text-secondary)] bg-red-500/5 rounded p-2 space-y-1">
+                          {log.visual_issues.map((issue, i) => (
+                            <div key={i} className="flex items-start gap-1.5">
+                              <span className="text-red-400 mt-0.5">•</span>
+                              <span>{issue}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 期望目标 */}
+                    {log.visual_goals && log.visual_goals.length > 0 && (
+                      <div>
+                        <div className="flex items-center gap-1.5 text-xs text-blue-400 mb-1">
+                          <Target className="w-3 h-3" />
+                          <span className="font-medium">期望目标 ({log.visual_goals.length})</span>
+                        </div>
+                        <div className="text-xs text-[var(--text-secondary)] bg-blue-500/5 rounded p-2 space-y-1">
+                          {log.visual_goals.map((goal, i) => (
+                            <div key={i} className="flex items-start gap-1.5">
+                              <span className="text-blue-400 mt-0.5">→</span>
+                              <span>{goal}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 保留优点 */}
+                    {log.correct_aspects && log.correct_aspects.length > 0 && (
+                      <div>
+                        <div className="flex items-center gap-1.5 text-xs text-green-400 mb-1">
+                          <CheckCircle2 className="w-3 h-3" />
+                          <span className="font-medium">保留优点 ({log.correct_aspects.length})</span>
+                        </div>
+                        <div className="text-xs text-[var(--text-secondary)] bg-green-500/5 rounded p-2 space-y-1">
+                          {log.correct_aspects.map((aspect, i) => (
+                            <div key={i} className="flex items-start gap-1.5">
+                              <span className="text-green-400 mt-0.5">✓</span>
+                              <span>{aspect}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 

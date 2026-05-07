@@ -49,15 +49,20 @@ def _add_phase_log(
     details: str | None = None,
     start_time: float | None = None,
     agent_response: str | None = None,
+    visual_issues: list[str] | None = None,
+    visual_goals: list[str] | None = None,
+    correct_aspects: list[str] | None = None,
+    re_decompose_triggered: bool | None = None,
+    rollback_triggered: bool | None = None,
 ) -> list[PhaseLog]:
     """Helper to add a phase log entry"""
     logs = state.get("detailed_logs", [])
-    
+
     phase_start = start_time or state.get("phase_start_time")
     duration_ms = None
     if phase_start and status in ("completed", "failed"):
         duration_ms = int((time.time() - phase_start) * 1000)
-    
+
     new_log: PhaseLog = {
         "phase": phase,
         "timestamp": time.time(),
@@ -66,6 +71,11 @@ def _add_phase_log(
         "details": details,
         "duration_ms": duration_ms,
         "agent_response": agent_response,
+        "visual_issues": visual_issues,
+        "visual_goals": visual_goals,
+        "correct_aspects": correct_aspects,
+        "re_decompose_triggered": re_decompose_triggered,
+        "rollback_triggered": rollback_triggered,
     }
     return logs + [new_log]
 
@@ -925,13 +935,43 @@ def node_inspect(state: PipelineState) -> dict:
         score_info = f"score {current_score:.2f}"
         if last_score > 0:
             score_info += f" (best: {last_score:.2f}, {'↑' if current_score >= last_score else '↓'})"
-        
+
+        # 构建消息和详情
+        feedback_parts = [f"Inspection complete: {score_info}, {'PASSED' if passed else 'NEEDS IMPROVEMENT'}"]
+        if re_decompose_triggered:
+            feedback_parts.append("⚠️ RE-DECOMPOSE TRIGGERED")
+        if rollback_triggered:
+            feedback_parts.append("↩️ SCORE REGRESSION ROLLBACK")
+
+        details_parts = []
+        visual_issues = result.get("visual_issues", [])
+        visual_goals = result.get("visual_goals", [])
+        correct_aspects = result.get("correct_aspects", [])
+        feedback_summary = result.get("feedback_summary", "")
+
+        if visual_issues:
+            details_parts.append("[视觉问题]\n" + "\n".join(f"  • {i}" for i in visual_issues))
+        if visual_goals:
+            details_parts.append("[期望目标]\n" + "\n".join(f"  → {g}" for g in visual_goals))
+        if correct_aspects:
+            details_parts.append("[保留优点]\n" + "\n".join(f"  ✓ {a}" for a in correct_aspects))
+        if feedback_summary:
+            details_parts.append(f"[整体反馈]\n{feedback_summary}")
+
+        details_text = "\n\n".join(details_parts) if details_parts else feedback_summary
+
         logs = _add_phase_log(
             {**state, "detailed_logs": logs},
             "inspect", "completed" if passed else "running",
-            f"Inspection complete: {score_info}, {'PASSED' if passed else 'NEEDS IMPROVEMENT'}",
-            result.get("feedback_summary", ""),
+            "\n".join(feedback_parts),
+            details_text,
             start_time=phase_start,
+            agent_response=result.get("raw_response"),
+            visual_issues=visual_issues,
+            visual_goals=visual_goals,
+            correct_aspects=correct_aspects,
+            re_decompose_triggered=re_decompose_triggered,
+            rollback_triggered=rollback_triggered,
         )
         
         # 决定下一阶段
@@ -967,6 +1007,8 @@ def node_inspect(state: PipelineState) -> dict:
             "passed": passed,
             "inspect_history": inspect_history,
             # 向后兼容
+            "current_shader": updated_snapshot.get("shader", ""),
+            "iteration": updated_snapshot.get("iteration", iteration),
             "inspect_result": result,
         }
     

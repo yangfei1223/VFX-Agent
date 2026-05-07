@@ -18,6 +18,11 @@ export interface PhaseLog {
   agent_response?: string;  // Agent's raw response for displaying reasoning
   human_iteration?: boolean;  // Whether this was a human-triggered iteration
   human_feedback?: string;  // User feedback for human iterations
+  visual_issues?: string[];  // Inspect Agent: visual problems detected
+  visual_goals?: string[];  // Inspect Agent: expected visual goals
+  correct_aspects?: string[];  // Inspect Agent: aspects to preserve
+  re_decompose_triggered?: boolean;  // Inspect Agent: flag to re-decompose
+  rollback_triggered?: boolean;  // Inspect Agent: flag indicating score regression
 }
 
 export interface PipelineResult {
@@ -48,6 +53,11 @@ export interface PipelineLogEntry {
   status?: 'started' | 'running' | 'completed' | 'failed';
   duration_ms?: number;
   metadata?: Record<string, unknown>;
+  visual_issues?: string[];
+  visual_goals?: string[];
+  correct_aspects?: string[];
+  re_decompose_triggered?: boolean;
+  rollback_triggered?: boolean;
 }
 
 interface UsePipelineReturn {

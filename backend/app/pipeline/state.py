@@ -21,6 +21,12 @@ class PhaseLog(TypedDict, total=False):
     details: str | None
     duration_ms: int | None
     agent_response: str | None
+    # Inspect 结构化反馈
+    visual_issues: list[str] | None
+    visual_goals: list[str] | None
+    correct_aspects: list[str] | None
+    re_decompose_triggered: bool | None
+    rollback_triggered: bool | None
 
 
 class BaselineRegion(TypedDict, total=False):
