@@ -7,12 +7,138 @@ Architecture changes:
 - 4-region partition: baseline / snapshot / gradient_window / checkpoint
 - Physical rollback: prevent quality degradation accumulation
 - Gradient truncation: no full shader in history
+
+V2.0 Enhancement:
+- VisualDescriptionV2: Closed Vocabulary + Required Fields
+- Required: primary_rgb, duration, edge_width, strict
 """
 
 from typing import TypedDict
 
 
+# === Visual Description V2.0 TypedDicts (Required Fields) ===
+
+
+class ShapeDefinitionV2(TypedDict, total=False):
+    """Shape Definition (V2.0 - Required edge_width)
+    
+    Required fields enforced by Self-check.
+    """
+    sdf_type: str  # Must use Token: {sdf.circle}, {sdf.box}, etc.
+    center: str  # e.g., "vec2(0.5, 0.5)"
+    radius: float | None
+    size: str | None
+    edge_type: str  # {edge.soft_medium}, {edge.hard}, etc.
+    edge_width: str  # REQUIRED: e.g., "0.02-0.03 UV"
+
+
+class ColorDefinitionV2(TypedDict, total=False):
+    """Color Definition (V2.0 - Required primary_rgb)
+    
+    Required fields enforced by Self-check.
+    """
+    primary_color: str  # Color name: "blue", "coral", etc.
+    primary_rgb: str  # REQUIRED: e.g., "(0.2, 0.5, 1.0)"
+    gradient_type: str | None  # {gradient.radial}, {gradient.linear}
+    gradient_direction: str | None
+
+
+class AnimationDefinitionV2(TypedDict, total=False):
+    """Animation Definition (V2.0 - Required duration)
+    
+    Required fields enforced by Self-check.
+    """
+    animation_type: str  # expand, pulse, flow, static
+    duration: str  # REQUIRED: e.g., "3s", "4s"
+    easing: str | None  # ease-out, sin, linear
+    loop_type: str | None  # fract(t/duration), continuous
+
+
+class BackgroundDefinitionV2(TypedDict, total=False):
+    """Background Definition (V2.0 - Required strict)
+    
+    Required fields enforced by Self-check.
+    strict=true means RGB error <0.05 (inspect dimension weight doubled)
+    """
+    background_type: str  # {bg.white_strict}, {bg.flexible}, etc.
+    background_rgb: str  # REQUIRED if strict=true: e.g., "(1.0, 1.0, 1.0)"
+    strict: bool  # REQUIRED: true/false (user requirement)
+    error_tolerance: str | None  # e.g., "<0.05"
+
+
+class LightingDefinitionV2(TypedDict, total=False):
+    """Lighting Definition (Optional)
+    
+    No required fields, but recommended for glow/fresnel effects.
+    """
+    lighting_types: list[str]  # ["fresnel", "glow", "rim"]
+    fresnel_intensity: float | None
+    glow_radius: str | None
+
+
+class VisualDescriptionV2(TypedDict, total=False):
+    """Visual Description V2.0 - Closed Vocabulary + Required Fields
+    
+    All values must come from VFX Effect Catalog.
+    Required fields enforced by Self-check (Decompose Agent).
+    
+    Required:
+    - color_definition.primary_rgb
+    - animation_definition.duration
+    - shape_definition.edge_width
+    - background_definition.strict
+    """
+    effect_type: str  # REQUIRED: must be from Closed Vocabulary (ripple/glow/etc.)
+    shape_definition: ShapeDefinitionV2
+    color_definition: ColorDefinitionV2
+    animation_definition: AnimationDefinitionV2
+    background_definition: BackgroundDefinitionV2
+    lighting_definition: LightingDefinitionV2 | None
+    anti_patterns: list[str] | None  # ["raymarching", "texture_fetch_gt8"]
+
+
+class DimensionScore(TypedDict, total=False):
+    """Single dimension score entry"""
+    score: float
+    notes: str
+
+
+class InspectFeedbackV2(TypedDict, total=False):
+    """Inspect Feedback V2.0 - 8 Dimensions + Quantified Feedback
+    
+    Required:
+    - 8 dimension scores (all must be present)
+    - visual_issues: specific and quantified (no vague descriptions)
+    """
+    overall_score: float
+    dimension_scores: dict[str, DimensionScore]  # 8 dimensions
+    visual_issues: list[str]  # Quantified: "颜色偏差 RGB(0.5,0.3,0.8) → RGB(0.2,0.5,1.0)"
+    visual_goals: list[str]  # Actionable: "颜色调整为 RGB(0.2, 0.5, 1.0)"
+    correct_aspects: list[str] | None
+    re_decompose_trigger: bool | None
+
+
+# === Phase Log ===
+
+
 class PhaseLog(TypedDict, total=False):
+    """Phase execution log entry"""
+    phase: str
+    timestamp: float
+    status: str
+    message: str
+    details: str | None
+    duration_ms: int | None
+    agent_response: str | None
+    # Inspect 结构化反馈
+    visual_issues: list[str] | None
+    visual_goals: list[str] | None
+    correct_aspects: list[str] | None
+    re_decompose_triggered: bool | None
+    rollback_triggered: bool | None
+
+
+# === 4-Region Architecture ===
     """Phase execution log entry"""
     phase: str
     timestamp: float
@@ -49,11 +175,13 @@ class SnapshotRegion(TypedDict, total=False):
     
     Latest single-step state: visual_description, shader, screenshots, feedback.
     Updated each iteration.
+    
+    V2.0: visual_description uses VisualDescriptionV2 (required fields enforced)
     """
-    visual_description: dict
+    visual_description: VisualDescriptionV2 | dict  # V2.0 TypedDict or legacy dict
     shader: str
     render_screenshots: list[str]
-    inspect_feedback: dict | None
+    inspect_feedback: InspectFeedbackV2 | dict | None  # V2.0 TypedDict or legacy dict
     iteration: int
     compile_error: str | None
     validation_errors: str | None
