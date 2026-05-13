@@ -17,7 +17,7 @@ from typing import Literal
 
 from langgraph.graph import StateGraph, END
 
-from app.agents.decompose import run_legacy as decompose_run
+from app.agents.decompose import DecomposeAgent
 from app.agents.generate import run_legacy as generate_run
 from app.agents.inspect import run_legacy as inspect_run
 from app.pipeline.state import (
@@ -242,15 +242,9 @@ def node_decompose(state: PipelineState) -> dict:
         print(f"[Decompose Node] Re-decompose triggered at iteration {iteration}")
     
     try:
-        # 调用 legacy 接口（后续迁移到 Agent.run(state, mode)）
-        result = decompose_run(
-            image_paths=keyframes,
-            video_info=video_info,
-            user_notes=user_notes,
-            pipeline_id=pipeline_id,
-            iteration=iteration,
-            return_raw=True,
-        )
+        # 直接调用 Agent.run(state, mode)（传递完整 state 以构建 Failure Log）
+        agent = DecomposeAgent()
+        result = agent.run(state, mode=mode, return_raw=True)
         
         visual_description = result.get("visual_description", {})
         raw_response = result.get("raw_response", "")
