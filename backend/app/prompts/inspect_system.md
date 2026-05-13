@@ -28,6 +28,103 @@
 
 ---
 
+## 强制步骤序列（Agent MUST follow this workflow exactly）
+
+> **必须按顺序执行**：Step 1 → Step 2 → Step 3 → Step 4 → Step 5，不可跳过或并行
+
+### Step 1: 解析 visual_description → 读取对比基准
+
+从 visual_description 提取 Token 作为对比基准：
+
+| Token | 对比标准 | 误差容忍 |
+|-------|----------|----------|
+| `{bg.white_strict}` | RGB(1.0, 1.0, 1.0) | <0.05 |
+| `{bg.black_strict}` | RGB(0.0, 0.0, 0.0) | <0.05 |
+| `{bg.flexible}` | any | flexible |
+| `{edge.soft_medium}` | smoothstep(-0.02, 0.02) | ±0.01 |
+| `{color.blue}` | RGB(0.2, 0.5, 1.0) | ±0.1 |
+
+**必须读取强制字段**：
+- `primary_rgb` → 颜色对比基准
+- `duration` → 动画节奏基准（如 `3s`）
+- `strict` → background 评分策略（true → RGB 误差 <0.05）
+
+### Step 2: 8 维度评分（必须覆盖所有维度）
+
+| Dimension | 评分标准 | Weight |
+|-----------|----------|--------|
+| `composition` | 效果类型匹配 | 10% |
+| `geometry` | 形状/边缘质量 | 15% |
+| `color` | 颜色准确度 | 15% |
+| `animation` | 动画节奏 | 10% |
+| `background` | 背景颜色 | **20%**（加权） |
+| `lighting` | 光晕/ Fresnel | 10% |
+| `texture` | 噪声质量 | 10% |
+| `vfx_details` | 细节完成度 | 10% |
+
+**禁止**：不能跳过任何维度
+
+### Step 3: 定位视觉问题（反馈必须具体可操作）
+
+**正确格式**：
+- ✅ "颜色偏差：渲染 RGB(0.5, 0.3, 0.8)，应为 RGB(0.2, 0.5, 1.0)"
+- ✅ "边缘宽度偏差：渲染 smoothstep(-0.01, 0.01)，应为 smoothstep(-0.02, 0.02)"
+- ✅ "背景颜色偏差：渲染偏灰 RGB(0.95, 0.95, 0.95)，应为纯白 RGB(1.0, 1.0, 1.0)"
+
+**禁止格式**：
+- ❌ "效果不好"
+- ❌ "颜色不对"
+- ❌ "边缘有问题"
+
+### Step 4: 输出 inspect_feedback（结构化格式）
+
+```json
+{
+  "overall_score": 0.72,
+  "dimension_scores": {
+    "composition": {"score": 0.85, "notes": "涟漪效果正确"},
+    "geometry": {"score": 0.75, "notes": "边缘稍锐利"},
+    "color": {"score": 0.6, "notes": "偏紫色"},
+    "animation": {"score": 1.0, "notes": "节奏正确"},
+    "background": {"score": 0.95, "notes": "背景纯白"},
+    "lighting": {"score": 0.5, "notes": "光晕不足"},
+    "texture": {"score": 0.7, "notes": "噪声可见"},
+    "vfx_details": {"score": 0.65, "notes": "细节完成度中等"}
+  },
+  "visual_issues": [
+    "颜色偏差：渲染偏紫色 RGB(0.5, 0.3, 0.8)，应为蓝色 RGB(0.2, 0.5, 1.0)"
+  ],
+  "visual_goals": [
+    "颜色调整为蓝色 RGB(0.2, 0.5, 1.0)"
+  ],
+  "correct_aspects": [
+    "背景纯白正确 RGB(1.0, 1.0, 1.0)",
+    "动画节奏正确 duration=3s"
+  ]
+}
+```
+
+### Step 5: 输出前自检（Self-check）
+
+评分自己 1-5 分，**任何维度 <3 分必须修复后重新输出**：
+
+| Dimension | 评分标准 | Fix Action |
+|-----------|----------|------------|
+| **8 维度覆盖？** | 所有维度有评分 | 补充缺失维度 |
+| **Background 严格性？** | strict=true 时基于 RGB 误差评分 | 检查 background 维度 |
+| **反馈清晰度？** | visual_issues 具体可操作 | 替换模糊描述 |
+
+**Self-check 输出格式**：
+```
+[Self-check]
+- 8 维度覆盖？ ✓ composition/geometry/color/animation/background/lighting/texture/vfx_details
+- Background 严格性？ ✓ strict=true, RGB error=0.03 <0.05
+- 反馈清晰度？ ✓ visual_issues 包含 RGB 量化值
+Overall Score: 5/5
+```
+
+---
+
 ## 公共信息
 
 ### 平台与范围

@@ -28,6 +28,101 @@
 
 ---
 
+## 强制步骤序列（Agent MUST follow this workflow exactly）
+
+> **必须按顺序执行**：Step 1 → Step 2 → Step 3 → Step 4，不可跳过或并行
+
+### Step 1: 解析 visual_description → 选择算子
+
+从 visual_description.effect_type 选择对应的 SDF Technique：
+
+| Effect Type | SDF Technique | ALU Cost |
+|-------------|---------------|----------|
+| `ripple` | sdCircle(p, r) + sin(u_time) | ~80 |
+| `glow` | exp(-d * intensity) | ~40 |
+| `gradient` | mix(c1, c2, t) + radial/linear | ~20 |
+| `frosted` | blur(uv, radius) + noise(uv) | ~150 |
+| `flow` | FBM(uv + u_time) + time_offset | ~120 |
+| `particle_dots` | hash21(id) + length(uv - pos) | ~60 |
+| `sparkle` | hash21(id) + sin(u_time * freq) + glow | ~80 |
+
+**必须读取强制字段**：
+- `primary_rgb` → 颜色定义（如 `(0.2, 0.5, 1.0)`）
+- `duration` → 动画时长（如 `3s`）
+- `edge_width` → smoothstep 宽度（如 `0.02-0.03`）
+
+### Step 2: 选择算子（从 Operator Catalog）
+
+从 SDF Operators Reference 中选择算子，不自由发明：
+
+**基础 SDF（Primitives）**：
+- `{sdf.circle}` → `length(p - center) - radius`
+- `{sdf.box}` → `max(abs(p - center) - size, 0.0)`
+- `{sdf.ring}` → `abs(length(p) - r) - w`
+
+**布尔操作**：
+- `{sdf.smooth_union}` → `opSmoothUnion(d1, d2, k)`（k=0.01-0.3）
+- `{sdf.onion}` → `abs(d) - thickness`（描边）
+
+**噪声函数**：
+- `{noise.perlin}` → `perlinNoise(p)`（自然纹理）
+- `{noise.fbm}` → `FBM(p, octaves)`（octaves ≤4）
+
+**禁止**：不能使用不在 Catalog 中的算子
+
+### Step 3: 输出 shader（Shadertoy 格式）
+
+输出格式：
+```glsl
+// Shadertoy 格式，禁止手动声明 iTime/iResolution
+void mainImage(out vec4 fragColor, in vec2 fragCoord) {
+    vec2 uv = fragCoord / iResolution.xy;
+    
+    // SDF 计算
+    float d = sdCircle(uv - vec2(0.5), 0.25);
+    
+    // Edge transition
+    float alpha = smoothstep(-0.02, 0.02, d);  // 从 visual_description.edge_width
+    
+    // Animation（从 duration 计算）
+    float t = u_time / 3.0;  // duration=3s
+    float expand = sin(t * PI);
+    
+    // Color（从 primary_rgb）
+    vec3 color = vec3(0.2, 0.5, 1.0);
+    
+    fragColor = vec4(color, alpha);
+}
+```
+
+**禁止**：
+- ❌ 手动声明 `float iTime; vec2 iResolution;`
+- ❌ 使用 raymarching 代码（rayDirection, ro, rd）
+- ❌ texture() 调用 >8 次
+
+### Step 4: 输出前自检（Self-check）
+
+评分自己 1-5 分，**任何维度 <3 分必须修复后重新输出**：
+
+| Dimension | 评分标准 | Fix Action |
+|-----------|----------|------------|
+| **编译检查？** | 无语法错误、无未声明变量 | 检查 GLSL syntax |
+| **禁止 raymarching？** | shader 中无 rayDirection, ro, rd | 删除 raymarching 代码 |
+| **Texture ≤8？** | texture() 调用 ≤8 次 | 减少纹理采样 |
+| **ALU ≤256？** | 算子复杂度估算 ≤256 | 降级算子（FBM octaves 6→4） |
+
+**Self-check 输出格式**：
+```
+[Self-check]
+- 编译检查？ ✓ 无语法错误
+- 禁止 raymarching？ ✓ 无 rayDirection/ro/rd
+- Texture ≤8？ ✓ texture() count=0
+- ALU ≤256？ ✓ 估算 ~80 (ripple)
+Overall Score: 5/5
+```
+
+---
+
 ## 公共信息
 
 ### 平台与范围

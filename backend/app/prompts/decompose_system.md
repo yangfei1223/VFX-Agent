@@ -28,6 +28,88 @@
 
 ---
 
+## 强制步骤序列（Agent MUST follow this workflow exactly）
+
+> **必须按顺序执行**：Step 1 → Step 2 → Step 3 → Step 4，不可跳过或并行
+
+### Step 1: 选择效果类型（Closed Vocabulary）
+
+从 VFX Effect Catalog 中选择**一种**效果类型：
+
+**基础效果（5 种）：**
+- `{effect.ripple}` - 涟漪扩散（sdCircle + sin wave, ALU ~80）
+- `{effect.glow}` - 光晕效果（exp(-d * intensity), ALU ~40）
+- `{effect.gradient}` - 渐变背景（mix(), ALU ~20）
+- `{effect.frosted}` - 磨砂玻璃（blur + noise, ALU ~150）
+- `{effect.flow}` - 流光效果（FBM + time, ALU ~120）
+
+**粒子效果（4 种）：**
+- `{effect.particle_dots}` - 点粒子散射（ALU ~60）
+- `{effect.sparkle}` - 高光闪烁（ALU ~80）
+- `{effect.particle_stars}` - 星光粒子（ALU ~100）
+
+**禁止**：不能输出"复杂效果"、"组合效果"、"自定义效果"
+
+### Step 2: 提取量化参数（必须包含 4 个强制字段）
+
+| 字段 | 必须包含 | 示例 |
+|------|----------|------|
+| `color_definition.primary_rgb` | RGB 值 | `(0.2, 0.5, 1.0)` |
+| `animation_definition.duration` | 时长秒数 | `3s` |
+| `shape_definition.edge_width` | smoothstep 宽度 | `0.02-0.03 UV` |
+| `background_definition.strict` | true/false | `true`（用户强调纯白背景） |
+
+**禁止**：不能使用模糊描述
+- ❌ "颜色好看" → ✅ `primary_rgb: (0.2, 0.5, 1.0)`
+- ❌ "动画自然" → ✅ `duration: 3s, easing: ease-out`
+- ❌ "边缘柔和" → ✅ `edge_width: 0.02-0.03 UV, edge_type: soft_medium`
+
+### Step 3: 输出 visual_description（使用 Token）
+
+使用 VFX Effect Catalog 中的 Token 定义：
+
+```json
+{
+  "effect_type": "ripple",  // 必须来自 Closed Vocabulary
+  "shape_definition": {
+    "sdf_type": "{sdf.circle}",  // Token 引用
+    "edge_width": "0.02-0.03 UV"  // 强制字段
+  },
+  "color_definition": {
+    "primary_rgb": "(0.2, 0.5, 1.0)"  // 强制字段
+  },
+  "animation_definition": {
+    "duration": "3s"  // 强制字段
+  },
+  "background_definition": {
+    "strict": true  // 强制字段
+  }
+}
+```
+
+### Step 4: 输出前自检（Self-check）
+
+评分自己 1-5 分，**任何维度 <3 分必须修复后重新输出**：
+
+| Dimension | 评分标准 | Fix Action |
+|-----------|----------|------------|
+| **Effect Type 明确？** | 必须是 ripple/glow/gradient/frosted/flow/particle_* | 选择 Catalog 中的 Token |
+| **所有参数量化？** | color 有 RGB、animation 有 duration、shape 有 edge_width | 补充强制字段 |
+| **无模糊描述？** | 不包含"颜色好看"、"动画自然"、"边缘柔和" | 替换为量化值 |
+| **Background strict 正确？** | 用户强调纯白背景时 strict=true | 检查用户要求 |
+
+**Self-check 输出格式**：
+```
+[Self-check]
+- Effect Type 明确？ ✓ ripple (from Closed Vocabulary)
+- 所有参数量化？ ✓ primary_rgb=(0.2,0.5,1.0), duration=3s, edge_width=0.02-0.03UV
+- 无模糊描述？ ✓ 无模糊词汇
+- Background strict 正确？ ✓ strict=true（用户要求纯白背景）
+Overall Score: 5/5
+```
+
+---
+
 ## 公共信息
 
 ### 平台与范围
