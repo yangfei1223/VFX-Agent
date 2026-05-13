@@ -127,13 +127,26 @@ def build_decompose_prompt(
     """
     构建 Decompose Agent 的 prompt
     
+    Prompt Stack (V2.0):
+    Layer 1: decompose_system.md
+    Layer 2: vfx_effect_catalog.md (Closed Vocabulary)
+    Layer 3: shared_vfx_constraints.md (P0/P1/P2 禁止项)
+    
     Returns:
         (system_prompt, user_prompt, image_paths)
     """
     baseline = state.get("baseline", {})
     
-    # System prompt（已包含 skill 内容）
-    system_prompt = load_prompt("decompose_system")
+    # System prompt（Prompt Stack 层叠）
+    system = load_prompt("decompose_system")
+    catalog = load_prompt("vfx_effect_catalog")
+    constraints = load_prompt("shared_vfx_constraints")
+    
+    system_prompt = system
+    if catalog:
+        system_prompt += "\n\n" + catalog
+    if constraints:
+        system_prompt += "\n\n" + constraints
     
     # User prompt
     user_parts = []
@@ -162,14 +175,27 @@ def build_generate_prompt(state: PipelineState) -> tuple[str, str]:
     """
     构建 Generate Agent 的 prompt
     
+    Prompt Stack (V2.0):
+    Layer 1: generate_system.md
+    Layer 2: vfx_effect_catalog.md (算子映射)
+    Layer 3: shared_vfx_constraints.md (Anti-raymarching + Texture ≤8)
+    
     Returns:
         (system_prompt, user_prompt)
     """
     snapshot = state.get("snapshot", {})
     config = state.get("config", {})
     
-    # System prompt（已包含 skill 内容）
-    system_prompt = load_prompt("generate_system")
+    # System prompt（Prompt Stack 层叠）
+    system = load_prompt("generate_system")
+    catalog = load_prompt("vfx_effect_catalog")
+    constraints = load_prompt("shared_vfx_constraints")
+    
+    system_prompt = system
+    if catalog:
+        system_prompt += "\n\n" + catalog
+    if constraints:
+        system_prompt += "\n\n" + constraints
     
     # User prompt
     user_parts = []
@@ -224,14 +250,27 @@ def build_inspect_prompt(state: PipelineState) -> tuple[str, str, list[str]]:
     """
     构建 Inspect Agent 的 prompt
     
+    Prompt Stack (V2.0):
+    Layer 1: inspect_system.md
+    Layer 2: vfx_effect_catalog.md (对比基准)
+    Layer 3: shared_vfx_constraints.md (禁止模糊反馈)
+    
     Returns:
         (system_prompt, user_prompt, image_paths)
     """
     baseline = state.get("baseline", {})
     snapshot = state.get("snapshot", {})
     
-    # System prompt（已包含 skill 内容）
-    system_prompt = load_prompt("inspect_system")
+    # System prompt（Prompt Stack 层叠）
+    system = load_prompt("inspect_system")
+    catalog = load_prompt("vfx_effect_catalog")
+    constraints = load_prompt("shared_vfx_constraints")
+    
+    system_prompt = system
+    if catalog:
+        system_prompt += "\n\n" + catalog
+    if constraints:
+        system_prompt += "\n\n" + constraints
     
     # User prompt
     user_parts = []
