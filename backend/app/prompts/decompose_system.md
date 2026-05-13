@@ -64,25 +64,52 @@
 - ❌ "动画自然" → ✅ `duration: 3s, easing: ease-out`
 - ❌ "边缘柔和" → ✅ `edge_width: 0.02-0.03 UV, edge_type: soft_medium`
 
-### Step 3: 输出 visual_description（使用 Token）
+### Step 3: 输出 visual_description（使用 V2.0 Schema）
 
-使用 VFX Effect Catalog 中的 Token 定义：
+**必须输出以下 JSON 结构**（禁止使用旧格式）：
 
 ```json
 {
   "effect_type": "ripple",  // 必须来自 Closed Vocabulary
   "shape_definition": {
     "sdf_type": "{sdf.circle}",  // Token 引用
+    "edge_type": "{edge.soft_medium}",
     "edge_width": "0.02-0.03 UV"  // 强制字段
   },
   "color_definition": {
+    "primary_color": "blue",
     "primary_rgb": "(0.2, 0.5, 1.0)"  // 强制字段
   },
   "animation_definition": {
-    "duration": "3s"  // 强制字段
+    "animation_type": "expand",
+    "duration": "3s",  // 强制字段
+    "easing": "ease-out"
   },
   "background_definition": {
+    "background_type": "pure_white",
+    "background_rgb": "(1.0, 1.0, 1.0)",
     "strict": true  // 强制字段
+  }
+}
+```
+
+**❌ 禁止的旧格式示例**：
+```json
+// ❌ 错误格式 - 缺少 V2.0 强制字段
+{
+  "effect_name": "涟漪效果",  // ❌ 应为 effect_type
+  "shape_definition": {
+    "description": "圆形，边缘柔和"  // ❌ 缺少 edge_width
+  },
+  "color_definition": {
+    "description": "蓝色，RGB 约 0.2"  // ❌ 缺少 primary_rgb
+  },
+  "animation_definition": {
+    "description": "动画约3秒"  // ❌ 缺少 duration
+  },
+  "background_definition": {
+    "description": "纯白背景",  // ❌ 缺少 strict
+    "important": "背景必须纯白"
   }
 }
 ```
@@ -93,17 +120,28 @@
 
 | Dimension | 评分标准 | Fix Action |
 |-----------|----------|------------|
+| **JSON 格式符合 V2.0？** | 必须包含 effect_type（而非 effect_name）| 替换为 V2.0 Schema |
+| **强制字段存在？** | primary_rgb/duration/edge_width/strict 必须作为独立字段（而非 description）| 提取为独立字段 |
 | **Effect Type 明确？** | 必须是 ripple/glow/gradient/frosted/flow/particle_* | 选择 Catalog 中的 Token |
 | **所有参数量化？** | color 有 RGB、animation 有 duration、shape 有 edge_width | 补充强制字段 |
-| **无模糊描述？** | 不包含"颜色好看"、"动画自然"、"边缘柔和" | 替换为量化值 |
+| **无模糊描述？** | 不包含"约"、"大致"、"好看" | 替换为精确值 |
 | **Background strict 正确？** | 用户强调纯白背景时 strict=true | 检查用户要求 |
+
+**禁止使用旧格式字段**：
+- ❌ `"effect_name"` → ✅ `"effect_type"`
+- ❌ `"description": "RGB 约 0.85"` → ✅ `"primary_rgb": "(0.85, 0.45, 0.45)"`
+- ❌ `"description": "约 2-3 秒"` → ✅ `"duration": "3s"`
+- ❌ `"description": "边缘锐利"` → ✅ `"edge_width": "0.0"`
+- ❌ `"important": "背景必须纯白"` → ✅ `"strict": true`
 
 **Self-check 输出格式**：
 ```
 [Self-check]
+- JSON 格式符合 V2.0？ ✓ effect_type, primary_rgb, duration, edge_width, strict
+- 强制字段存在？ ✓ primary_rgb=(0.2,0.5,1.0), duration=3s, edge_width=0.02-0.03UV, strict=true
 - Effect Type 明确？ ✓ ripple (from Closed Vocabulary)
-- 所有参数量化？ ✓ primary_rgb=(0.2,0.5,1.0), duration=3s, edge_width=0.02-0.03UV
-- 无模糊描述？ ✓ 无模糊词汇
+- 所有参数量化？ ✓ RGB精确值, duration精确秒数, edge_width精确UV
+- 无模糊描述？ ✓ 无"约"、"大致"词汇
 - Background strict 正确？ ✓ strict=true（用户要求纯白背景）
 Overall Score: 5/5
 ```
