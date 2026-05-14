@@ -14,10 +14,17 @@ from app.pipeline.state import PipelineState, GradientEntry
 
 
 def load_prompt(prompt_name: str) -> str:
-    """加载 system prompt（已包含 skill 内容）"""
+    """加载 system prompt（已包含 skill 内容）
+    
+    V2.0: Prompt 文件缺失时打印警告而非静默返回空字符串
+    """
     prompt_path = Path(f"app/prompts/{prompt_name}.md")
     if prompt_path.exists():
         return prompt_path.read_text()
+    
+    # Prompt 文件缺失警告
+    print(f"WARNING: Prompt file not found: {prompt_path}")
+    print(f"  Agent will receive empty system prompt!")
     return ""
 
 
@@ -84,6 +91,8 @@ def format_gradient_history(gradient_window: list[GradientEntry]) -> str:
 def build_failure_log(state: PipelineState) -> str:
     """
     构建 Re-decompose 时注入 Decompose 的失败日志
+    
+    V2.0: 包含多轮失败历史（从 gradient_window 提取）
     """
     snapshot = state.get("snapshot", {})
     gradient_window = state.get("gradient_window", [])
@@ -94,28 +103,41 @@ def build_failure_log(state: PipelineState) -> str:
     visual_goals = last_feedback.get("visual_goals", [])
     
     visual_description = snapshot.get("visual_description", {})
-    effect_name = visual_description.get("effect_name", "unknown")
+    # V2.0: 优先使用 effect_type，兼容旧版 effect_name
+    effect_type = visual_description.get("effect_type") or visual_description.get("effect_name", "unknown")
     
+    # V2.0: 提取多轮失败历史
     recent_scores = [e.get("score", 0) for e in gradient_window[-3:]] if gradient_window else []
+    recent_issues = []
+    for entry in gradient_window[-3:]:
+        issues = entry.get("issues_remaining", [])
+        if issues:
+            recent_issues.extend(issues)
     
+    # 构建失败日志
     failure_log = f"""
 === 重构阻断触发 ===
 
-前一版效果 "{effect_name}" 未能收敛。
+前一版效果 "{effect_type}" 未能收敛。
 
-**失败原因**：
+**本轮失败原因**：
 {chr(10).join(visual_issues[:5]) if visual_issues else '未能达到目标评分'}
 
 **期望效果**：
 {chr(10).join(visual_goals[:5]) if visual_goals else '无明确目标'}
 
-**近 {len(recent_scores)} 轮评分**：{recent_scores}
+**历史评分趋势**：{recent_scores}
+（近 {len(recent_scores)} 轮评分变化）
+
+**累积未解决问题**：
+{chr(10).join(recent_issues[:8]) if recent_issues else '无历史记录'}
 
 **最高评分**：{checkpoint.get('best_score', 0):.2f}（第 {checkpoint.get('best_iteration', 0)} 轮）
 
 **建议**：
 - 重新分析设计参考，可能需要更换底层技术方向
-- 避免重复之前的失败方向
+- 避免重复之前的失败方向：{chr(10).join([f"  - {issue}" for issue in recent_issues[:3]]) if recent_issues else '无历史记录'}
+- 如果最高评分 >0.6，可参考第 {checkpoint.get('best_iteration', 0)} 轮的成功参数
 """
     return failure_log
 
@@ -177,8 +199,7 @@ def build_generate_prompt(state: PipelineState) -> tuple[str, str]:
     - Layer 2: VFX Effect Catalog (算子映射)
     - Layer 3: Generate System Prompt (强制步骤 + Self-check)
     
-    Returns:
-        (system_prompt, user_prompt)
+    V2.0: 注入回滚标记（如果触发）
     """
     snapshot = state.get("snapshot", {})
     config = state.get("config", {})
@@ -193,6 +214,24 @@ def build_generate_prompt(state: PipelineState) -> tuple[str, str]:
     
     # User prompt
     user_parts = []
+    
+    # V2.0: 回滚标记注入（如果触发）
+    if state.get("rollback_triggered"):
+        checkpoint = state.get("checkpoint", {})
+        rollback_info = f"""
+[SYSTEM ROLLBACK]
+系统已回滚到第 {checkpoint.get('best_iteration', 0)} 轮的优质代码。
+
+**回滚原因**：当前评分低于上一轮，质量退化
+**回滚前评分**：{snapshot.get('inspect_feedback', {}).get('overall_score', 0):.2f}
+**回滚后评分**：{checkpoint.get('best_score', 0):.2f}
+
+**建议**：
+- 废弃刚才尝试的方向
+- 探索新的参数组合（而非继续微调）
+- 参考 best_iteration 的成功参数
+"""
+        user_parts.append(rollback_info)
     
     # 1. Visual Description
     visual_description = snapshot.get("visual_description", {})
@@ -246,7 +285,8 @@ def build_inspect_prompt(state: PipelineState) -> tuple[str, str, list[str]]:
     
     Prompt Stack:
     - Layer 1: Shared VFX Constraints (P0: 模糊反馈)
-    - Layer 2: Inspect System Prompt (强制步骤 + Self-check)
+    - Layer 2: VFX Effect Catalog (对比基准 - V2.0 新增)
+    - Layer 3: Inspect System Prompt (强制步骤 + Self-check)
     
     Returns:
         (system_prompt, user_prompt, image_paths)
@@ -254,12 +294,14 @@ def build_inspect_prompt(state: PipelineState) -> tuple[str, str, list[str]]:
     baseline = state.get("baseline", {})
     snapshot = state.get("snapshot", {})
     
-    # Prompt Stack 层叠注入（Inspect 不需要 Effect Catalog）
+    # Prompt Stack 层叠注入
+    # V2.0: Inspect 也注入 Effect Catalog，用于验证 effect_type、sdf_type 等 Token
     constraints = load_prompt("shared_vfx_constraints")
+    catalog = load_prompt("vfx_effect_catalog")
     base_system = load_prompt("inspect_system")
     
     # 组装 System Prompt
-    system_prompt = f"{base_system}\n\n---\n\n{constraints}"
+    system_prompt = f"{base_system}\n\n---\n\n{constraints}\n\n---\n\n{catalog}"
     
     # User prompt
     user_parts = []

@@ -250,12 +250,13 @@ def node_decompose(state: PipelineState) -> dict:
         raw_response = result.get("raw_response", "")
         usage = result.get("usage")
         
-        effect_name = visual_description.get("effect_name", "unknown")
+        # V2.0: 优先使用 effect_type，兼容旧版 effect_name
+        effect_type = visual_description.get("effect_type") or visual_description.get("effect_name", "unknown")
         
         logs = _add_phase_log(
             {**state, "detailed_logs": logs},
             "decompose", "completed",
-            f"Generated visual description: {effect_name}",
+            f"Generated visual description: {effect_type}",
             f"Shape: {visual_description.get('shape_definition', {}).get('description', '')[:50]}",
             start_time=phase_start,
             agent_response=raw_response[:2000] if raw_response else None,
