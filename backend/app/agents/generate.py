@@ -128,8 +128,16 @@ class GenerateAgent(BaseAgent):
 
     @staticmethod
     def _extract_glsl(text: str) -> str:
-        """从 LLM 响应中提取 GLSL 代码"""
+        """从 LLM 响应中提取 GLSL 代码
+        
+        V2.0: Agent 输出 GLSL + Self-check，需要提取 Self-check 之前的 GLSL 部分
+        """
         text = text.strip()
+
+        # V2.0: 提取 Self-check 之前的 GLSL 部分
+        self_check_idx = text.find('[Self-check]')
+        if self_check_idx > 0:
+            text = text[:self_check_idx].strip()
 
         if "```glsl" in text:
             match = re.search(r"```glsl\s*\n(.*?)```", text, re.DOTALL)

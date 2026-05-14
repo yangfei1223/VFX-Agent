@@ -170,6 +170,57 @@ class BaselineRegion(TypedDict, total=False):
     constraints: dict
 
 
+class ShapeDefinitionV2(TypedDict, total=False):
+    """Shape Definition V2.0 - Token-Based"""
+    sdf_type: str  # Token: {sdf.circle}, {sdf.box}, etc.
+    edge_type: str  # Token: {edge.soft_medium}, etc.
+    edge_width: str  # Required: "0.02-0.03 UV"
+    description: str  # Natural language description
+
+
+class ColorDefinitionV2(TypedDict, total=False):
+    """Color Definition V2.0 - Token-Based"""
+    primary_token: str  # Token: {color.blue}, etc.
+    primary_rgb: str  # Required: "(0.2, 0.5, 1.0)"
+    gradient_type: str  # Token: {gradient.radial}, etc.
+    description: str
+
+
+class AnimationDefinitionV2(TypedDict, total=False):
+    """Animation Definition V2.0 - Token-Based"""
+    anim_token: str  # Token: {anim.expand_3s}, etc.
+    duration: str  # Required: "3s"
+    easing: str
+    description: str
+
+
+class BackgroundDefinitionV2(TypedDict, total=False):
+    """Background Definition V2.0 - Token-Based"""
+    bg_token: str  # Token: {bg.white_strict}, etc.
+    bg_rgb: str
+    strict: bool  # Required: true/false
+    description: str
+
+
+class VisualDescriptionV2(TypedDict, total=False):
+    """Visual Description V2.0 - Token-Based Schema
+    
+    Required fields (must exist in Decompose output):
+    - effect_type: Closed Vocabulary (ripple/glow/gradient/frosted/flow)
+    - shape_definition.edge_width
+    - color_definition.primary_rgb
+    - animation_definition.duration
+    - background_definition.strict
+    """
+    effect_type: str  # Required: ripple/glow/gradient/frosted/flow
+    shape_definition: ShapeDefinitionV2
+    color_definition: ColorDefinitionV2
+    animation_definition: AnimationDefinitionV2
+    background_definition: BackgroundDefinitionV2
+    lighting_definition: dict
+    constraints: dict
+
+
 class SnapshotRegion(TypedDict, total=False):
     """Current Snapshot
     

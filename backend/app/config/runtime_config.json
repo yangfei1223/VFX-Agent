@@ -1,0 +1,23 @@
+{
+  "max_iterations": 20,
+  "passing_threshold": 0.9,
+  "re_decompose_threshold": 0.5,
+  "gradient_window_size": 3,
+  "stagnation_variance": 0.05,
+  "stagnation_window": 3,
+  "render_timeout_ms": 2000,
+  "screenshot_width": 1024,
+  "screenshot_height": 1024,
+  "decompose_agent": {
+    "temperature": 0.3,
+    "max_tokens": 4096
+  },
+  "generate_agent": {
+    "temperature": 0.5,
+    "max_tokens": 8192
+  },
+  "inspect_agent": {
+    "temperature": 0.3,
+    "max_tokens": 4096
+  }
+}

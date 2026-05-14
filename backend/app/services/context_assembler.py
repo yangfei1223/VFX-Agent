@@ -1,9 +1,9 @@
-"""上下文装配器：为每个 Agent 组装 user prompt
+"""上下文装配器：为每个 Agent 组装 prompt
 
-简化版 V3.1：
-- Skill 内容已合并到 system prompt，无需动态加载
-- 仅组装 user prompt（任务数据 + 反馈 + 历史）
-- System prompt 直接从文件加载
+VFX-Agent V2.0：
+- Prompt Stack 层叠：System Prompt + Shared Constraints + Effect Catalog + User Prompt
+- Shared Constraints: P0/P1/P2 禁止项（三 Agent 共享）
+- Effect Catalog: Closed Vocabulary Token 库（Decompose/Generate 共享）
 """
 
 import json
@@ -127,26 +127,23 @@ def build_decompose_prompt(
     """
     构建 Decompose Agent 的 prompt
     
-    Prompt Stack (V2.0):
-    Layer 1: decompose_system.md
-    Layer 2: vfx_effect_catalog.md (Closed Vocabulary)
-    Layer 3: shared_vfx_constraints.md (P0/P1/P2 禁止项)
+    Prompt Stack:
+    - Layer 1: Shared VFX Constraints (P0 禁止项)
+    - Layer 2: VFX Effect Catalog (Closed Vocabulary)
+    - Layer 3: Decompose System Prompt (强制步骤 + Self-check)
     
     Returns:
         (system_prompt, user_prompt, image_paths)
     """
     baseline = state.get("baseline", {})
     
-    # System prompt（Prompt Stack 层叠）
-    system = load_prompt("decompose_system")
-    catalog = load_prompt("vfx_effect_catalog")
+    # Prompt Stack 层叠注入
     constraints = load_prompt("shared_vfx_constraints")
+    catalog = load_prompt("vfx_effect_catalog")
+    base_system = load_prompt("decompose_system")
     
-    system_prompt = system
-    if catalog:
-        system_prompt += "\n\n" + catalog
-    if constraints:
-        system_prompt += "\n\n" + constraints
+    # 组装 System Prompt（按 Layer 顺序）
+    system_prompt = f"{base_system}\n\n---\n\n{constraints}\n\n---\n\n{catalog}"
     
     # User prompt
     user_parts = []
@@ -175,10 +172,10 @@ def build_generate_prompt(state: PipelineState) -> tuple[str, str]:
     """
     构建 Generate Agent 的 prompt
     
-    Prompt Stack (V2.0):
-    Layer 1: generate_system.md
-    Layer 2: vfx_effect_catalog.md (算子映射)
-    Layer 3: shared_vfx_constraints.md (Anti-raymarching + Texture ≤8)
+    Prompt Stack:
+    - Layer 1: Shared VFX Constraints (P0: raymarching, texture >8)
+    - Layer 2: VFX Effect Catalog (算子映射)
+    - Layer 3: Generate System Prompt (强制步骤 + Self-check)
     
     Returns:
         (system_prompt, user_prompt)
@@ -186,16 +183,13 @@ def build_generate_prompt(state: PipelineState) -> tuple[str, str]:
     snapshot = state.get("snapshot", {})
     config = state.get("config", {})
     
-    # System prompt（Prompt Stack 层叠）
-    system = load_prompt("generate_system")
-    catalog = load_prompt("vfx_effect_catalog")
+    # Prompt Stack 层叠注入
     constraints = load_prompt("shared_vfx_constraints")
+    catalog = load_prompt("vfx_effect_catalog")
+    base_system = load_prompt("generate_system")
     
-    system_prompt = system
-    if catalog:
-        system_prompt += "\n\n" + catalog
-    if constraints:
-        system_prompt += "\n\n" + constraints
+    # 组装 System Prompt（按 Layer 顺序）
+    system_prompt = f"{base_system}\n\n---\n\n{constraints}\n\n---\n\n{catalog}"
     
     # User prompt
     user_parts = []
@@ -250,10 +244,9 @@ def build_inspect_prompt(state: PipelineState) -> tuple[str, str, list[str]]:
     """
     构建 Inspect Agent 的 prompt
     
-    Prompt Stack (V2.0):
-    Layer 1: inspect_system.md
-    Layer 2: vfx_effect_catalog.md (对比基准)
-    Layer 3: shared_vfx_constraints.md (禁止模糊反馈)
+    Prompt Stack:
+    - Layer 1: Shared VFX Constraints (P0: 模糊反馈)
+    - Layer 2: Inspect System Prompt (强制步骤 + Self-check)
     
     Returns:
         (system_prompt, user_prompt, image_paths)
@@ -261,24 +254,15 @@ def build_inspect_prompt(state: PipelineState) -> tuple[str, str, list[str]]:
     baseline = state.get("baseline", {})
     snapshot = state.get("snapshot", {})
     
-    # System prompt（Prompt Stack 层叠）
-    system = load_prompt("inspect_system")
-    catalog = load_prompt("vfx_effect_catalog")
+    # Prompt Stack 层叠注入（Inspect 不需要 Effect Catalog）
     constraints = load_prompt("shared_vfx_constraints")
+    base_system = load_prompt("inspect_system")
     
-    system_prompt = system
-    if catalog:
-        system_prompt += "\n\n" + catalog
-    if constraints:
-        system_prompt += "\n\n" + constraints
+    # 组装 System Prompt
+    system_prompt = f"{base_system}\n\n---\n\n{constraints}"
     
     # User prompt
     user_parts = []
-    
-    # 0. User Original Request（用户原始描述）
-    user_notes = baseline.get("user_notes", "")
-    if user_notes:
-        user_parts.append(f"### 用户原始描述\n{user_notes}\n\n**重要**：请对比渲染结果是否满足用户原始意图，特别是背景颜色、效果类型等关键约束。")
     
     # 1. UX Reference
     design_screenshots = baseline.get("keyframe_paths", [])

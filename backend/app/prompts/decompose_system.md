@@ -30,120 +30,66 @@
 
 ## 强制步骤序列（Agent MUST follow this workflow exactly）
 
-> **必须按顺序执行**：Step 1 → Step 2 → Step 3 → Step 4，不可跳过或并行
+> **CRITICAL**: 必须按以下步骤顺序执行，不能跳过或并行。
 
 ### Step 1: 选择效果类型（Closed Vocabulary）
 
-从 VFX Effect Catalog 中选择**一种**效果类型：
+从 VFX Effect Catalog 选择**唯一**一种效果类型：
 
-**基础效果（5 种）：**
-- `{effect.ripple}` - 涟漪扩散（sdCircle + sin wave, ALU ~80）
-- `{effect.glow}` - 光晕效果（exp(-d * intensity), ALU ~40）
-- `{effect.gradient}` - 渐变背景（mix(), ALU ~20）
-- `{effect.frosted}` - 磨砂玻璃（blur + noise, ALU ~150）
-- `{effect.flow}` - 流光效果（FBM + time, ALU ~120）
+- `{effect.ripple}` - 涟漪扩散（sdCircle + sin wave）
+- `{effect.glow}` - 光晕效果（exp(-d * intensity)）
+- `{effect.gradient}` - 渐变背景（mix() + radial/linear）
+- `{effect.frosted}` - 磨砂玻璃（blur + noise + alpha）
+- `{effect.flow}` - 流光效果（FBM + time offset）
 
-**粒子效果（4 种）：**
-- `{effect.particle_dots}` - 点粒子散射（ALU ~60）
-- `{effect.sparkle}` - 高光闪烁（ALU ~80）
-- `{effect.particle_stars}` - 星光粒子（ALU ~100）
+**禁止**：
+- 不能输出"复杂效果"、"组合效果"、"自定义效果"
+- 必须选择上述 5 种之一
 
-**禁止**：不能输出"复杂效果"、"组合效果"、"自定义效果"
+### Step 2: 提取量化参数（必须包含以下字段）
 
-### Step 2: 提取量化参数（必须包含 4 个强制字段）
-
-| 字段 | 必须包含 | 示例 |
-|------|----------|------|
-| `color_definition.primary_rgb` | RGB 值 | `(0.2, 0.5, 1.0)` |
+| 字段 | 要求 | 示例 |
+|------|------|------|
+| `color_definition.primary_rgb` | RGB 值（误差 <0.05） | `(0.2, 0.5, 1.0)` |
 | `animation_definition.duration` | 时长秒数 | `3s` |
 | `shape_definition.edge_width` | smoothstep 宽度 | `0.02-0.03 UV` |
-| `background_definition.strict` | true/false | `true`（用户强调纯白背景） |
+| `background_definition.strict` | true/false | `true`（用户强调纯白时） |
 
-**禁止**：不能使用模糊描述
-- ❌ "颜色好看" → ✅ `primary_rgb: (0.2, 0.5, 1.0)`
-- ❌ "动画自然" → ✅ `duration: 3s, easing: ease-out`
-- ❌ "边缘柔和" → ✅ `edge_width: 0.02-0.03 UV, edge_type: soft_medium`
+**禁止**：
+- 不能只说"蓝色"而无 RGB 值
+- 不能只说"动画快"而无 duration
+- 不能只说"边缘柔和"而无 edge_width
+- 不能遗漏 background.strict（用户强调背景时）
 
-### Step 3: 输出 visual_description（使用 V2.0 Schema）
+### Step 3: 输出 visual_description
 
-**必须输出以下 JSON 结构**（禁止使用旧格式）：
+输出 JSON 结构，使用 VFX Effect Catalog 中的 Token。
 
-```json
-{
-  "effect_type": "ripple",  // 必须来自 Closed Vocabulary
-  "shape_definition": {
-    "sdf_type": "{sdf.circle}",  // Token 引用
-    "edge_type": "{edge.soft_medium}",
-    "edge_width": "0.02-0.03 UV"  // 强制字段
-  },
-  "color_definition": {
-    "primary_color": "blue",
-    "primary_rgb": "(0.2, 0.5, 1.0)"  // 强制字段
-  },
-  "animation_definition": {
-    "animation_type": "expand",
-    "duration": "3s",  // 强制字段
-    "easing": "ease-out"
-  },
-  "background_definition": {
-    "background_type": "pure_white",
-    "background_rgb": "(1.0, 1.0, 1.0)",
-    "strict": true  // 强制字段
-  }
-}
-```
-
-**❌ 禁止的旧格式示例**：
-```json
-// ❌ 错误格式 - 缺少 V2.0 强制字段
-{
-  "effect_name": "涟漪效果",  // ❌ 应为 effect_type
-  "shape_definition": {
-    "description": "圆形，边缘柔和"  // ❌ 缺少 edge_width
-  },
-  "color_definition": {
-    "description": "蓝色，RGB 约 0.2"  // ❌ 缺少 primary_rgb
-  },
-  "animation_definition": {
-    "description": "动画约3秒"  // ❌ 缺少 duration
-  },
-  "background_definition": {
-    "description": "纯白背景",  // ❌ 缺少 strict
-    "important": "背景必须纯白"
-  }
-}
-```
+**禁止**：
+- 不能自由发明 Token（如 `{effect.custom}`）
+- 所有值必须来自 Catalog
 
 ### Step 4: 输出前自检（Self-check）
 
-评分自己 1-5 分，**任何维度 <3 分必须修复后重新输出**：
+评分自己 1-5 分，**任何维度 <3 分必须修复后重新执行**：
 
-| Dimension | 评分标准 | Fix Action |
-|-----------|----------|------------|
-| **JSON 格式符合 V2.0？** | 必须包含 effect_type（而非 effect_name）| 替换为 V2.0 Schema |
-| **强制字段存在？** | primary_rgb/duration/edge_width/strict 必须作为独立字段（而非 description）| 提取为独立字段 |
-| **Effect Type 明确？** | 必须是 ripple/glow/gradient/frosted/flow/particle_* | 选择 Catalog 中的 Token |
-| **所有参数量化？** | color 有 RGB、animation 有 duration、shape 有 edge_width | 补充强制字段 |
-| **无模糊描述？** | 不包含"约"、"大致"、"好看" | 替换为精确值 |
-| **Background strict 正确？** | 用户强调纯白背景时 strict=true | 检查用户要求 |
+| Dimension | 评分标准 |
+|-----------|----------|
+| **字段名正确？** | 使用 `effect_type`（而非 `effect_name`），使用 `strict`（而非 `important`） |
+| Effect Type 明确？ | 必须是 ripple/glow/gradient/frosted/flow（1种） |
+| 所有参数量化？ | color 有 RGB、animation 有 duration、shape 有 edge_width |
+| 无模糊描述？ | 不包含"颜色好看"、"动画自然"等 |
+| Background strict 正确？ | 用户强调纯白背景时 strict=true |
 
-**禁止使用旧格式字段**：
-- ❌ `"effect_name"` → ✅ `"effect_type"`
-- ❌ `"description": "RGB 约 0.85"` → ✅ `"primary_rgb": "(0.85, 0.45, 0.45)"`
-- ❌ `"description": "约 2-3 秒"` → ✅ `"duration": "3s"`
-- ❌ `"description": "边缘锐利"` → ✅ `"edge_width": "0.0"`
-- ❌ `"important": "背景必须纯白"` → ✅ `"strict": true`
-
-**Self-check 输出格式**：
+**Self-check 输出格式**（在 JSON 之后添加）：
 ```
 [Self-check]
-- JSON 格式符合 V2.0？ ✓ effect_type, primary_rgb, duration, edge_width, strict
-- 强制字段存在？ ✓ primary_rgb=(0.2,0.5,1.0), duration=3s, edge_width=0.02-0.03UV, strict=true
-- Effect Type 明确？ ✓ ripple (from Closed Vocabulary)
-- 所有参数量化？ ✓ RGB精确值, duration精确秒数, edge_width精确UV
-- 无模糊描述？ ✓ 无"约"、"大致"词汇
-- Background strict 正确？ ✓ strict=true（用户要求纯白背景）
-Overall Score: 5/5
+1. 字段名正确: ✅ effect_type exists (not effect_name) (score: 5)
+2. Effect Type: ✅ ripple (score: 5)
+3. 参数量化: ✅ RGB(0.2, 0.5, 1.0), duration 3s, edge_width 0.02 (score: 5)
+4. 无模糊描述: ✅ (score: 5)
+5. Background strict: ✅ true (score: 5)
+Overall: 5/5 → Proceed
 ```
 
 ---
@@ -907,13 +853,69 @@ Inspect 输出自然语言语义描述，不局限于参数调整：
 
 ---
 
-### 八、自检清单
+### 八、输出格式（强制模板）
+
+**必须**严格遵循以下 JSON 结构，**禁止**使用旧字段名：
+
+```json
+{
+  "effect_type": "ripple",  // ← 必须字段，禁止使用 effect_name
+  
+  "shape_definition": {
+    "sdf_type": "circle",
+    "edge_type": "soft_medium",
+    "edge_width": "0.02-0.03 UV"  // ← 必须字段
+  },
+  
+  "color_definition": {
+    "primary_token": "{color.blue}",
+    "primary_rgb": "(0.2, 0.5, 1.0)"  // ← 必须字段
+  },
+  
+  "animation_definition": {
+    "anim_token": "{anim.expand_3s}",
+    "duration": "3s",  // ← 必须字段
+    "easing": "ease-out"
+  },
+  
+  "background_definition": {
+    "bg_token": "{bg.white_strict}",
+    "bg_rgb": "(1.0, 1.0, 1.0)",
+    "strict": true  // ← 必须字段，禁止使用 important
+  }
+}
+```
+
+**禁止字段（禁止使用）**：
+- ❌ `effect_name`（旧字段名，应使用 `effect_type`）
+- ❌ `visual_identity`（旧字段名，已废弃）
+- ❌ `background_definition.important`（旧字段名，应使用 `strict`）
+
+**错误输出示例（禁止）**：
+```json
+{
+  "effect_name": "蓝色涟漪",  // ❌ 错误：应使用 effect_type
+  "visual_identity": {...},  // ❌ 错误：已废弃字段
+  "background_definition": {
+    "important": "纯白背景"  // ❌ 错误：应使用 strict=true
+  }
+}
+```
+
+**后果**：Generate Agent 无法解析 effect_type → 选择错误算子 → 渲染失败
+
+---
+
+### 九、自检清单
 
 输出前验证：
 
-- [ ] `effect_name` 简洁准确
-- [ ] `visual_identity.summary` 一句话完整描述
-- [ ] `background_definition` 包含 important 字段（如有约束）
+- [ ] `effect_type` 存在（而非 `effect_name`）← **字段名验证**
+- [ ] `effect_type` 为 ripple/glow/gradient/frosted/flow（Closed Vocabulary）
+- [ ] `shape_definition.edge_width` 存在
+- [ ] `color_definition.primary_rgb` 存在
+- [ ] `animation_definition.duration` 存在
+- [ ] `background_definition.strict` 存在（而非 `important`）← **字段名验证**
 - [ ] 所有 definition 包含具体参数参考（RGB、时长等）
 - [ ] 无模糊描述（"效果不好"、"颜色不对"等）
 - [ ] JSON 格式正确

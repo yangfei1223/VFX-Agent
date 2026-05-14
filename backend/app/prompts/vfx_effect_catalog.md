@@ -1,14 +1,10 @@
-# VFX Effect Catalog (Closed Vocabulary)
+# VFX Effect Catalog（Closed Vocabulary）
 
-所有 visual_description 的值必须来自此库。**禁止自由发明。**
-
-> 参考：docs/design/vfx-agent-v2-architecture.md（完整设计）
-> 参考：iq SDF 2D (https://iquilezles.org/articles/distfunctions2d/)
-> 参考：iq SDF Operations (https://iquilezles.org/articles/distfunctions/)
+> 所有 visual_description 的值必须来自此库。**禁止自由发明。**
 
 ---
 
-## Effect Types (必须选择其一)
+## Effect Types（必须选择其一）
 
 ### 基础效果（5 种）
 
@@ -31,7 +27,7 @@
 
 ---
 
-## SDF Shape Tokens (参考 iq SDF 2D)
+## SDF Shape Tokens（参考 iq SDF 2D）
 
 ### 基础形状（Primitives - 常用）
 
@@ -65,7 +61,7 @@
 
 ---
 
-## Boolean Operations (参考 iq distfunctions)
+## Boolean Operations（参考 iq distfunctions）
 
 ### 基础布尔操作
 
@@ -86,7 +82,7 @@
 
 ---
 
-## Domain Operations (参考 iq distfunctions)
+## Domain Operations（参考 iq distfunctions）
 
 ### Rounding/Onion
 
@@ -120,7 +116,9 @@
 
 ---
 
-## Color Tokens（预设调色板）
+## Color/Gradient/Lighting/Noise Tokens
+
+### Color Tokens（预设调色板）
 
 | Token | RGB | Use Case |
 |-------|-----|---------|
@@ -131,9 +129,7 @@
 | `{color.green}` | (0.3, 0.8, 0.4) | 成功、健康 |
 | `{color.red}` | (0.9, 0.3, 0.3) | 错误、警告 |
 
----
-
-## Gradient Tokens
+### Gradient Tokens
 
 | Token | Gradient Function | Use Case |
 |-------|-------------------|---------|
@@ -141,9 +137,7 @@
 | `{gradient.radial}` | mix(c1, c2, length(uv)) | 径向渐变 |
 | `{gradient.angular}` | mix(c1, c2, atan(uv.y, uv.x)) | 角度渐变 |
 
----
-
-## Lighting Tokens
+### Lighting Tokens
 
 | Token | Lighting Function | Use Case |
 |-------|-------------------|---------|
@@ -151,9 +145,7 @@
 | `{lighting.fresnel}` | pow(1.0 - dot(n, v), power) | 菲涅尔 |
 | `{lighting.rim}` | 1.0 - dot(n, v) | 边缘光 |
 
----
-
-## Noise Tokens
+### Noise Tokens
 
 | Token | Noise Function | ALU | Use Case |
 |-------|----------------|-----|---------|
@@ -202,22 +194,7 @@
 
 ## 使用规则
 
-1. **必须使用 Token**：所有字段引用此库，不能自由发明值
-2. **禁止自由发明**：不能使用不在库中的值（如 "复杂效果"、"自定义形状"）
-3. **量化验证**：输出前检查所有字段有对应 Token
-4. **性能约束**：ALU 总和 ≤256，Texture fetch ≤8
-
----
-
-## 强制字段（Required Fields）
-
-Decompose Agent 输出的 visual_description 必须包含：
-
-- `color_definition.primary_rgb`（如 `(0.2, 0.5, 1.0)`）
-- `animation_definition.duration`（如 `3s`）
-- `shape_definition.edge_width`（如 `0.02-0.03 UV`）
-- `background_definition.strict`（true/false）
-
----
-
-*参考文档：docs/design/vfx-agent-v2-architecture.md*
+1. **必须使用 Token**: 所有字段引用此库，不能自由发明值
+2. **禁止自由发明**: 不能使用不在库中的值（如 "复杂效果"、"自定义形状"）
+3. **量化验证**: 输出前检查所有字段有对应 Token
+4. **性能约束**: ALU 总和 ≤256，Texture fetch ≤8
