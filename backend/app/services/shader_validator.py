@@ -83,8 +83,31 @@ def validate_shader_with_glslang(source: str) -> dict:
         return validate_shader_static(source)
     
     # 将 shader 包装为完整 GLSL fragment shader
-    # 注意：#version 必须是第一行，移除 shader 开头的注释/空白
+    # 注意：#version 必须是第一行，移除 shader 开头的注释/空白/Self-check
     clean_source = source.strip()
+    
+    # 移除 Self-check section（Agent 输出的自检部分）
+    if '[Self-check]' in clean_source:
+        # Find the end of Self-check (after Overall Score line)
+        selfcheck_start = clean_source.find('[Self-check]')
+        # Find next blank line after Self-check section
+        selfcheck_end = clean_source.find('\n\n', selfcheck_start)
+        if selfcheck_end != -1:
+            clean_source = clean_source[selfcheck_end + 2:].strip()
+        else:
+            # No blank line, find first non-Self-check line
+            lines = clean_source.split('\n')
+            new_lines = []
+            skip = True
+            for line in lines:
+                if skip and (line.startswith('-') or line.startswith('[Self') or line.startswith('Overall') or not line.strip()):
+                    continue
+                elif skip and not line.startswith('-') and not line.startswith('[Self') and not line.startswith('Overall'):
+                    skip = False
+                if not skip:
+                    new_lines.append(line)
+            clean_source = '\n'.join(new_lines).strip()
+    
     # 移除开头的注释（单行或多行）
     while clean_source.startswith('//') or clean_source.startswith('/*') or clean_source.startswith('\n'):
         if clean_source.startswith('//'):
