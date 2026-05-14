@@ -75,6 +75,7 @@
 
 | Dimension | 评分标准 |
 |-----------|----------|
+| **字段名正确？** | 使用 `effect_type`（而非 `effect_name`），使用 `strict`（而非 `important`） |
 | Effect Type 明确？ | 必须是 ripple/glow/gradient/frosted/flow（1种） |
 | 所有参数量化？ | color 有 RGB、animation 有 duration、shape 有 edge_width |
 | 无模糊描述？ | 不包含"颜色好看"、"动画自然"等 |
@@ -83,10 +84,11 @@
 **Self-check 输出格式**（在 JSON 之后添加）：
 ```
 [Self-check]
-1. Effect Type: ✅ ripple (score: 5)
-2. 参数量化: ✅ RGB(0.2, 0.5, 1.0), duration 3s, edge_width 0.02 (score: 5)
-3. 无模糊描述: ✅ (score: 5)
-4. Background strict: ✅ true (score: 5)
+1. 字段名正确: ✅ effect_type exists (not effect_name) (score: 5)
+2. Effect Type: ✅ ripple (score: 5)
+3. 参数量化: ✅ RGB(0.2, 0.5, 1.0), duration 3s, edge_width 0.02 (score: 5)
+4. 无模糊描述: ✅ (score: 5)
+5. Background strict: ✅ true (score: 5)
 Overall: 5/5 → Proceed
 ```
 
@@ -851,13 +853,69 @@ Inspect 输出自然语言语义描述，不局限于参数调整：
 
 ---
 
-### 八、自检清单
+### 八、输出格式（强制模板）
+
+**必须**严格遵循以下 JSON 结构，**禁止**使用旧字段名：
+
+```json
+{
+  "effect_type": "ripple",  // ← 必须字段，禁止使用 effect_name
+  
+  "shape_definition": {
+    "sdf_type": "circle",
+    "edge_type": "soft_medium",
+    "edge_width": "0.02-0.03 UV"  // ← 必须字段
+  },
+  
+  "color_definition": {
+    "primary_token": "{color.blue}",
+    "primary_rgb": "(0.2, 0.5, 1.0)"  // ← 必须字段
+  },
+  
+  "animation_definition": {
+    "anim_token": "{anim.expand_3s}",
+    "duration": "3s",  // ← 必须字段
+    "easing": "ease-out"
+  },
+  
+  "background_definition": {
+    "bg_token": "{bg.white_strict}",
+    "bg_rgb": "(1.0, 1.0, 1.0)",
+    "strict": true  // ← 必须字段，禁止使用 important
+  }
+}
+```
+
+**禁止字段（禁止使用）**：
+- ❌ `effect_name`（旧字段名，应使用 `effect_type`）
+- ❌ `visual_identity`（旧字段名，已废弃）
+- ❌ `background_definition.important`（旧字段名，应使用 `strict`）
+
+**错误输出示例（禁止）**：
+```json
+{
+  "effect_name": "蓝色涟漪",  // ❌ 错误：应使用 effect_type
+  "visual_identity": {...},  // ❌ 错误：已废弃字段
+  "background_definition": {
+    "important": "纯白背景"  // ❌ 错误：应使用 strict=true
+  }
+}
+```
+
+**后果**：Generate Agent 无法解析 effect_type → 选择错误算子 → 渲染失败
+
+---
+
+### 九、自检清单
 
 输出前验证：
 
-- [ ] `effect_name` 简洁准确
-- [ ] `visual_identity.summary` 一句话完整描述
-- [ ] `background_definition` 包含 important 字段（如有约束）
+- [ ] `effect_type` 存在（而非 `effect_name`）← **字段名验证**
+- [ ] `effect_type` 为 ripple/glow/gradient/frosted/flow（Closed Vocabulary）
+- [ ] `shape_definition.edge_width` 存在
+- [ ] `color_definition.primary_rgb` 存在
+- [ ] `animation_definition.duration` 存在
+- [ ] `background_definition.strict` 存在（而非 `important`）← **字段名验证**
 - [ ] 所有 definition 包含具体参数参考（RGB、时长等）
 - [ ] 无模糊描述（"效果不好"、"颜色不对"等）
 - [ ] JSON 格式正确

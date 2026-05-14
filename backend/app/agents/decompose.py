@@ -112,8 +112,16 @@ class DecomposeAgent(BaseAgent):
         return visual_description
 
     def _parse_json(self, text: str) -> dict:
-        """从 LLM 响应中解析 JSON"""
+        """从 LLM 响应中解析 JSON
+        
+        V2.0: Agent 输出 JSON + Self-check，需要提取 Self-check 之前的 JSON 部分
+        """
         text = text.strip()
+
+        # V2.0: 提取 Self-check 之前的 JSON 部分
+        self_check_idx = text.find('[Self-check]')
+        if self_check_idx > 0:
+            text = text[:self_check_idx].strip()
 
         # 尝试提取 JSON block
         if "```json" in text:
