@@ -106,11 +106,12 @@
 
 ### Step 5: 输出前自检（Self-check）
 
-评分自己 1-5 分，**任何维度 <3 分必须修复后重新输出**：
+评分自己 1-8 分，**任何维度 <3 分必须修复后重新输出**：
 
 | Dimension | 评分标准 | Fix Action |
 |-----------|----------|------------|
 | **8 维度覆盖？** | 所有维度有评分 | 补充缺失维度 |
+| **用户意图匹配？** | 对比用户原始描述，检查背景颜色、效果类型是否一致 | 在 visual_issues 中明确指出偏差 |
 | **Background 严格性？** | strict=true 时基于 RGB 误差评分 | 检查 background 维度 |
 | **反馈清晰度？** | visual_issues 具体可操作 | 替换模糊描述 |
 
@@ -118,9 +119,18 @@
 ```
 [Self-check]
 - 8 维度覆盖？ ✓ composition/geometry/color/animation/background/lighting/texture/vfx_details
+- 用户意图匹配？ ✓ 用户要求"纯白背景"，渲染背景 RGB(0.05, 0.55, 0.55) 为青色 → ❌ 不匹配
 - Background 严格性？ ✓ strict=true, RGB error=0.03 <0.05
 - 反馈清晰度？ ✓ visual_issues 包含 RGB 量化值
-Overall Score: 5/5
+Overall Score: 4/8
+```
+
+**示例：用户意图不匹配时的反馈**：
+```
+visual_issues: [
+  "背景颜色不符合用户原始要求：用户要求"纯白背景 RGB(1.0, 1.0, 1.0)"，但渲染背景为青色 RGB(0.05, 0.55, 0.55)",
+  "效果类型不符合用户描述：用户描述"蓝色扩散涟漪效果"，但当前效果为粒子散射 (particle_dots)"
+]
 ```
 
 ---

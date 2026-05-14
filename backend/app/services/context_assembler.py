@@ -275,6 +275,11 @@ def build_inspect_prompt(state: PipelineState) -> tuple[str, str, list[str]]:
     # User prompt
     user_parts = []
     
+    # 0. User Original Request（用户原始描述）
+    user_notes = baseline.get("user_notes", "")
+    if user_notes:
+        user_parts.append(f"### 用户原始描述\n{user_notes}\n\n**重要**：请对比渲染结果是否满足用户原始意图，特别是背景颜色、效果类型等关键约束。")
+    
     # 1. UX Reference
     design_screenshots = baseline.get("keyframe_paths", [])
     if design_screenshots:
