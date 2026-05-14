@@ -1031,7 +1031,7 @@ def node_inspect(state: PipelineState) -> dict:
 # === 路由函数 ===
 
 
-def route_from_validate(state: PipelineState) -> Literal["generate", "render", "end"]:
+def route_from_validate(state: PipelineState) -> Literal["generate", "render_and_screenshot", "end"]:
     """Validation node routing"""
     if state.get("error"):
         return "end"
