@@ -28,6 +28,86 @@
 
 ---
 
+## 强制步骤序列（Agent MUST follow this workflow exactly）
+
+> **CRITICAL**: 必须按以下步骤顺序执行，不能跳过或并行。
+
+### Step 1: 解析 visual_description
+
+读取 Token 作为对比基准：
+
+| Token | 对比检查 |
+|-------|----------|
+| `{bg.white_strict}` | 检查渲染背景 RGB 误差 <0.05 |
+| `{edge.soft_medium}` | 检查 smoothstep 宽度 0.02-0.03 |
+| `{effect.ripple}` | 检查 SDF technique 是否匹配 |
+| `{color.blue}` | 检查主色调 RGB 是否匹配 |
+
+### Step 2: 8 维度评分（必须覆盖所有维度）
+
+| Dimension | Weight | 评分标准 |
+|-----------|--------|----------|
+| **composition** | 0.10 | 整体构图、布局、主体位置 |
+| **geometry** | 0.10 | SDF 形状、边缘质量、比例尺寸 |
+| **color** | 0.15 | 主色调 RGB、渐变过渡、饱和度 |
+| **animation** | 0.10 | 动画节奏、时长、循环方式 |
+| **background** | 0.20 | 背景颜色、纹理、严格性检查 |
+| **lighting** | 0.10 | 光晕、Fresnel、高光、阴影 |
+| **texture** | 0.10 | 噪声纹理、颗粒感、细节层次 |
+| **vfx_details** | 0.15 | 粒子效果、特殊细节、创新元素 |
+
+**禁止**：
+- 不能遗漏任何维度
+- background 维度权重加倍（严格性检查）
+
+### Step 3: 定位视觉问题
+
+反馈**具体可操作**（含量化参数）：
+
+✅ 正确示例：
+- "颜色偏差：渲染 RGB(0.1, 0.3, 0.8)，应为 RGB(0.2, 0.5, 1.0)"
+- "边缘宽度偏差：渲染 0.01，应为 0.02-0.03 UV"
+- "背景颜色偏差：渲染青色 RGB(0.05, 0.55, 0.55)，应为纯白 RGB(1.0, 1.0, 1.0)"
+
+❌ 禁止示例：
+- "效果不好"
+- "颜色不对"
+- "边缘不柔和"
+
+### Step 4: 构建反馈
+
+输出结构化反馈：
+```json
+{
+  "overall_score": 0.72,
+  "dimension_scores": { ... },
+  "visual_issues": [ ... ],  // 具体问题
+  "visual_goals": [ ... ],   // 期望效果
+  "correct_aspects": [ ... ] // 正确保持的部分
+}
+```
+
+### Step 5: 输出前自检（Self-check）
+
+评分自己 1-5 分，**任何维度 <3 分必须修复后重新执行**：
+
+| Check | Requirement |
+|-------|-------------|
+| 8 维度覆盖？ | 所有维度有评分 |
+| Background 严格性？ | strict=true 时基于 RGB 误差评分 |
+| 反馈清晰度？ | visual_issues 具体可操作 |
+
+**Self-check 输出格式**（在 JSON 之后添加）：
+```
+[Self-check]
+1. 8 维度覆盖: ✅ all 8 dimensions scored (score: 5)
+2. Background 严格性: ✅ strict=true, RGB error checked (score: 5)
+3. 反馈清晰度: ✅ visual_issues contain RGB values (score: 5)
+Overall: 5/5 → Proceed
+```
+
+---
+
 ## 公共信息
 
 ### 平台与范围

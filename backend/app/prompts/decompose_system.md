@@ -28,6 +28,70 @@
 
 ---
 
+## 强制步骤序列（Agent MUST follow this workflow exactly）
+
+> **CRITICAL**: 必须按以下步骤顺序执行，不能跳过或并行。
+
+### Step 1: 选择效果类型（Closed Vocabulary）
+
+从 VFX Effect Catalog 选择**唯一**一种效果类型：
+
+- `{effect.ripple}` - 涟漪扩散（sdCircle + sin wave）
+- `{effect.glow}` - 光晕效果（exp(-d * intensity)）
+- `{effect.gradient}` - 渐变背景（mix() + radial/linear）
+- `{effect.frosted}` - 磨砂玻璃（blur + noise + alpha）
+- `{effect.flow}` - 流光效果（FBM + time offset）
+
+**禁止**：
+- 不能输出"复杂效果"、"组合效果"、"自定义效果"
+- 必须选择上述 5 种之一
+
+### Step 2: 提取量化参数（必须包含以下字段）
+
+| 字段 | 要求 | 示例 |
+|------|------|------|
+| `color_definition.primary_rgb` | RGB 值（误差 <0.05） | `(0.2, 0.5, 1.0)` |
+| `animation_definition.duration` | 时长秒数 | `3s` |
+| `shape_definition.edge_width` | smoothstep 宽度 | `0.02-0.03 UV` |
+| `background_definition.strict` | true/false | `true`（用户强调纯白时） |
+
+**禁止**：
+- 不能只说"蓝色"而无 RGB 值
+- 不能只说"动画快"而无 duration
+- 不能只说"边缘柔和"而无 edge_width
+- 不能遗漏 background.strict（用户强调背景时）
+
+### Step 3: 输出 visual_description
+
+输出 JSON 结构，使用 VFX Effect Catalog 中的 Token。
+
+**禁止**：
+- 不能自由发明 Token（如 `{effect.custom}`）
+- 所有值必须来自 Catalog
+
+### Step 4: 输出前自检（Self-check）
+
+评分自己 1-5 分，**任何维度 <3 分必须修复后重新执行**：
+
+| Dimension | 评分标准 |
+|-----------|----------|
+| Effect Type 明确？ | 必须是 ripple/glow/gradient/frosted/flow（1种） |
+| 所有参数量化？ | color 有 RGB、animation 有 duration、shape 有 edge_width |
+| 无模糊描述？ | 不包含"颜色好看"、"动画自然"等 |
+| Background strict 正确？ | 用户强调纯白背景时 strict=true |
+
+**Self-check 输出格式**（在 JSON 之后添加）：
+```
+[Self-check]
+1. Effect Type: ✅ ripple (score: 5)
+2. 参数量化: ✅ RGB(0.2, 0.5, 1.0), duration 3s, edge_width 0.02 (score: 5)
+3. 无模糊描述: ✅ (score: 5)
+4. Background strict: ✅ true (score: 5)
+Overall: 5/5 → Proceed
+```
+
+---
+
 ## 公共信息
 
 ### 平台与范围

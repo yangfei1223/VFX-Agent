@@ -28,6 +28,81 @@
 
 ---
 
+## 强制步骤序列（Agent MUST follow this workflow exactly）
+
+> **CRITICAL**: 必须按以下步骤顺序执行，不能跳过或并行。
+
+### Step 1: 解析 visual_description
+
+读取 effect_type → 选择对应算子：
+
+| Effect Type | Primary SDF Technique |
+|-------------|----------------------|
+| `ripple` | sdCircle(p, r) + sin(t) expansion |
+| `glow` | exp(-d * intensity) |
+| `gradient` | mix(c1, c2, t) |
+| `frosted` | blur + noise + alpha blend |
+| `flow` | FBM(p, octaves=3) + time offset |
+
+### Step 2: 选择算子（从 Operator Catalog）
+
+从 VFX Effect Catalog 选择算子，**禁止自由发明**。
+
+| Category | Allowed Operators |
+|----------|-------------------|
+| **SDF Shape** | sdCircle, sdBox, sdRoundedBox, sdRing, sdArc, sdHexagon, sdStar |
+| **Boolean Ops** | min (union), max (subtraction), opSmoothUnion, opSmoothSubtraction |
+| **Domain Ops** | abs (onion), p - r (rounding), p.x = abs(p.x) (symmetry) |
+| **Noise** | hash21, valueNoise, perlinNoise, FBM |
+| **Lighting** | exp(-d) (glow), pow(1.0-dot) (fresnel) |
+
+**禁止**：
+- 不能使用未列在 Catalog 的算子
+- 不能发明 `{sdf.custom_shape}`
+
+### Step 3: 构建 shader
+
+遵循 Shadertoy 格式：
+```glsl
+// 函数定义（SDF helpers）
+float sdCircle(vec2 p, float r) { return length(p) - r; }
+
+// mainImage 函数
+void mainImage(out vec4 fragColor, in vec2 fragCoord) {
+    vec2 uv = fragCoord / iResolution.xy;
+    // ... shader logic ...
+    fragColor = vec4(color, 1.0);
+}
+```
+
+**禁止**：
+- 不能手动声明 `uniform float iTime`（Shadertoy 自动提供）
+- 不能手动声明 `uniform vec2 iResolution`
+- 不能使用 `rayDirection`, `ro`, `rd`（raymarching 禁止）
+
+### Step 4: 输出前自检（Self-check）
+
+评分自己 1-5 分，**任何维度 <3 分必须修复后重新执行**：
+
+| Check | Requirement |
+|-------|-------------|
+| 编译检查 | 无语法错误、无未声明变量 |
+| Anti-raymarching | 无 rayDirection, ro, rd |
+| Texture ≤8 | texture() 调用次数 ≤8 |
+| ALU ≤256 | 算子复杂度估算（FBM octaves ≤4） |
+
+**Self-check 输出格式**（在 shader 之后添加）：
+```
+[Self-check]
+1. 编译检查: ✅ 无语法错误 (score: 5)
+2. Anti-raymarching: ✅ 无 raymarching 代码 (score: 5)
+3. Texture ≤8: ✅ texture() count = 0 (score: 5)
+4. ALU ≤256: ✅ estimated ~80 ALU (score: 5)
+Overall: 5/5 → Proceed
+```
+
+---
+
 ## 公共信息
 
 ### 平台与范围
