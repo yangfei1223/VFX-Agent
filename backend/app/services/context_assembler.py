@@ -170,8 +170,11 @@ def build_decompose_prompt(
     # User prompt
     user_parts = []
     
-    # 1. UX Reference
-    image_paths = baseline.get("image_paths", [])
+    # 1. UX Reference（视频关键帧 + 上传图片）
+    # 修复：视频输入时 baseline 存储 keyframe_paths，图片输入时存储 image_paths
+    keyframe_paths = baseline.get("keyframe_paths", [])
+    uploaded_images = baseline.get("image_paths", [])
+    image_paths = keyframe_paths + uploaded_images
     user_notes = baseline.get("user_notes", "")
     
     if image_paths:
