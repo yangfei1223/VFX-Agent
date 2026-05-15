@@ -115,22 +115,41 @@ class DecomposeAgent(BaseAgent):
         """从 LLM 响应中解析 JSON
         
         V2.0: Agent 输出 JSON + Self-check，需要提取 Self-check 之前的 JSON 部分
+        V3.0: 新增 Self-check 评分验证，低分警告
         """
+        import re
         text = text.strip()
 
         # V2.0: 提取 Self-check 之前的 JSON 部分
         self_check_idx = text.find('[Self-check]')
         if self_check_idx > 0:
+            # V3.0: 先提取 Self-check 部分
+            self_check_text = text[self_check_idx:]
+            
+            # 解析 Overall 评分
+            # Pattern: "Overall: X/5" or "Overall: X/Y"
+            overall_match = re.search(r'Overall:\s*(\d+)/(\d+)', self_check_text)
+            if overall_match:
+                score = int(overall_match.group(1))
+                max_score = int(overall_match.group(2))
+                if score < 3:
+                    print(f"⚠️  WARNING: Self-check score {score}/{max_score} below threshold (3)")
+                    print(f"   Agent may have produced low-quality output")
+                    # 打印 Self-check 细节
+                    lines = self_check_text.split('\n')[:10]
+                    for line in lines[:5]:
+                        if line.strip():
+                            print(f"   {line.strip()}")
+            
+            # 提取 Self-check 之前的 JSON
             text = text[:self_check_idx].strip()
 
         # 尝试提取 JSON block
         if "```json" in text:
-            import re
             match = re.search(r"```json\s*\n(.*?)```", text, re.DOTALL)
             if match:
                 text = match.group(1).strip()
         elif "```" in text:
-            import re
             match = re.search(r"```(.*?)```", text, re.DOTALL)
             if match:
                 text = match.group(1).strip()

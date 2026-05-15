@@ -33,6 +33,7 @@ from app.pipeline.state import (
 )
 from app.services.browser_render import render_multiple_frames
 from app.services.shader_validator import validate_shader
+from app.services.validators import validate_visual_description, validate_required_fields
 from app.services.video_extractor import extract_keyframes, get_video_info
 from app.config import settings
 from app.routers.config import get_runtime_config
@@ -249,6 +250,13 @@ def node_decompose(state: PipelineState) -> dict:
         visual_description = result.get("visual_description", {})
         raw_response = result.get("raw_response", "")
         usage = result.get("usage")
+        
+        # V2.0: Validate against Closed Vocabulary
+        token_warnings = validate_visual_description(visual_description)
+        field_warnings = validate_required_fields(visual_description)
+        
+        for warning in token_warnings + field_warnings:
+            print(f"[Decompose Node] WARNING: {warning}")
         
         # V2.0: 优先使用 effect_type，兼容旧版 effect_name
         effect_type = visual_description.get("effect_type") or visual_description.get("effect_name", "unknown")
@@ -994,6 +1002,7 @@ def node_inspect(state: PipelineState) -> dict:
             "snapshot": updated_snapshot,
             "checkpoint": updated_checkpoint,
             "gradient_window": updated_gradient_window,
+            "rollback_triggered": rollback_triggered,
             "current_phase": next_phase,
             "phase_status": "completed" if passed else "running",
             "phase_message": next_message,

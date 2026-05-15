@@ -17,6 +17,19 @@ from app.services.session_logger import SessionLogger
 from app.pipeline.state import PipelineState
 
 
+# Dimension weights (per system prompt)
+DIMENSION_WEIGHTS = {
+    "composition": 1.0,
+    "geometry": 1.5,
+    "color": 1.5,
+    "animation": 1.5,
+    "background": 1.0,
+    "lighting": 1.5,
+    "texture": 0.5,
+    "vfx_details": 1.5,
+}
+
+
 class InspectAgent(BaseAgent):
     def __init__(self):
         super().__init__(model_config=settings.inspect)
@@ -85,6 +98,9 @@ class InspectAgent(BaseAgent):
         result = self._parse_json(content)
         result["iteration"] = iteration
 
+        # Validate score calculation
+        self._validate_score_calculation(result)
+
         # 保存 session
         if pipeline_id:
             usage = response.get("usage") if isinstance(response, dict) else None
@@ -150,6 +166,44 @@ class InspectAgent(BaseAgent):
             "re_decompose_trigger": False,
             "iteration": iteration,
         }
+
+    def _validate_score_calculation(self, feedback: dict) -> float:
+        """Validate overall_score matches weighted dimension scores.
+
+        Returns the computed score (or LLM score if validation fails).
+        Prints warning if discrepancy > 0.1.
+        """
+        overall_score = feedback.get("overall_score", 0)
+        dimension_scores = feedback.get("dimension_scores", {})
+
+        if not dimension_scores:
+            return overall_score
+
+        # Compute weighted sum
+        total_weight = 0
+        weighted_sum = 0
+
+        for dim, weight in DIMENSION_WEIGHTS.items():
+            dim_data = dimension_scores.get(dim, {})
+            dim_score = dim_data.get("score", 0)
+            if dim_score > 0:
+                weighted_sum += dim_score * weight
+                total_weight += weight
+
+        if total_weight == 0:
+            return overall_score
+
+        computed_score = weighted_sum / total_weight
+
+        # Warn if discrepancy
+        discrepancy = abs(computed_score - overall_score)
+        if discrepancy > 0.1:
+            print(f"WARNING: Score calculation discrepancy")
+            print(f"  LLM overall_score: {overall_score:.2f}")
+            print(f"  Computed from dimensions: {computed_score:.2f}")
+            print(f"  Discrepancy: {discrepancy:.2f}")
+
+        return overall_score  # Return LLM score (don't override)
 
 
 # === 向后兼容接口 ===

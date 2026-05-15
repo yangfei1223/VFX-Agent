@@ -131,12 +131,32 @@ class GenerateAgent(BaseAgent):
         """从 LLM 响应中提取 GLSL 代码
         
         V2.0: Agent 输出 GLSL + Self-check，需要提取 Self-check 之前的 GLSL 部分
+        V3.0: 新增 Self-check 评分验证，低分警告
         """
         text = text.strip()
 
         # V2.0: 提取 Self-check 之前的 GLSL 部分
         self_check_idx = text.find('[Self-check]')
         if self_check_idx > 0:
+            # V3.0: 先提取 Self-check 部分
+            self_check_text = text[self_check_idx:]
+            
+            # 解析 Overall 评分
+            # Pattern: "Overall: X/5" or "Overall: X/Y"
+            overall_match = re.search(r'Overall:\s*(\d+)/(\d+)', self_check_text)
+            if overall_match:
+                score = int(overall_match.group(1))
+                max_score = int(overall_match.group(2))
+                if score < 3:
+                    print(f"⚠️  WARNING: Self-check score {score}/{max_score} below threshold (3)")
+                    print(f"   Agent may have produced low-quality output")
+                    # 打印 Self-check 细节
+                    lines = self_check_text.split('\n')[:10]
+                    for line in lines[:5]:
+                        if line.strip():
+                            print(f"   {line.strip()}")
+            
+            # 提取 Self-check 之前的 GLSL
             text = text[:self_check_idx].strip()
 
         if "```glsl" in text:
