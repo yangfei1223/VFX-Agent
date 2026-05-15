@@ -38,13 +38,21 @@ function App() {
   }, []);
 
   // Update shader when pipeline produces result
+  // Only update shaderCode/editedCode, don't reset showCheckpoint
+  // (user's Best/Current toggle should persist across polling updates)
   useEffect(() => {
     if (result?.current_shader) {
       setShaderCode(result.current_shader);
       setEditedCode(result.current_shader);
-      setShowCheckpoint(false); // Reset to current version when new result arrives
     }
   }, [result?.current_shader]);
+
+  // Reset to current version only when pipeline fully completes (not during polling)
+  useEffect(() => {
+    if (result?.status === 'passed' || result?.status === 'max_iterations' || result?.status === 'completed' || result?.status === 'failed') {
+      setShowCheckpoint(false);
+    }
+  }, [result?.status]);
 
   // Handle code edits from the editor
   const handleCodeChange = useCallback((code: string) => {
@@ -97,9 +105,10 @@ function App() {
   }, [clearPipeline]);
 
   // Get checkpoint shader and scores
+  // Fix: currentScore should come from snapshot.inspect_feedback, not inspect_result
   const checkpointShader = result?.checkpoint?.best_shader || null;
   const checkpointScore = result?.checkpoint?.best_score ?? 0;
-  const currentScore = result?.inspect_result?.overall_score ?? 0;
+  const currentScore = result?.snapshot?.inspect_feedback?.overall_score ?? result?.inspect_result?.overall_score ?? 0;
 
   // Determine which code to use for preview
   const previewCode = showCheckpoint && checkpointShader
