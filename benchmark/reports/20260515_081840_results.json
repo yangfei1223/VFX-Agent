@@ -1,0 +1,43 @@
+{
+  "metadata": {
+    "timestamp": "20260515_081840",
+    "adapter": "HttpApiAdapter",
+    "api_base": "http://localhost:8000",
+    "sample_dir": "/Users/yangfei/Downloads/shadertoy-samples",
+    "filter": {
+      "tier": null,
+      "ids": [
+        "glow-tutorial"
+      ],
+      "in_scope_only": false,
+      "expected_type": null
+    },
+    "total_samples": 1,
+    "started_at": "2026-05-15T08:18:40.426051+00:00",
+    "completed_at": "2026-05-15T08:20:05.601849+00:00",
+    "summary": {
+      "total": 1,
+      "completed_passed": 1,
+      "failed": 0,
+      "skipped": 0
+    }
+  },
+  "results": [
+    {
+      "id": "glow-tutorial",
+      "pipeline_id": "56b10d0a-621c-4b01-b0f1-6af43a3a9141",
+      "status": "passed",
+      "passed": true,
+      "effect_type": "{effect.glow}",
+      "first_score": null,
+      "final_score": 0.88,
+      "iterations": 0,
+      "score_history": [],
+      "duration_sec": 85.2,
+      "timestamp": "2026-05-15T08:20:05.600284+00:00",
+      "expected_type": "glow",
+      "tier": 1,
+      "in_scope": true
+    }
+  ]
+}

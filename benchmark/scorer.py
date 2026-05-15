@@ -1,4 +1,12 @@
-"""Benchmark Scorer - Metrics Collection"""
+#!/usr/bin/env python3
+"""Benchmark Scorer - Core Metrics Evaluation.
+
+Focus on 3 key metrics:
+1. First Generation Quality (first_score) - how good is the initial output?
+2. Convergence Speed (iterations) - how fast does it converge?
+3. Final Score (final_score) - what's the best achievable quality?
+"""
+
 import json
 import argparse
 import sys
@@ -8,52 +16,40 @@ from collections import defaultdict
 
 
 EFFECT_TYPES = ["glow", "ripple", "frosted", "gradient", "flow", "out_of_scope"]
-VALID_EFFECT_TOKENS = {
-    "glow": ["glow", "{effect.glow}"],
-    "ripple": ["ripple", "{effect.ripple}"],
-    "frosted": ["frosted", "{effect.frosted}"],
-    "gradient": ["gradient", "{effect.gradient}"],
-    "flow": ["flow", "{effect.flow}"],
-    "out_of_scope": ["out_of_scope"],
-}
 
 
-def check_decompose_correct(predicted: str, expected: str) -> bool:
-    """Check if predicted effect_type matches expected"""
+def check_decompose_correct(predicted: str | None, expected: str) -> bool:
     if not predicted:
         return False
-    predicted_lower = predicted.lower().strip("{}").replace("effect.", "")
-    return predicted_lower == expected.lower()
+    p = predicted.lower().strip().strip("{}").replace("effect.", "")
+    return p == expected.lower()
 
 
 def percentile(data: list[float], p: float) -> float:
-    """Calculate percentile"""
     if not data:
         return 0.0
-    sorted_data = sorted(data)
-    idx = int(len(sorted_data) * p / 100)
-    return sorted_data[min(idx, len(sorted_data) - 1)]
+    s = sorted(data)
+    idx = int(len(s) * p / 100)
+    return s[min(idx, len(s) - 1)]
 
 
 def score_results(results: list[dict], config: list[dict]) -> dict:
-    """Score all results against ground truth"""
-    # Build config lookup
+    """Score all results against ground truth."""
     config_map = {s["id"]: s for s in config}
-
-    # Score each sample
     scored = []
-    for r in results:
-        sample_id = r.get("id", "")
-        cfg = config_map.get(sample_id, {})
 
+    for r in results:
+        sid = r.get("id", "")
+        cfg = config_map.get(sid, {})
         expected_type = cfg.get("expected_type", "unknown")
         in_scope = cfg.get("in_scope", True)
         tier = cfg.get("tier", 3)
 
-        effect_type = r.get("effect_type", "")
-        final_score = r.get("final_score", 0)
-        passed = r.get("passed", False)
+        first_score = r.get("first_score")
+        final_score = r.get("final_score")
         iterations = r.get("iterations", 0)
+        passed = r.get("passed", False)
+        effect_type = r.get("effect_type")
 
         scored.append({
             **r,
@@ -64,162 +60,137 @@ def score_results(results: list[dict], config: list[dict]) -> dict:
             "converged": passed,
         })
 
-    # Calculate aggregates
     aggregates = calc_aggregates(scored)
-
-    return {
-        "samples": scored,
-        "aggregates": aggregates,
-    }
+    return {"samples": scored, "aggregates": aggregates}
 
 
 def calc_aggregates(samples: list[dict]) -> dict:
-    """Calculate aggregate metrics"""
     if not samples:
         return {}
 
     n = len(samples)
 
-    # Overall
-    scores = [s.get("final_score", 0) for s in samples if s.get("final_score") is not None]
-    decompose_correct = sum(1 for s in samples if s.get("decompose_correct"))
-    converged = sum(1 for s in samples if s.get("converged"))
-    iterations = [s.get("iterations", 0) for s in samples]
+    # --- Overall ---
+    in_scope = [s for s in samples if s.get("in_scope")]
+    out_scope = [s for s in samples if not s.get("in_scope")]
+
+    first_scores = [s["first_score"] for s in in_scope if s.get("first_score") is not None]
+    final_scores = [s["final_score"] for s in in_scope if s.get("final_score") is not None]
+    converged = [s for s in in_scope if s.get("converged")]
+    decompose_correct = [s for s in in_scope if s.get("decompose_correct")]
 
     overall = {
         "total": n,
-        "convergence_rate": converged / n if n > 0 else 0,
-        "decompose_accuracy": decompose_correct / n if n > 0 else 0,
-        "avg_score": mean(scores) if scores else 0,
-        "median_score": median(scores) if scores else 0,
-        "p50_score": percentile(scores, 50) if scores else 0,
-        "p75_score": percentile(scores, 75) if scores else 0,
-        "p90_score": percentile(scores, 90) if scores else 0,
-        "avg_iterations": mean(iterations) if iterations else 0,
+        "in_scope": len(in_scope),
+        "out_scope": len(out_scope),
+        # Core metric 1: First generation quality
+        "first_score_avg": mean(first_scores) if first_scores else 0,
+        "first_score_median": median(first_scores) if first_scores else 0,
+        # Core metric 2: Convergence speed
+        "convergence_rate": len(converged) / len(in_scope) if in_scope else 0,
+        "avg_iterations": mean([s.get("iterations", 0) or 0 for s in in_scope]) if in_scope else 0,
+        # Core metric 3: Final quality
+        "final_score_avg": mean(final_scores) if final_scores else 0,
+        "final_score_median": median(final_scores) if final_scores else 0,
+        "final_score_p75": percentile(final_scores, 75),
+        # Auxiliary
+        "decompose_accuracy": len(decompose_correct) / len(in_scope) if in_scope else 0,
     }
 
-    # By tier
+    # --- By Tier ---
     by_tier = {}
     for t in [1, 2, 3]:
-        tier_samples = [s for s in samples if s.get("tier") == t]
-        if tier_samples:
-            ts = [s.get("final_score", 0) for s in tier_samples if s.get("final_score") is not None]
-            by_tier[f"tier_{t}"] = {
-                "total": len(tier_samples),
-                "convergence_rate": sum(1 for s in tier_samples if s.get("converged")) / len(tier_samples),
-                "decompose_accuracy": sum(1 for s in tier_samples if s.get("decompose_correct")) / len(tier_samples),
-                "avg_score": mean(ts) if ts else 0,
-                "avg_iterations": mean([s.get("iterations", 0) or 0 for s in tier_samples]) if tier_samples else 0,
-            }
+        tier_s = [s for s in in_scope if s.get("tier") == t]
+        if not tier_s:
+            continue
+        ts_first = [s["first_score"] for s in tier_s if s.get("first_score") is not None]
+        ts_final = [s["final_score"] for s in tier_s if s.get("final_score") is not None]
+        ts_conv = [s for s in tier_s if s.get("converged")]
+        by_tier[f"tier_{t}"] = {
+            "total": len(tier_s),
+            "first_score_avg": mean(ts_first) if ts_first else 0,
+            "final_score_avg": mean(ts_final) if ts_final else 0,
+            "convergence_rate": len(ts_conv) / len(tier_s),
+            "avg_iterations": mean([s.get("iterations", 0) or 0 for s in tier_s]),
+        }
 
-    # By type
+    # --- By Effect Type ---
     by_type = {}
-    for et in EFFECT_TYPES:
-        type_samples = [s for s in samples if s.get("expected_type") == et]
-        if type_samples:
-            ts = [s.get("final_score", 0) for s in type_samples if s.get("final_score") is not None]
-            by_type[et] = {
-                "total": len(type_samples),
-                "convergence_rate": sum(1 for s in type_samples if s.get("converged")) / len(type_samples),
-                "decompose_accuracy": sum(1 for s in type_samples if s.get("decompose_correct")) / len(type_samples),
-                "avg_score": mean(ts) if ts else 0,
-            }
+    for et in ["glow", "ripple", "frosted", "gradient", "flow"]:
+        type_s = [s for s in in_scope if s.get("expected_type") == et]
+        if not type_s:
+            continue
+        ts_first = [s["first_score"] for s in type_s if s.get("first_score") is not None]
+        ts_final = [s["final_score"] for s in type_s if s.get("final_score") is not None]
+        ts_conv = [s for s in type_s if s.get("converged")]
+        ts_correct = [s for s in type_s if s.get("decompose_correct")]
+        by_type[et] = {
+            "total": len(type_s),
+            "first_score_avg": mean(ts_first) if ts_first else 0,
+            "final_score_avg": mean(ts_final) if ts_final else 0,
+            "convergence_rate": len(ts_conv) / len(type_s),
+            "avg_iterations": mean([s.get("iterations", 0) or 0 for s in type_s]),
+            "decompose_accuracy": len(ts_correct) / len(type_s),
+        }
 
-    # In scope vs out of scope
-    in_scope_samples = [s for s in samples if s.get("in_scope")]
-    out_scope_samples = [s for s in samples if not s.get("in_scope")]
-    
-    in_scope_scores = [s.get("final_score", 0) for s in in_scope_samples if s.get("final_score") is not None]
-    out_scope_scores = [s.get("final_score", 0) for s in out_scope_samples if s.get("final_score") is not None]
-
-    by_scope = {
-        "in_scope": {
-            "total": len(in_scope_samples),
-            "convergence_rate": sum(1 for s in in_scope_samples if s.get("converged")) / len(in_scope_samples) if in_scope_samples else 0,
-            "decompose_accuracy": sum(1 for s in in_scope_samples if s.get("decompose_correct")) / len(in_scope_samples) if in_scope_samples else 0,
-            "avg_score": mean(in_scope_scores) if in_scope_scores else 0,
-        },
-        "out_of_scope": {
-            "total": len(out_scope_samples),
-            "convergence_rate": sum(1 for s in out_scope_samples if s.get("converged")) / len(out_scope_samples) if out_scope_samples else 0,
-            "avg_score": mean(out_scope_scores) if out_scope_scores else 0,
-        },
-    }
-
-    return {
-        "overall": overall,
-        "by_tier": by_tier,
-        "by_type": by_type,
-        "by_scope": by_scope,
-    }
+    return {"overall": overall, "by_tier": by_tier, "by_type": by_type}
 
 
 def main():
     parser = argparse.ArgumentParser(description="VFX-Agent Benchmark Scorer")
     parser.add_argument("--results", required=True, help="Path to results JSON")
-    parser.add_argument("--config", default=None, help="Path to config.json (default: same dir as results)")
+    parser.add_argument("--config", default=None, help="Path to config.json")
     parser.add_argument("--verbose", action="store_true", help="Print per-sample details")
     args = parser.parse_args()
 
-    # Load results
     results_path = Path(args.results)
     with open(results_path) as f:
         raw = json.load(f)
+    results = raw.get("results", []) if isinstance(raw, dict) else raw
 
-    # Extract results array (runner saves {"metadata": ..., "results": [...]})
-    if isinstance(raw, dict):
-        results = raw.get("results", [])
-    elif isinstance(raw, list):
-        results = raw
-    else:
-        results = []
-
-    # Load config
     config_path = Path(args.config) if args.config else results_path.parent.parent / "config.json"
     with open(config_path) as f:
         config = json.load(f)
 
-    # Score
     scored = score_results(results, config)
-
-    # Print summary
     agg = scored["aggregates"]
     o = agg["overall"]
 
-    print(f"\n{'='*50}")
-    print(f"  VFX-Agent Benchmark Score Report")
-    print(f"{'='*50}")
-    print(f"  Samples: {o['total']}")
-    print(f"  Convergence Rate: {o['convergence_rate']:.1%}")
-    print(f"  Decompose Accuracy: {o['decompose_accuracy']:.1%}")
-    print(f"  Avg Score: {o['avg_score']:.3f}")
-    print(f"  Avg Iterations: {o['avg_iterations']:.1f}")
+    print(f"\n{'='*60}")
+    print(f"  VFX-Agent Benchmark Report")
+    print(f"{'='*60}")
+    print(f"  Samples: {o['total']} (in-scope: {o['in_scope']}, out-of-scope: {o['out_scope']})")
+    print(f"")
+    print(f"  --- Core Metrics (In-Scope) ---")
+    print(f"  1st Gen Quality:  avg={o['first_score_avg']:.3f}  median={o['first_score_median']:.3f}")
+    print(f"  Convergence Rate: {o['convergence_rate']:.1%}  avg_iterations={o['avg_iterations']:.1f}")
+    print(f"  Final Quality:    avg={o['final_score_avg']:.3f}  median={o['final_score_median']:.3f}  p75={o['final_score_p75']:.3f}")
+    print(f"  Decompose Acc:    {o['decompose_accuracy']:.1%}")
 
     print(f"\n  --- By Tier ---")
-    for t_name, t_data in agg.get("by_tier", {}).items():
-        print(f"  {t_name}: convergence={t_data['convergence_rate']:.1%}, accuracy={t_data['decompose_accuracy']:.1%}, avg_score={t_data['avg_score']:.3f}")
+    for name, td in agg.get("by_tier", {}).items():
+        print(f"  {name}: 1st={td['first_score_avg']:.3f}  final={td['final_score_avg']:.3f}  conv={td['convergence_rate']:.1%}  iter={td['avg_iterations']:.1f}")
 
-    print(f"\n  --- By Type ---")
-    for type_name, type_data in agg.get("by_type", {}).items():
-        print(f"  {type_name}: convergence={type_data['convergence_rate']:.1%}, accuracy={type_data['decompose_accuracy']:.1%}, avg_score={type_data['avg_score']:.3f}")
-
-    print(f"\n  --- By Scope ---")
-    for scope_name, scope_data in agg.get("by_scope", {}).items():
-        print(f"  {scope_name}: total={scope_data['total']}, convergence={scope_data.get('convergence_rate', 0):.1%}, avg_score={scope_data.get('avg_score', 0):.3f}")
+    print(f"\n  --- By Effect Type ---")
+    for name, td in agg.get("by_type", {}).items():
+        print(f"  {name:<10}: 1st={td['first_score_avg']:.3f}  final={td['final_score_avg']:.3f}  conv={td['convergence_rate']:.1%}  iter={td['avg_iterations']:.1f}  acc={td['decompose_accuracy']:.1%}")
 
     if args.verbose:
         print(f"\n  --- Per-Sample ---")
         for s in scored["samples"]:
             status = "✓" if s.get("converged") else "✗"
             correct = "✓" if s.get("decompose_correct") else "✗"
-            score_val = s.get('final_score') or 0
-            print(f"  {status} {s['id']:<35} type: {s.get('effect_type','?'):<20} (expected: {s['expected_type']}) [{correct}] score: {score_val:.2f} iter: {s.get('iterations',0)}")
+            first = s.get("first_score")
+            final = s.get("final_score")
+            first_str = f"{first:.2f}" if first is not None else "N/A"
+            final_str = f"{final:.2f}" if final is not None else "N/A"
+            pred = s.get("effect_type", "?") or "?"
+            print(f"  {status} {s['id']:<35} {pred:<15} → {s['expected_type']:<10} [{correct}] 1st={first_str} final={final_str} iter={s.get('iterations',0)}")
 
-    # Save scored results
     output_path = results_path.parent / results_path.name.replace("_results.json", "_scored.json")
     with open(output_path, "w") as f:
         json.dump(scored, f, indent=2, ensure_ascii=False)
-    print(f"\n  Scored results saved to: {output_path}")
+    print(f"\n  Saved: {output_path}")
 
 
 if __name__ == "__main__":

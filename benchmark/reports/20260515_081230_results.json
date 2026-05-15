@@ -1,0 +1,44 @@
+{
+  "metadata": {
+    "timestamp": "20260515_081230",
+    "adapter": "HttpApiAdapter",
+    "api_base": "http://localhost:8000",
+    "sample_dir": "/Users/yangfei/Downloads/shadertoy-samples",
+    "filter": {
+      "tier": null,
+      "ids": [
+        "glow-tutorial"
+      ],
+      "in_scope_only": false,
+      "expected_type": null
+    },
+    "total_samples": 1,
+    "started_at": "2026-05-15T08:12:30.974069+00:00",
+    "completed_at": "2026-05-15T08:14:06.184771+00:00",
+    "summary": {
+      "total": 1,
+      "completed_passed": 1,
+      "failed": 0,
+      "skipped": 0
+    }
+  },
+  "results": [
+    {
+      "id": "glow-tutorial",
+      "pipeline_id": "0e207156-9f02-4d48-9a07-6fc06ea472d9",
+      "status": "passed",
+      "final_status": "passed",
+      "effect_type": "{effect.glow}",
+      "final_score": 0.87,
+      "iterations": 1,
+      "compile_errors": 0,
+      "passed": true,
+      "duration_sec": 95.2,
+      "timestamp": "2026-05-15T08:14:06.183674+00:00",
+      "expected_type": "glow",
+      "tier": 1,
+      "in_scope": true,
+      "description": "光晕教程示例，基础glow效果"
+    }
+  ]
+}

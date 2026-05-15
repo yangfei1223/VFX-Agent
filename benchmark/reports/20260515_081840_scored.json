@@ -1,0 +1,56 @@
+{
+  "samples": [
+    {
+      "id": "glow-tutorial",
+      "pipeline_id": "56b10d0a-621c-4b01-b0f1-6af43a3a9141",
+      "status": "passed",
+      "passed": true,
+      "effect_type": "{effect.glow}",
+      "first_score": null,
+      "final_score": 0.88,
+      "iterations": 0,
+      "score_history": [],
+      "duration_sec": 85.2,
+      "timestamp": "2026-05-15T08:20:05.600284+00:00",
+      "expected_type": "glow",
+      "tier": 1,
+      "in_scope": true,
+      "decompose_correct": true,
+      "converged": true
+    }
+  ],
+  "aggregates": {
+    "overall": {
+      "total": 1,
+      "in_scope": 1,
+      "out_scope": 0,
+      "first_score_avg": 0,
+      "first_score_median": 0,
+      "convergence_rate": 1.0,
+      "avg_iterations": 0,
+      "final_score_avg": 0.88,
+      "final_score_median": 0.88,
+      "final_score_p75": 0.88,
+      "decompose_accuracy": 1.0
+    },
+    "by_tier": {
+      "tier_1": {
+        "total": 1,
+        "first_score_avg": 0,
+        "final_score_avg": 0.88,
+        "convergence_rate": 1.0,
+        "avg_iterations": 0
+      }
+    },
+    "by_type": {
+      "glow": {
+        "total": 1,
+        "first_score_avg": 0,
+        "final_score_avg": 0.88,
+        "convergence_rate": 1.0,
+        "avg_iterations": 0,
+        "decompose_accuracy": 1.0
+      }
+    }
+  }
+}

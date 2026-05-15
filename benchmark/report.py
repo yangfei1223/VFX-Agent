@@ -1,132 +1,98 @@
-"""Benchmark Report Generator - Markdown Report"""
+#!/usr/bin/env python3
+"""Benchmark Report Generator - Markdown Report.
+
+Highlights 3 core metrics:
+1. First Generation Quality (first_score)
+2. Convergence Speed (iterations)
+3. Final Score (final_score)
+"""
+
 import json
 import argparse
 from pathlib import Path
 from datetime import datetime
 
 
-SCORE_BINS = [(0.0, 0.2), (0.2, 0.4), (0.4, 0.6), (0.6, 0.8), (0.8, 1.01)]
-
-
 def generate_report(scored: dict) -> str:
-    """Generate Markdown report from scored data"""
     agg = scored.get("aggregates", {})
     samples = scored.get("samples", [])
-    overall = agg.get("overall", {})
-    by_tier = agg.get("by_tier", {})
-    by_type = agg.get("by_type", {})
-    by_scope = agg.get("by_scope", {})
+    o = agg.get("overall", {})
 
-    in_scope_total = by_scope.get("in_scope", {}).get("total", 0)
-    out_scope_total = by_scope.get("out_of_scope", {}).get("total", 0)
+    in_scope = [s for s in samples if s.get("in_scope")]
+    out_scope = [s for s in samples if not s.get("in_scope")]
 
     lines = []
     lines.append("# VFX-Agent Benchmark Report\n")
     lines.append(f"**Date**: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
-    lines.append(
-        f"**Samples**: {overall.get('total', 0)} "
-        f"(In-scope: {in_scope_total}, Out-of-scope: {out_scope_total})"
-    )
+    lines.append(f"**Samples**: {o.get('total', 0)} (In-scope: {len(in_scope)}, Out-of-scope: {len(out_scope)})")
     lines.append("\n---\n")
 
-    # Overall
-    lines.append("## Overall\n")
+    # Core Metrics
+    lines.append("## Core Metrics\n")
     lines.append("| Metric | Value |")
     lines.append("|--------|-------|")
-    conv = overall.get("convergence_rate", 0)
-    lines.append(f"| Convergence Rate | {conv:.1%} |")
-    acc = overall.get("decompose_accuracy", 0)
-    lines.append(f"| Decompose Accuracy | {acc:.1%} |")
-    lines.append(f"| Avg Score | {overall.get('avg_score', 0):.3f} |")
-    lines.append(f"| Median Score | {overall.get('median_score', 0):.3f} |")
-    lines.append(f"| P75 Score | {overall.get('p75_score', 0):.3f} |")
-    lines.append(f"| Avg Iterations | {overall.get('avg_iterations', 0):.1f} |")
+    lines.append(f"| **1st Gen Quality** (avg) | {o.get('first_score_avg', 0):.3f} |")
+    lines.append(f"| **1st Gen Quality** (median) | {o.get('first_score_median', 0):.3f} |")
+    lines.append(f"| **Convergence Rate** | {o.get('convergence_rate', 0):.1%} |")
+    lines.append(f"| **Avg Iterations** | {o.get('avg_iterations', 0):.1f} |")
+    lines.append(f"| **Final Quality** (avg) | {o.get('final_score_avg', 0):.3f} |")
+    lines.append(f"| **Final Quality** (p75) | {o.get('final_score_p75', 0):.3f} |")
+    lines.append(f"| Decompose Accuracy | {o.get('decompose_accuracy', 0):.1%} |")
     lines.append("")
 
     # By Tier
-    lines.append("## By Tier\n")
-    lines.append("| Tier | Samples | Convergence | Accuracy | Avg Score |")
-    lines.append("|------|---------|-------------|----------|-----------|")
-    for t in [1, 2, 3]:
-        key = f"tier_{t}"
-        td = by_tier.get(key, {})
-        if td:
-            lines.append(
-                f"| Tier {t} | {td.get('total', 0)} "
-                f"| {td.get('convergence_rate', 0):.1%} "
-                f"| {td.get('decompose_accuracy', 0):.1%} "
-                f"| {td.get('avg_score', 0):.3f} |"
-            )
-    lines.append("")
-
-    # By Effect Type (in-scope only)
-    in_scope_samples = [s for s in samples if s.get("in_scope")]
-    lines.append("## By Effect Type (In-Scope Only)\n")
-    lines.append("| Type | Samples | Convergence | Accuracy | Avg Score |")
-    lines.append("|------|---------|-------------|----------|-----------|")
-    for et in ["glow", "ripple", "frosted", "gradient", "flow"]:
-        td = by_type.get(et, {})
-        if td:
-            lines.append(
-                f"| {et} | {td.get('total', 0)} "
-                f"| {td.get('convergence_rate', 0):.1%} "
-                f"| {td.get('decompose_accuracy', 0):.1%} "
-                f"| {td.get('avg_score', 0):.3f} |"
-            )
-    lines.append("")
-
-    # Score Distribution
-    in_scope_scores = [s.get("final_score") for s in in_scope_samples if s.get("final_score") is not None]
-    lines.append("## Score Distribution (In-Scope)\n")
-    lines.append("```")
-    lines.append(f"{'Range':<12} | {'Count':>5} | Bar")
-    for lo, hi in SCORE_BINS:
-        count = sum(1 for sc in in_scope_scores if lo <= sc < hi)
-        bar = "█" * count
-        label = f"{lo:.1f}-{hi:.1f}"
-        lines.append(f"{label:<12} | {count:>5} | {bar}")
-    lines.append("```\n")
-
-    # Failed Cases (in-scope)
-    failed = [s for s in in_scope_samples if not s.get("converged")]
-    if failed:
-        lines.append("## Failed Cases (In-Scope)\n")
-        lines.append("| ID | Expected | Predicted | Score | Issue |")
-        lines.append("|----|----------|-----------|-------|-------|")
-        for s in sorted(failed, key=lambda x: x.get("final_score", 0)):
-            issue = "Wrong type" if not s.get("decompose_correct") else "Low score"
-            pred = s.get("effect_type", "?")
-            if len(pred) > 20:
-                pred = pred[:20]
-            lines.append(
-                f"| {s['id']} "
-                f"| {s.get('expected_type', '')} "
-                f"| {pred} "
-                f"| {s.get('final_score', 0):.2f} "
-                f"| {issue} |"
-            )
+    by_tier = agg.get("by_tier", {})
+    if by_tier:
+        lines.append("## By Tier\n")
+        lines.append("| Tier | Samples | 1st Gen | Final | Convergence | Avg Iter |")
+        lines.append("|------|---------|---------|-------|-------------|----------|")
+        for t in [1, 2, 3]:
+            td = by_tier.get(f"tier_{t}")
+            if td:
+                lines.append(f"| Tier {t} | {td['total']} | {td['first_score_avg']:.3f} | {td['final_score_avg']:.3f} | {td['convergence_rate']:.1%} | {td['avg_iterations']:.1f} |")
         lines.append("")
 
-    # Out-of-scope samples
-    oos_samples = [s for s in samples if not s.get("in_scope")]
-    if oos_samples:
+    # By Effect Type
+    by_type = agg.get("by_type", {})
+    if by_type:
+        lines.append("## By Effect Type\n")
+        lines.append("| Type | Samples | 1st Gen | Final | Convergence | Avg Iter | Accuracy |")
+        lines.append("|------|---------|---------|-------|-------------|----------|----------|")
+        for et in ["glow", "ripple", "frosted", "gradient", "flow"]:
+            td = by_type.get(et)
+            if td:
+                lines.append(f"| {et} | {td['total']} | {td['first_score_avg']:.3f} | {td['final_score_avg']:.3f} | {td['convergence_rate']:.1%} | {td['avg_iterations']:.1f} | {td['decompose_accuracy']:.1%} |")
+        lines.append("")
+
+    # 1st Gen vs Final comparison (in-scope, sorted by improvement)
+    improvements = []
+    for s in in_scope:
+        first = s.get("first_score")
+        final = s.get("final_score")
+        if first is not None and final is not None:
+            improvements.append((s["id"], first, final, final - first, s.get("converged", False)))
+    improvements.sort(key=lambda x: x[3], reverse=True)
+
+    if improvements:
+        lines.append("## 1st Gen → Final Score\n")
+        lines.append("| ID | 1st Gen | Final | Δ | Converged |")
+        lines.append("|----|---------|-------|---|-----------|")
+        for sid, first, final, delta, conv in improvements:
+            conv_str = "✓" if conv else "✗"
+            delta_str = f"+{delta:.2f}" if delta >= 0 else f"{delta:.2f}"
+            lines.append(f"| {sid} | {first:.2f} | {final:.2f} | {delta_str} | {conv_str} |")
+        lines.append("")
+
+    # Out-of-scope
+    if out_scope:
         lines.append("## Out-of-Scope Samples\n")
-        lines.append("| ID | Predicted | Score | Notes |")
-        lines.append("|----|-----------|-------|-------|")
-        for s in sorted(
-            oos_samples, key=lambda x: x.get("final_score", 0), reverse=True
-        ):
-            pred = s.get("effect_type", "?")
-            if len(pred) > 20:
-                pred = pred[:20]
-            desc = s.get("description", "")
-            notes = desc[:40] + "..." if len(desc) > 40 else desc
-            lines.append(
-                f"| {s['id']} "
-                f"| {pred} "
-                f"| {s.get('final_score', 0):.2f} "
-                f"| {notes} |"
-            )
+        lines.append("| ID | Predicted | Final Score |")
+        lines.append("|----|-----------|-------------|")
+        for s in out_scope:
+            pred = s.get("effect_type", "?") or "?"
+            final = s.get("final_score")
+            final_str = f"{final:.2f}" if final is not None else "N/A"
+            lines.append(f"| {s['id']} | {pred} | {final_str} |")
         lines.append("")
 
     return "\n".join(lines)
@@ -135,11 +101,7 @@ def generate_report(scored: dict) -> str:
 def main():
     parser = argparse.ArgumentParser(description="VFX-Agent Benchmark Report Generator")
     parser.add_argument("--scored", required=True, help="Path to scored JSON")
-    parser.add_argument(
-        "--output",
-        default=None,
-        help="Output Markdown file (default: same dir, .md extension)",
-    )
+    parser.add_argument("--output", default=None, help="Output Markdown file")
     args = parser.parse_args()
 
     scored_path = Path(args.scored)
@@ -148,13 +110,10 @@ def main():
 
     report = generate_report(scored)
 
-    # Determine output path
     if args.output:
         output_path = Path(args.output)
     else:
-        output_path = scored_path.parent / scored_path.name.replace(
-            "_scored.json", ".md"
-        )
+        output_path = scored_path.parent / scored_path.name.replace("_scored.json", ".md")
 
     with open(output_path, "w") as f:
         f.write(report)
