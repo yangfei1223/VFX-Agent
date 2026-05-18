@@ -427,7 +427,7 @@ Overall: 5/5 → Proceed
 
 ---
 
-### ❌ 问题案例 4：背景评分不准确（忽略 important 约束）
+### ❌ 问题案例 4：背景评分不准确（忽略 strict 约束）
 
 **错误评分**：
 ```json
@@ -443,7 +443,7 @@ Overall: 5/5 → Proceed
 **visual_description 要求**：`"背景必须纯白，RGB 误差 <0.05"`
 
 **后果**：
-- background 评分 0.7 不够准确（违反 important 约束，应评分更低）
+- background 评分 0.7 不够准确（违反 strict 约束，应评分更低）
 - visual_issues 为空，未指出背景问题
 - Generate 可能不修正背景颜色
 
@@ -502,7 +502,7 @@ Overall: 5/5 → Proceed
 - 背景是否干净（无杂质、无形状干扰）
 
 **特殊约束**：
-如果 `background_definition.important` 字段存在（如 "背景必须纯白"），该维度评分权重加倍。
+如果 `background_definition.strict` 字段存在（如 "背景必须纯白"），该维度评分权重加倍。
 
 ---
 
@@ -1268,17 +1268,9 @@ score = (correct_items_count / total_check_items) * 0.7
 
 ```
 overall_score = sum(dimension_score * dimension_weight) / sum(weights)
-
-Weights:
-- Composition: 10%
-- Geometry: 15%
-- Lighting & Shadow: 20%
-- Color & Tone: 20%
-- Texture & Material: 10%
-- Animation & Motion: 10%
-- Background: 10%
-- VFX Details: 5%
 ```
+
+Weight values are defined in **Step 2: 8 维度评分** above. Use those exact weights for score calculation.
 
 #### Passing Threshold
 

@@ -6,7 +6,8 @@
 
 ## Effect Types（必须选择其一）
 
-### 基础效果（5 种）
+> **Note**: Current scope is 2D/2.5D UI VFX. Particle system effects are not supported in this version.
+> Only the 5 basic effect types listed below are available.
 
 | Token | Effect Name | SDF Technique | ALU |
 |-------|-------------|---------------|-----|
@@ -15,15 +16,6 @@
 | `{effect.gradient}` | 渐变背景 | mix() + radial/linear | ~20 |
 | `{effect.frosted}` | 磨砂玻璃 | blur + noise + alpha | ~150 |
 | `{effect.flow}` | 流光效果 | FBM + time offset | ~120 |
-
-### 粒子效果（4 种）
-
-| Token | Description | ALU |
-|-------|-------------|-----|
-| `{effect.particle_dots}` | 点粒子散射效果 | ~60 |
-| `{effect.particle_stars}` | 星光粒子效果 | ~100 |
-| `{effect.sparkle}` | 高光闪烁效果 | ~80 |
-| `{effect.particle_flow}` | 流光粒子效果 | ~150 |
 
 ---
 
@@ -102,20 +94,6 @@
 
 ---
 
-## Particle Tokens
-
-| Token | Technique | Use Case |
-|-------|-----------|---------|
-| `{particle.dots}` | hash21 + dist + alpha | 点粒子、雪花、灰尘 |
-| `{particle.stars}` | hash21 + star_sdf + rotation | 星光、闪光 |
-| `{particle.sparkle}` | hash21 + sin(t) + glow | 闪烁、高光点 |
-| `{particle.bubbles}` | hash22 + sdCircle + float_anim | 气泡、漂浮 |
-| `{particle.flow}` | hash21 + FBM + time_offset | 流光、粒子流 |
-| `{particle.burst}` | hash21 + exp(-t) + radial_anim | 爆炸、散射 |
-| `{particle.dust}` | voronoi + alpha_blend | 灰尘、烟雾 |
-
----
-
 ## Color/Gradient/Lighting/Noise Tokens
 
 ### Color Tokens（预设调色板）
@@ -186,7 +164,7 @@
 | Token | RGB | Strictness |
 |-------|-----|------------|
 | `{bg.white_strict}` | (1.0, 1.0, 1.0) | error <0.05 |
-| `{bg.black_strict}` | (0.0, 0.0, 0.0) | error <0.05 |
+| `{bg.black_strict}` | (0.02, 0.02, 0.05) | error <0.05 |
 | `{bg.gradient}` | varies | flexible |
 | `{bg.flexible}` | any | any |
 

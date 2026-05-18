@@ -239,7 +239,7 @@ Overall: 5/5 → Proceed
 - **shape_definition**：提取形状意图（圆形、矩形、边缘柔和）
 - **color_definition**：提取颜色意图（主色调 RGB、渐变方向）
 - **animation_definition**：提取动画意图（扩散、循环、缓动曲线）
-- **background_definition**：提取背景约束（纯色、纹理、important 字段）
+- **background_definition**：提取背景约束（纯色、纹理、strict 字段）
 
 ### 3. 选择算子组合（关键步骤）
 - **形状算子**：根据 shape_definition 选择 SDF（sdCircle/sdBox/smooth_union）
@@ -261,13 +261,13 @@ Overall: 5/5 → Proceed
 - **SDF 部分**：定义形状距离函数
 - **颜色部分**：根据 SDF 结果混合颜色
 - **动画部分**：添加时间驱动逻辑
-- **背景部分**：设置背景颜色（确保符合 important 约束）
+- **背景部分**：设置背景颜色（确保符合 strict 约束）
 
 ### 7. 验证代码正确性
 - 检查是否包含 `void mainImage(out vec4 fragColor, in vec2 fragCoord)`
 - 检查是否禁止声明内置变量（iTime/iResolution）
 - 检查是否符合性能预算（ALU ≤256、Texture fetch ≤8）
-- 检查背景颜色是否符合 important 约束
+- 检查背景颜色是否符合 strict 约束
 
 ---
 
@@ -341,7 +341,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
 
 ---
 
-### ❌ 问题案例 3：背景颜色偏差（违反 important 约束）
+### ❌ 问题案例 3：背景颜色偏差（违反 strict 约束）
 
 **错误代码**：
 ```glsl
@@ -440,7 +440,7 @@ float mask = smoothstep(edge - 0.02, edge + 0.02, d);  // 宽度适中（0.04）
 
 **重点关注**：
 - `description` 中明确背景颜色（如 "纯白色 RGB 1.0, 1.0, 1.0"）
-- `important` 字段强调约束（如 "背景必须纯白，不可有形状"）
+- `strict` 字段强调约束（strict=true 时背景评分权重加倍）（如 "背景必须纯白，不可有形状"）
 
 **实现**：
 ```glsl
@@ -695,20 +695,6 @@ float opOnion(float d, float r) {
 
 #### Hash Function
 
-```glsl
-float hash(float n) {
-    return fract(sin(n) * 43758.5453);
-}
-
-vec2 hash22(vec2 p) {
-    p = fract(p * vec2(5.3983, 5.4447));
-    p += dot(p.yx, p.yx + vec2(21.5351));
-    return fract(vec2(p.x * p.y, p.x + p.y));
-}
-```
-
-**Use**: Basic randomness, hash table
-
 #### Value Noise
 
 ```glsl
@@ -717,10 +703,10 @@ float valueNoise(vec2 p) {
     vec2 f = fract(p);
     vec2 u = f * f * (3.0 - 2.0 * f);
     
-    float a = hash(i);
-    float b = hash(i + vec2(1.0, 0.0));
-    float c = hash(i + vec2(0.0, 1.0));
-    float d = hash(i + vec2(1.0, 1.0));
+    float a = hash21(i);
+    float b = hash21(i + vec2(1.0, 0.0));
+    float c = hash21(i + vec2(0.0, 1.0));
+    float d = hash21(i + vec2(1.0, 1.0));
     
     return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
 }
@@ -1263,7 +1249,7 @@ vec3 voronoi(vec2 p) {
         for (int x = -1; x <= 1; x++) {
             vec2 neighbor = vec2(float(x), float(y));
             vec2 point = hash22(i + neighbor);
-            point = 0.5 + 0.5 * sin(u_time + 6.2831 * point);
+            point = 0.5 + 0.5 * sin(iTime + 6.2831 * point);
             vec2 diff = neighbor + point - f;
             float dist = length(diff);
             if (dist < d1) { d2 = d1; d1 = dist; closestCell = i + neighbor; }
@@ -1303,7 +1289,7 @@ Each template is a complete effect skeleton. Customize parameters based on the v
 ### Template: Basic Gradient
 ```glsl
 void mainImage(out vec4 fragColor, in vec2 fragCoord) {
-    vec2 uv = fragCoord / u_resolution.xy;
+    vec2 uv = fragCoord / iResolution.xy;
     vec3 colA = vec3(0.1, 0.1, 0.18); // top color
     vec3 colB = vec3(0.06, 0.2, 0.38); // bottom color
     vec3 col = mix(colB, colA, uv.y); // linear vertical
@@ -1318,9 +1304,9 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
 float sdCircle(vec2 p, float r) { return length(p) - r; }
 
 void mainImage(out vec4 fragColor, in vec2 fragCoord) {
-    vec2 uv = fragCoord / u_resolution.xy;
-    vec2 center = u_mouse / u_resolution.xy;
-    float t = u_time;
+    vec2 uv = fragCoord / iResolution.xy;
+    vec2 center = iMouse / iResolution.xy;
+    float t = iTime;
 
     float speed = 0.8;
     float wavelength = 0.05;
@@ -1347,7 +1333,7 @@ vec3 backdropBlur(vec2 uv, float radius) {
     float total = 0.0;
     for (int i = -4; i <= 4; i++) {
         for (int j = -4; j <= 4; j++) {
-            vec2 offset = vec2(float(i), float(j)) * radius / u_resolution.xy;
+            vec2 offset = vec2(float(i), float(j)) * radius / iResolution.xy;
             float w = 1.0 - length(vec2(float(i), float(j))) / 6.0;
             w = max(w, 0.0);
             sum += texture(iChannel0, uv + offset).rgb * w;
@@ -1358,9 +1344,9 @@ vec3 backdropBlur(vec2 uv, float radius) {
 }
 
 void mainImage(out vec4 fragColor, in vec2 fragCoord) {
-    vec2 uv = fragCoord / u_resolution.xy;
+    vec2 uv = fragCoord / iResolution.xy;
     vec3 blurred = backdropBlur(uv, 4.0);
-    float noise = 0.5 + 0.5 * perlinNoise(uv * 20.0 + u_time * 0.1);
+    float noise = 0.5 + 0.5 * perlinNoise(uv * 20.0 + iTime * 0.1);
     vec3 col = blurred * (0.85 + 0.15 * noise);
     col += vec3(0.8, 0.85, 0.95) * 0.08; // cool tint
     fragColor = vec4(col, 0.92);
@@ -1375,8 +1361,8 @@ float perlinNoise(vec2 p) { /* see noise-operators */ }
 float fbm(vec2 p) { float v=0.0; float a=0.5; for(int i=0;i<5;i++){v+=a*perlinNoise(p);p*=2.0;a*=0.5;} return v; }
 
 void mainImage(out vec4 fragColor, in vec2 fragCoord) {
-    vec2 uv = fragCoord / u_resolution.xy;
-    float t = u_time * 0.3;
+    vec2 uv = fragCoord / iResolution.xy;
+    float t = iTime * 0.3;
 
     float n1 = fbm(vec2(uv.x * 3.0 + t, uv.y * 2.0 + t * 0.5));
     float n2 = fbm(vec2(uv.x * 2.0 - t * 0.7, uv.y * 3.0));
@@ -1400,11 +1386,11 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
 ### Template: Glow Pulse
 ```glsl
 void mainImage(out vec4 fragColor, in vec2 fragCoord) {
-    vec2 uv = fragCoord / u_resolution.xy;
+    vec2 uv = fragCoord / iResolution.xy;
     vec2 center = vec2(0.5);
     float dist = length(uv - center);
 
-    float pulse = 0.5 + 0.5 * sin(u_time * 2.0); // breathing
+    float pulse = 0.5 + 0.5 * sin(iTime * 2.0); // breathing
     float glow = exp(-dist * (4.0 + 2.0 * pulse));
 
     vec3 glowColor = vec3(0.3, 0.6, 1.0);
@@ -1465,7 +1451,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
 - Never instant (0ms) — even subtle motion feels better than none
 
 #### Rhythm
-- Use `fract(u_time / duration)` for perfect loops
+- Use `fract(iTime / duration)` for perfect loops
 - Vary frequencies to avoid mechanical feel: `sin(t * 1.0) + sin(t * 1.7) * 0.5`
 - Layer 2–3 speeds: slow drift + medium pulse + fast shimmer
 
@@ -1502,7 +1488,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
 
 ### Mandatory Rules
 
-1. **Do NOT declare** `u_time`, `u_resolution`, `u_mouse` — these are injected by runtime
+1. **Do NOT declare** `iTime`, `iResolution`, `iMouse` — these are injected by runtime
 2. **Must implement** `void mainImage(out vec4 fragColor, in vec2 fragCoord)` — entry point
 3. **Output must be** complete, compilable GLSL ES 3.0 — no `#include`, no undefined functions
 4. **2D only** — all coordinates are `vec2 uv`, all SDF operations are 2D, no `vec3` position/ray/direction for 3D scene rendering
