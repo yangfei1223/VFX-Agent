@@ -144,9 +144,10 @@ Overall: 5/5 → Proceed
 
   "shape_definition": {
     "sdf_type": "{sdf.xxx}",
+    "fill_type": "{fill.solid}" or "{fill.hollow}",
     "edge_type": "{edge.xxx}",
     "edge_width": "0.02-0.03 UV",
-    "description": "形状的自然语言描述"
+    "description": "形状的自然语言描述，必须说明实心/空心"
   },
 
   "color_definition": {
@@ -186,7 +187,7 @@ Overall: 5/5 → Proceed
 
 | 维度 | 必须描述内容 |
 |------|-------------|
-| **形状** | 类型（圆形/矩形/无）、边缘（锐利/柔和）、比例、位置 |
+| **形状** | 类型（圆形/矩形/无）、填充（实心/空心）、边缘（锐利/柔和）、比例、位置 |
 | **颜色** | 主色名称 + RGB 参考值、渐变类型、渐变方向 |
 | **动画** | 类型（扩散/流动/呼吸）、方向、缓动曲线、时长 |
 | **背景** | 颜色 + RGB 参考值、纹理（有/无）、透明度 |

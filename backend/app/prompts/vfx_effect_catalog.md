@@ -147,6 +147,31 @@
 
 ---
 
+## Fill Type Tokens
+
+> **Critical**: fill_type 决定形状是实心（填充）还是空心（轮廓）。
+> 错误选择会导致视觉效果完全偏离设计参考。
+
+| Token | Meaning | SDF Usage | Visual Result |
+|-------|---------|-----------|---------------|
+| `{fill.solid}` | 实心填充 | 用 `d` 直接：`1.0 - smoothstep(0, w, d)` | 形状内部完全填满颜色 |
+| `{fill.hollow}` | 空心轮廓 | 用 `abs(d)`：`1.0 - smoothstep(0, w, abs(d) - thickness)` | 仅在形状边缘出现细线/环 |
+
+**关键代码差异**：
+```glsl
+// {fill.solid} 实心 — d 为负时在形状内部
+float mask = 1.0 - smoothstep(0.0, 0.02, d);     // 内部=1, 外部=0
+float glow = exp(-max(d, 0.0) * 3.0);              // 仅向外发光
+
+// {fill.hollow} 空心 — abs(d) 忽略内外
+float mask = 1.0 - smoothstep(0.0, 0.02, abs(d) - thickness); // 仅边缘
+float glow = exp(-abs(d) * 3.0);                    // 双向发光
+```
+
+**默认值**：如果设计参考中形状看起来有明亮的内部区域，应选择 `{fill.solid}`。
+
+---
+
 ## Animation Tokens
 
 | Token | Duration | Easing |

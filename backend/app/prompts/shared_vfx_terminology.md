@@ -118,6 +118,13 @@ Professional visual effects terminology for shader critique and analysis.
 | **Smooth subtraction** | Blended subtraction | Modified subtraction |
 | **Round blend** | Smooth shape blending | Smooth min function |
 
+#### Fill Type
+
+| Term | Definition | GLSL Context |
+|------|------------|--------------|
+| **Solid fill** | Shape interior is filled with color | `1.0 - smoothstep(0, w, d)` — no abs() |
+| **Hollow / Outline** | Only shape boundary visible as thin line | `1.0 - smoothstep(0, w, abs(d) - thickness)` — uses abs() |
+
 #### Edge & Outline Terms
 
 | Term | Definition | GLSL Context |

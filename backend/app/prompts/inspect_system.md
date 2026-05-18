@@ -512,11 +512,14 @@ Common issues: subject off-center, elements overlapping incorrectly, proportions
 
 Score 0.0-1.0 based on:
 - **Shape**: SDF type correct (circle/rect/rounded)? Shape matches reference without deformation?
+- **Fill type**: Shapes are **solid filled** (interior has color) or **hollow outlines** (only edge visible)? Matches design reference?
+  - If design shows bright filled interiors → shader must NOT use `abs(d)` for masks
+  - If design shows thin outlines only → shader must use `abs(d) - thickness` or `opOnion`
 - **Edge quality**: smoothstep transition present? Antialiasing applied (fwidth-based)? No jagged edges?
 - **Outline**: Presence, width (px), color (RGB), position (inner/outer) all match design?
 - **Blend**: SDF blending correct (smooth_union vs hard cut)? Symmetry and rotation angle accurate?
 
-Common issues: hard edges without smoothstep, missing outlines, wrong SDF type, jagged aliasing.
+Common issues: **solid shapes rendered as hollow outlines (uses abs(d) incorrectly)**, hard edges without smoothstep, missing outlines, wrong SDF type, jagged aliasing.
 
 ---
 

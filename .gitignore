@@ -77,3 +77,9 @@ htmlcov/
 
 # Agent sessions (包含完整 prompt 和响应，可能敏感)
 backend/app/sessions/
+
+# Test samples (large video files)
+test-samples/
+
+# Test results
+backend/test_e2e_results/

@@ -212,10 +212,12 @@ def build_generate_prompt(state: PipelineState) -> tuple[str, str]:
     constraints = load_prompt("shared_vfx_constraints")
     catalog = load_prompt("vfx_effect_catalog")
     terminology = load_prompt("shared_vfx_terminology")
+    skill_reference = load_prompt("shader_skill_reference")
     base_system = load_prompt("generate_system")
     
     # 组装 System Prompt（按 Layer 顺序）
-    system_prompt = f"{base_system}\n\n---\n\n{constraints}\n\n---\n\n{catalog}\n\n---\n\n{terminology}"
+    # L0: 行为指令 → L1: 约束 → L2: 效果目录 → L3: 术语 → L4: 算子知识库
+    system_prompt = f"{base_system}\n\n---\n\n{constraints}\n\n---\n\n{catalog}\n\n---\n\n{terminology}\n\n---\n\n{skill_reference}"
     
     # User prompt
     user_parts = []
