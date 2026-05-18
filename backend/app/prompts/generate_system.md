@@ -128,78 +128,7 @@ Overall: 5/5 → Proceed
 - **渐变过渡**：无断层，平滑连续
 - **背景纯度**：若要求纯色，RGB 误差 <0.05
 
-### VFX Terminology（高频术语）
-
-以下术语是 Decompose/Generate/Inspect 共享的专业词汇，确保协作时使用统一语言。
-
-#### Lighting & Shadow
-
-| Term | Definition | Usage in Description |
-|------|------------|----------------------|
-| **Specular highlight** | 点状高光（dot(reflect, viewDir)） | "高光位置：顶部，强度 0.8" |
-| **Fresnel** | 边缘光（pow(1.0-dot(N,V), power)） | "Fresnel 边缘光，强度 2.0" |
-| **Glow** | 柔和光晕（exp(-d * intensity)） | "中心向外光晕，半径 0.3" |
-| **Bloom** | 光晕扩散（blur + additive） | "Bloom 效果，扩散半径 0.1" |
-| **Rim light** | 背光边缘发光 | "Rim light 逆光效果" |
-| **Ambient light** | 基础照明 | "环境光强度 0.2" |
-| **Hard shadow** | 锐利阴影（step function） | "硬阴影，边缘锐利" |
-| **Soft shadow** | 柔和阴影（smoothstep/blur） | "软阴影，过渡宽度 0.05" |
-
-#### Color & Tone
-
-| Term | Definition | Usage in Description |
-|------|------------|----------------------|
-| **Hue** | 色相（RGB→HSV） | "主色调：蓝色（Hue 0.6）" |
-| **Saturation** | 饱和度（0-1） | "饱和度 0.8（鲜艳）" |
-| **Luminance** | 明度（灰度强度） | "明度 0.5（中等亮度）" |
-| **Linear gradient** | 线性渐变（mix） | "线性渐变：左→右，蓝→白" |
-| **Radial gradient** | 径向渐变（距离） | "径向渐变：中心向外" |
-| **Contrast** | 对比度（明暗差异） | "高对比度（明暗分明）" |
-
-#### Geometry & Shape
-
-| Term | Definition | Usage in Description |
-|------|------------|----------------------|
-| **SDF** | 有符号距离场 | "SDF 形状：圆形/矩形" |
-| **Circle SDF** | 圆形距离函数 | "圆形主体，半径 0.3" |
-| **Box SDF** | 矩形距离函数 | "矩形主体，尺寸 0.5×0.3" |
-| **Outline** | 边框（SDF edge） | "描边宽度 0.02，白色" |
-| **Hard edge** | 锐利边缘（step） | "硬边缘（无过渡）" |
-| **Soft edge** | 柔和边缘（smoothstep） | "软边缘（过渡 0.05）" |
-| **Smooth union** | 柔和融合（smin） | "形状柔和融合" |
-
-#### Animation & Motion
-
-| Term | Definition | Usage in Description |
-|------|------------|----------------------|
-| **Ripple** | 涟漪（圆波扩散） | "涟漪效果，扩散速度 1.5" |
-| **Wave** | 波动（sin/cos） | "波动动画，频率 2.0" |
-| **Pulse** | 脉冲（周期强度） | "脉冲效果，周期 2 秒" |
-| **Flow** | 流动（持续移动） | "流光效果，速度 0.8" |
-| **Linear** | 线性速度（t） | "线性动画（匀速）" |
-| **Ease-in** | 缓入（慢→快） | "Ease-in 缓入效果" |
-| **Ease-out** | 缓出（快→慢） | "Ease-out 缓出效果" |
-| **Loop** | 循环（fract） | "循环动画，周期 3 秒" |
-
-#### Texture & Material
-
-| Term | Definition | Usage in Description |
-|------|------------|----------------------|
-| **Perlin noise** | 平滑梯度噪声 | "Perlin 噪声纹理" |
-| **FBM** | 分形布朗运动（多 octave） | "FBM 噪声，octave 4" |
-| **Frosted glass** | 磨砂玻璃（blur + alpha） | "磨砂玻璃效果" |
-| **Vignette** | 边缘暗化（距离 fade） | "暗角效果，强度 0.3" |
-| **Alpha blending** | 透明度混合 | "半透明，alpha 0.5" |
-| **Additive blending** | 加法混合（颜色叠加） | "加法混合光晕" |
-
-#### Composition
-
-| Term | Definition | Usage in Description |
-|------|------------|----------------------|
-| **Focal point** | 视觉焦点 | "焦点位置：中心" |
-| **Background** | 背景区域 | "背景颜色：白色 RGB 1.0" |
-| **Foreground** | 前景元素 | "前景层叠加" |
-| **Hierarchy** | 视觉层次 | "层次分明（主体突出）" |
+> VFX Terminology 由系统自动注入，无需在此重复。详见 shared_vfx_terminology.md。
 
 ---
 
@@ -587,21 +516,173 @@ float sdSegment(vec2 p, vec2 a, vec2 b) {
 | `a` | vec2 | Start point |
 | `b` | vec2 | End point |
 
-#### Triangle SDF
+---
+
+### Extended SDF Primitives (from iq 2D SDF)
+
+> Reference: https://iquilezles.org/articles/distfunctions2d/
+
+#### Ellipse SDF - exact
 
 ```glsl
-float sdTriangle(vec2 p, vec2 p0, vec2 p1, vec2 p2) {
-    // Edge distances calculation
+float sdEllipse(vec2 p, vec2 ab) {
+    p = abs(p); if (p.x > p.y) { p = p.yx; ab = ab.yx; }
+    float l = ab.y*ab.y - ab.x*ab.x;
+    float m = ab.x*p.x/l - ab.y*p.y/l;
+    float n = ab.y*p.y/l - ab.x*p.x/l;
+    float d = (m < 0.0) ? ab.x - p.x : (n > 0.0) ? length(p-ab) : dot(m*p+n*ab, vec2(m,n))/length(vec2(m,n));
+    return sign(ab.x*p.x + ab.y*p.y - ab.x*ab.y) * d;
 }
 ```
 
-#### Polygon SDF
+| Parameter | Type | Range | Description |
+|-----------|------|-------|-------------|
+| `p` | vec2 | UV space | Point position |
+| `ab` | vec2 | (0,0)-(1,1) | Semi-axes (a=horizontal, b=vertical) |
+
+#### Vesica SDF - exact
 
 ```glsl
-float sdPolygon(vec2 p, vec2[] vertices) {
-    // Edge loop calculation
+float sdVesica(vec2 p, float r, float d) {
+    p = abs(p);
+    float b = sqrt(r*r - d*d*0.25);
+    if (p.y > b) return length(p - vec2(0.0, b));
+    return abs(length(p - vec2(-d*0.5, 0.0)) - r) * sign(p.x - d*0.5);
 }
 ```
+
+| Parameter | Type | Range | Description |
+|-----------|------|-------|-------------|
+| `p` | vec2 | UV space | Point position |
+| `r` | float | >0 | Radius of the two circles |
+| `d` | float | (0, 2r) | Distance between circle centers |
+
+#### Capsule SDF - exact
+
+```glsl
+float sdCapsule(vec2 p, vec2 a, vec2 b, float r) {
+    vec2 pa = p - a, ba = b - a;
+    float h = clamp(dot(pa,ba)/dot(ba,ba), 0.0, 1.0);
+    return length(pa - ba*h) - r;
+}
+```
+
+| Parameter | Type | Range | Description |
+|-----------|------|-------|-------------|
+| `p` | vec2 | UV space | Point position |
+| `a` | vec2 | UV space | Start point of the capsule axis |
+| `b` | vec2 | UV space | End point of the capsule axis |
+| `r` | float | >0 | Radius (thickness) of the capsule |
+
+#### Heart SDF - exact
+
+```glsl
+float sdHeart(vec2 p) {
+    p.x = abs(p.x);
+    if (p.y + p.x > 1.0)
+        return sqrt(dot(p-vec2(0.25,0.75), p-vec2(0.25,0.75))) - sqrt(2.0)/4.0;
+    return sqrt(min(dot(p-vec2(0.0,1.0), p-vec2(0.0,1.0)),
+                    dot(p-0.5*max(p.x+p.y,0.0), p-0.5*max(p.x+p.y,0.0)))) * sign(p.x-p.y);
+}
+```
+
+| Parameter | Type | Range | Description |
+|-----------|------|-------|-------------|
+| `p` | vec2 | UV space | Point position (heart is unit-sized, centered at origin) |
+
+#### Equilateral Triangle SDF - exact
+
+```glsl
+float sdEquilateralTriangle(vec2 p, float r) {
+    const float k = sqrt(3.0);
+    p.x = abs(p.x) - r;
+    p.y = p.y + r/k;
+    if (p.x + k*p.y > 0.0) p = vec2(p.x - k*p.y, -k*p.x - p.y)/2.0;
+    p.x -= clamp(p.x, -2.0*r, 0.0);
+    return -length(p)*sign(p.y);
+}
+```
+
+| Parameter | Type | Range | Description |
+|-----------|------|-------|-------------|
+| `p` | vec2 | UV space | Point position |
+| `r` | float | >0 | Size parameter (circumradius) |
+
+#### Pentagon SDF - exact
+
+```glsl
+float sdPentagon(vec2 p, float r) {
+    const vec3 k = vec3(0.809016994, 0.587785252, 0.726542528);
+    p.x = abs(p.x);
+    p -= 2.0*min(dot(vec2(-k.x,k.y),p),0.0)*vec2(-k.x,k.y);
+    p -= 2.0*min(dot(vec2( k.x,k.y),p),0.0)*vec2( k.x,k.y);
+    p -= vec2(clamp(p.x,-r*k.z,r*k.z),r);
+    return length(p)*sign(p.y);
+}
+```
+
+| Parameter | Type | Range | Description |
+|-----------|------|-------|-------------|
+| `p` | vec2 | UV space | Point position |
+| `r` | float | >0 | Size parameter (circumradius) |
+
+#### Hexagon SDF - exact
+
+```glsl
+float sdHexagon(vec2 p, float r) {
+    const vec3 k = vec3(-0.866025404, 0.5, 0.577350269);
+    p = abs(p);
+    p -= 2.0*min(dot(k.xy,p),0.0)*k.xy;
+    p -= vec2(clamp(p.x,-r*k.z,r*k.z),r);
+    return length(p)*sign(p.y);
+}
+```
+
+| Parameter | Type | Range | Description |
+|-----------|------|-------|-------------|
+| `p` | vec2 | UV space | Point position |
+| `r` | float | >0 | Size parameter (circumradius) |
+
+#### Octagon SDF - exact
+
+```glsl
+float sdOctagon(vec2 p, float r) {
+    const vec3 k = vec3(-0.9238795325, 0.3826834323, 0.4142135623);
+    p = abs(p);
+    p -= 2.0*min(dot(vec2(k.x,k.y),p),0.0)*vec2(k.x,k.y);
+    p -= 2.0*min(dot(vec2(-k.x,k.y),p),0.0)*vec2(-k.x,k.y);
+    p -= vec2(clamp(p.x,-r*k.z,r*k.z),r);
+    return length(p)*sign(p.y);
+}
+```
+
+| Parameter | Type | Range | Description |
+|-----------|------|-------|-------------|
+| `p` | vec2 | UV space | Point position |
+| `r` | float | >0 | Size parameter (circumradius) |
+
+#### 5-pointed Star SDF - exact
+
+```glsl
+float sdStar5(vec2 p, float r, float rf) {
+    const vec2 k1 = vec2(0.809016994375, -0.587785252292);
+    const vec2 k2 = vec2(-k1.x, k1.y);
+    p.x = abs(p.x);
+    p -= 2.0*max(dot(k1,p),0.0)*k1;
+    p -= 2.0*max(dot(k2,p),0.0)*k2;
+    p.x = abs(p.x);
+    p.y -= r;
+    vec2 ba = rf*vec2(-k1.y,k1.x) - vec2(0,1);
+    float h = clamp(dot(p,ba)/dot(ba,ba), 0.0, r);
+    return length(p - ba*h) * sign(p.y*ba.x - p.x*ba.y);
+}
+```
+
+| Parameter | Type | Range | Description |
+|-----------|------|-------|-------------|
+| `p` | vec2 | UV space | Point position |
+| `r` | float | >0 | Outer radius |
+| `rf` | float | (0, 1) | Inner radius factor (controls point sharpness) |
 
 ---
 

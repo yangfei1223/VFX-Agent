@@ -162,10 +162,11 @@ def build_decompose_prompt(
     # Prompt Stack 层叠注入
     constraints = load_prompt("shared_vfx_constraints")
     catalog = load_prompt("vfx_effect_catalog")
+    terminology = load_prompt("shared_vfx_terminology")
     base_system = load_prompt("decompose_system")
     
     # 组装 System Prompt（按 Layer 顺序）
-    system_prompt = f"{base_system}\n\n---\n\n{constraints}\n\n---\n\n{catalog}"
+    system_prompt = f"{base_system}\n\n---\n\n{constraints}\n\n---\n\n{catalog}\n\n---\n\n{terminology}"
     
     # User prompt
     user_parts = []
@@ -210,10 +211,11 @@ def build_generate_prompt(state: PipelineState) -> tuple[str, str]:
     # Prompt Stack 层叠注入
     constraints = load_prompt("shared_vfx_constraints")
     catalog = load_prompt("vfx_effect_catalog")
+    terminology = load_prompt("shared_vfx_terminology")
     base_system = load_prompt("generate_system")
     
     # 组装 System Prompt（按 Layer 顺序）
-    system_prompt = f"{base_system}\n\n---\n\n{constraints}\n\n---\n\n{catalog}"
+    system_prompt = f"{base_system}\n\n---\n\n{constraints}\n\n---\n\n{catalog}\n\n---\n\n{terminology}"
     
     # User prompt
     user_parts = []
@@ -301,10 +303,11 @@ def build_inspect_prompt(state: PipelineState) -> tuple[str, str, list[str]]:
     # V2.0: Inspect 也注入 Effect Catalog，用于验证 effect_type、sdf_type 等 Token
     constraints = load_prompt("shared_vfx_constraints")
     catalog = load_prompt("vfx_effect_catalog")
+    terminology = load_prompt("shared_vfx_terminology")
     base_system = load_prompt("inspect_system")
     
     # 组装 System Prompt
-    system_prompt = f"{base_system}\n\n---\n\n{constraints}\n\n---\n\n{catalog}"
+    system_prompt = f"{base_system}\n\n---\n\n{constraints}\n\n---\n\n{catalog}\n\n---\n\n{terminology}"
     
     # User prompt
     user_parts = []
