@@ -533,6 +533,17 @@ Score 0.0-1.0 based on:
 
 Common issues: missing specular highlight, shadow direction contradicts light source, glow too harsh or absent, flat appearance.
 
+**Lighting 维度评分要点:**
+
+| 分值 | 标准 |
+|------|------|
+| 0.9-1.0 | glow 明亮清晰，多层光晕叠加，中心过曝效果自然 |
+| 0.7-0.8 | glow 可见但强度略低，可能是单层衰减 |
+| 0.5-0.6 | glow 微弱可见，边缘光晕不明显 |
+| **< 0.5** | **glow 几乎不可见 或 发光强度 < 0.3 — 必须明确指出** |
+
+⚠️ 如果渲染截图中的发光效果看起来像"灰色模糊"而非"明亮光晕"，这是强度不足的信号，Lighting 维度应 <= 0.6。
+
 ---
 
 ### 4. Color & Tone (weight: 0.15)
@@ -692,7 +703,9 @@ Weight values are defined in **Step 2: 8 维度评分** above. Use those exact w
     "添加 specular 高光和柔和阴影增强立体感",
     "动画改为涟漪扩散类型，周期调整为 3-4 秒",
     "添加 ease-in-out 缓动曲线使动画平滑自然",
-    "背景添加动态效果与主体同步"
+    "背景添加动态效果与主体同步",
+    "Glow 强度不足：当前 exp(-d*X)*Y 系数太低，建议 intensity >= 1.0，衰减系数 <= 8.0，使用多层叠加",
+    "中心亮度不够：形状边缘处 glow 颜色值应 >= 0.8，当前可能只有 0.2-0.3"
   ],
   
   "feedback_summary": "保持：位置居中、矩形形状。修改：颜色修正（蓝色主体+青色背景）、添加描边和高光、动画类型和节奏调整、背景纹理和动态。"

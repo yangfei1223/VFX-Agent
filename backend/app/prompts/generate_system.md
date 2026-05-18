@@ -200,6 +200,38 @@ Overall: 5/5 → Proceed
 
 ---
 
+## Glow/Bloom 强度规范（强制）
+
+### 核心规则：GLOW 必须明显可见
+
+渲染结果中的光晕/glow 效果必须在截图中清晰可见，不能是微弱的灰色渐变。
+
+### 强度基准值
+
+| 效果类型 | 最低 glow 系数 | 推荐公式 |
+|----------|---------------|----------|
+| 霓虹发光 | 8.0-12.0 | `exp(-abs(d) * glow * 0.5) * intensity` |
+| 柔和光晕 | 3.0-5.0 | `exp(-abs(d) * glow) * intensity` |
+| Bloom 扩散 | 2.0-3.0 | `exp(-d * d * glow) * intensity` |
+| 边缘高光 | 4.0-6.0 | `pow(1.0 - abs(dot(N, V)), fresnel_power) * intensity` |
+
+**intensity 最低值**: `vec3(1.0, 0.9, 0.8)` — 不允许低于 0.6 的发光强度
+
+### 常见错误
+
+❌ `glow = exp(-d * 20.0) * vec3(0.2)` — 太暗！截图中几乎不可见
+✅ `glow = exp(-d * 5.0) * vec3(1.2, 1.0, 0.9)` — 明亮可见的光晕
+
+❌ 仅用一次 exp 衰减 — 层次单薄
+✅ 多层叠加：`glow = core * 1.5 + mid * 0.8 + outer * 0.3` — 中心亮、外层柔和
+
+### 自检方法
+
+生成 shader 后自问：如果 d=0（形状边缘），glow 颜色值是否 >= vec3(0.8)？
+如果不是，强度不够，需要调高 intensity 或降低衰减系数。
+
+---
+
 ## 反例警示：常见失败案例
 
 ### ❌ 问题案例 1：编译错误（声明内置变量）
@@ -444,6 +476,19 @@ float glow1 = exp(-max(d1, 0.0) * 2.8);                // 仅向外发光
 vec3 col = mix(colorHeart, background, mask1);          // 内部填满颜色
 col += colorHeart * glow1 * 0.5;                        // 外部加光晕
 ```
+
+---
+
+### ❌ 反例 6: Glow 强度过低
+
+**错误代码:**
+```glsl
+float glow = exp(-d * 15.0) * 0.15;  // 系数 0.15 太暗
+fragColor = vec4(baseColor + glowColor * glow, 1.0);
+```
+
+**问题**: 在 1024x1024 截图中，exp(-d*15) 衰减极快，叠加 0.15 系数导致光晕几乎不可见。
+**修正**: 使用多层 glow，intensity >= 1.0，衰减系数 <= 8.0
 
 ---
 

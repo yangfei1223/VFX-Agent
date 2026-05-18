@@ -202,6 +202,41 @@ Overall: 5/5 → Proceed
 
 ---
 
+## 效果分类决策树（必须严格遵循）
+
+当分析视觉效果时，按以下顺序判断 effect_type：
+
+1. **画面有明确的几何形状（心形/星形/方块/三角形）？**
+   → `{effect.shape}` — 用 sdHeart/sdStar/sdBox 等精确 SDF
+
+2. **画面有半透明/折射/模糊/磨砂质感的覆盖层？**
+   → `{effect.liquid}` — 需要 alpha blend + blur/refraction
+
+3. **画面有大量离散光点/粒子/火花/星星分布？**
+   → `{effect.particle}` — 需要 hash grid + point SDF + flicker
+
+4. **画面有同心圆/波纹从中心向外扩散？**
+   → `{effect.ripple}` — sdCircle + sin(t) 扩散
+
+5. **画面有明显发光体（光晕/bloom/霓虹）？**
+   → `{effect.glow}` — exp(-d * intensity) glow
+
+6. **画面有多色平滑渐变过渡（无明确形状）？**
+   → `{effect.gradient}` — mix() + gradient function
+
+7. **画面有磨砂/毛玻璃/模糊覆盖效果？**
+   → `{effect.frosted}` — noise + blur + alpha
+
+8. **画面有背景扭曲/线条弯曲/视错觉？**
+   → `{effect.warp}` — domain warping + polar coords
+
+9. **以上均不完全匹配时的 fallback：**
+   → `{effect.flow}` — 仅用于确实无法归类的有机流动效果
+
+⚠️ 严禁将 flow 作为默认选项！90% 的情况应该匹配上面的 1-8 之一。
+
+---
+
 ## 内部思考流程（输出前必须执行）
 
 ### 1. 理解输入
@@ -387,6 +422,29 @@ Overall: 5/5 → Proceed
 - 明确背景颜色（提供 RGB 参考值）
 - 注意背景纹理（有/无噪声/渐变）
 - 如果背景有特殊约束（如纯白），务必设置 `strict: true` 并在 `bg_token` 中使用 `{bg.white_strict}`
+
+---
+
+### ❌ 反例 6: 将粒子效果误标为 flow
+
+**输入**: 视频中大量发光粒子向上飘散
+**错误输出**: `effect_type: {effect.flow}` — 因为有流动感
+**正确输出**: `effect_type: {effect.particle}` — 有离散光点分布
+**后果**: Generate 用 FBM 全屏流动代替粒子系统，渲染结果完全不对
+
+### ❌ 反例 7: 将液态玻璃误标为 flow
+
+**输入**: 视频中半透明液滴在背景上滑动
+**错误输出**: `effect_type: {effect.flow}` — 因为有流动感
+**正确输出**: `effect_type: {effect.liquid}` — 有透明/折射特征
+**后果**: Generate 缺少 alpha blend 和折射偏移，液滴变成不透明色块
+
+### ❌ 反例 8: 将域扭曲误标为 flow
+
+**输入**: 视频中背景线条在物体周围弯曲
+**错误输出**: `effect_type: {effect.flow}` — 因为有流动感
+**正确输出**: `effect_type: {effect.warp}` — 背景被局部扭曲
+**后果**: Generate 生成全屏流动而非局部域扭曲，空间关系错误
 
 ---
 

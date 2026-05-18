@@ -325,3 +325,27 @@ Professional visual effects terminology for shader critique and analysis.
 | **Noise texture** | FBM + scale | Octaves, frequency, amplitude |
 | **Pulse** | Sine + opacity | Frequency, amplitude, phase |
 | **Wave** | Sine + offset | Amplitude, frequency, direction |
+
+### Liquid Glass Effect (液态玻璃效果)
+- **定义**: 具有半透明、折射、高光特征的流体/玻璃质感效果
+- **识别特征**: alpha < 1.0、背景可见但扭曲、边缘高光反射
+- **GLSL 关键词**: alpha blend, refraction offset, fresnel highlight, sdVesica
+- **Token**: `{effect.liquid}`
+
+### Particle Field Effect (粒子场效果)
+- **定义**: 大量离散光点/粒子在空间中分布、移动、闪烁的效果
+- **识别特征**: 离散点状元素、数量 > 20、有闪烁/漂移动画
+- **GLSL 关键词**: hash grid, point SDF, flicker, FBM drift, palette per particle
+- **Token**: `{effect.particle}`
+
+### Domain Warp Effect (域扭曲效果)
+- **定义**: 通过噪声函数扭曲 UV 坐标，产生线条弯曲/等高线/视错觉的效果
+- **识别特征**: 背景线条弯曲、等高线图案、有机纹理变形
+- **GLSL 关键词**: domain warping, polar coordinates, line integral, FBM warp
+- **Token**: `{effect.warp}`
+
+### Shape Effect (几何形状效果)
+- **定义**: 以明确的几何图形（心形/星形/方块等）为主体，带渐变填充和边缘光的效果
+- **识别特征**: 清晰可辨识的几何形状、实心或空心填充、可能有内部渐变
+- **GLSL 关键词**: sdHeart/sdStar5/sdBox, solid fill (d) or hollow (abs(d)), edge glow
+- **Token**: `{effect.shape}`

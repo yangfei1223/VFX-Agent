@@ -727,18 +727,23 @@ vec2 uvOffset(vec2 uv, vec2 offset) {
 
 ## Post Effects
 
-### Glow
+### Glow (带强度基准)
+
+**关键：Glow 在截图中必须清晰可见，不能是微弱灰色！**
+
 ```glsl
-vec3 glow(vec2 uv, float radius, float intensity) {
-    vec3 col = vec3(0.0);
-    for (float i = -radius; i <= radius; i++) {
-        for (float j = -radius; j <= radius; j++) {
-            col += texture(iChannel0, uv + vec2(i, j) * 0.01).rgb;
-        }
-    }
-    return col / ((2.0 * radius + 1.0) * (2.0 * radius + 1.0)) * intensity;
-}
+// ✅ 推荐：多层 glow，中心明亮
+float d = sdf_shape(pos);
+float core = exp(-abs(d) * 12.0);      // 核心亮线
+float mid  = exp(-abs(d) * 4.0);        // 中层光晕  
+float outer = exp(-abs(d) * 1.5);       // 外层扩散
+vec3 glow = color * (core * 1.5 + mid * 0.8 + outer * 0.3);
+
+// ❌ 错误：单层衰减、强度过低
+// float glow = exp(-d * 10.0) * 0.2;  // 截图中几乎不可见
 ```
+
+**强度自检：shape 边缘处 (d≈0) glow 值必须 >= 0.8**
 
 ### Outline
 ```glsl
@@ -891,6 +896,193 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
 }
 ```
 - Customizable: pulse speed, glow radius, glow color, base color
+
+### Template: Liquid Glass (半透明 + 折射 + 高光)
+
+适用于：液态玻璃、水滴、半透明覆盖层
+
+```glsl
+float sdShape(vec2 p) {
+    // 使用 sdVesica/sdCircle 等有机形状
+    return sdVesica(p - center, params);
+}
+
+void mainImage(out vec4 fragColor, in vec2 fragCoord) {
+    vec2 uv = (fragCoord - 0.5 * iResolution.xy) / iResolution.y;
+    
+    float d = sdShape(uv);
+    
+    // 半透明填充（实心用 d，空心用 abs(d)）
+    float fill = 1.0 - smoothstep(0.0, edge_width, d);
+    
+    // 折射偏移（FBM 驱动）
+    vec2 refract_offset = vec2(
+        FBM(uv * 3.0 + iTime * 0.2) - 0.5,
+        FBM(uv * 3.0 + vec2(5.2, 1.3) + iTime * 0.2) - 0.5
+    ) * 0.03;
+    
+    // 背景采样（折射）
+    vec3 bg = backgroundShader(uv + refract_offset);
+    
+    // 高光（菲涅尔）
+    float highlight = pow(1.0 - abs(d) / 0.1, 3.0) * 0.8;
+    
+    // 混合
+    vec3 tint = vec3(0.5, 0.7, 0.9);
+    float alpha = fill * 0.5; // 半透明
+    vec3 color = mix(bg, tint, alpha) + highlight;
+    
+    // 边缘光晕
+    float glow = exp(-abs(d) * 8.0) * 0.3;
+    color += glow_color * glow;
+    
+    fragColor = vec4(color, 1.0);
+}
+```
+
+**关键参数:**
+- alpha: 0.3-0.6（半透明范围）
+- refract_offset: FBM * 0.02-0.05（微妙偏移）
+- highlight: 菲涅尔 pow(x, 2-4) * 0.5-0.8
+- fill 用 d（实心），不用 abs(d)（空心）
+
+---
+
+### Template: Particle Field (粒子点阵 + 闪烁 + 漂移)
+
+适用于：粒子、星光、火花、尘埃
+
+```glsl
+// 网格哈希 — 粒子位置的基础
+vec2 hash2(vec2 p) {
+    p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
+    return fract(sin(p) * 43758.5453);
+}
+
+void mainImage(out vec4 fragColor, in vec2 fragCoord) {
+    vec2 uv = fragCoord / iResolution.xy;
+    
+    float grid_scale = 20.0; // 粒子密度
+    vec2 cell = floor(uv * grid_scale);
+    vec2 local = fract(uv * grid_scale);
+    
+    // 每个网格一个粒子
+    vec2 particle_offset = hash2(cell);
+    vec2 particle_pos = particle_offset;
+    
+    // FBM 漂移（粒子随时间移动）
+    particle_pos += vec2(
+        FBM(cell * 0.1 + iTime * 0.3),
+        FBM(cell * 0.1 + vec2(5.2, 1.3) + iTime * 0.2)
+    ) * 0.3;
+    particle_pos = fract(particle_pos); // wrap around
+    
+    // 粒子距离
+    float d = length(local - particle_pos);
+    
+    // 粒子大小 + 闪烁
+    float size = mix(0.02, 0.06, hash2(cell + 0.5).x);
+    float flicker = 0.7 + 0.3 * sin(iTime * (2.0 + hash2(cell + 1.5).x * 4.0) + hash2(cell + 2.5).x * 6.28);
+    
+    // 点 SDF + glow
+    float brightness = exp(-d * d / (size * size)) * flicker;
+    
+    // 颜色变化（按 cell_id 分配不同颜色）
+    float hue = hash2(cell + 3.5).x;
+    vec3 particle_color = palette(hue);
+    
+    vec3 color = particle_color * brightness * 1.2; // intensity >= 1.0
+    
+    fragColor = vec4(color, 1.0);
+}
+```
+
+**关键参数:**
+- grid_scale: 10-30（密度）
+- size: 0.02-0.08（粒子大小）
+- flicker: sin(time * freq + phase) * 0.3 振幅
+- brightness intensity: >= 1.0（确保粒子清晰可见）
+- palette: 按 hash 分配不同色相
+
+---
+
+### Template: Domain Warp (域扭曲 + 线条)
+
+适用于：视错觉、背景扭曲、等高线
+
+```glsl
+void mainImage(out vec4 fragColor, in vec2 fragCoord) {
+    vec2 uv = (fragCoord - 0.5 * iResolution.xy) / iResolution.y;
+    
+    // 两级 domain warping
+    vec2 q = vec2(FBM(uv + vec2(0.0, 0.0)), FBM(uv + vec2(5.2, 1.3)));
+    vec2 r = vec2(FBM(uv + 4.0*q + vec2(1.7, 9.2) + iTime*0.15),
+                  FBM(uv + 4.0*q + vec2(8.3, 2.8) + iTime*0.12));
+    
+    float f = FBM(uv + 4.0*r);
+    
+    // 线条叠加（等高线效果）
+    float lines = abs(sin(f * 20.0)) * 0.3;
+    
+    // 颜色映射
+    vec3 color = mix(color1, color2, clamp(f * f * 4.0, 0.0, 1.0));
+    color = mix(color, color3, clamp(length(q), 0.0, 1.0));
+    color = mix(color, color4, clamp(length(r.x), 0.0, 1.0));
+    
+    // 线条高亮
+    color += lines * accent_color;
+    
+    fragColor = vec4(color, 1.0);
+}
+```
+
+**关键参数:**
+- warp strength: 4.0（两级叠加）
+- FBM octaves: 4-5（丰富纹理）
+- lines: sin(f * frequency) * amplitude
+- 多层颜色 mix 增加深度感
+
+---
+
+### Template: Solid Shape (实心形状 + 渐变 + 边缘光)
+
+适用于：心形、星形、几何图形、图标
+
+```glsl
+float sdShape(vec2 p) {
+    // 选择对应 SDF：sdHeart / sdStar5 / sdBox / sdCircle
+    return sdHeart(p - center, size);
+}
+
+void mainImage(out vec4 fragColor, in vec2 fragCoord) {
+    vec2 uv = (fragCoord - 0.5 * iResolution.xy) / iResolution.y;
+    
+    float d = sdShape(uv);
+    
+    // ⚠️ 实心填充用 d，不用 abs(d)
+    //    abs(d) 会产生空心轮廓！
+    float fill = 1.0 - smoothstep(0.0, edge_width, d);
+    
+    // 内部渐变
+    vec2 grad_dir = normalize(vec2(1.0, -1.0));
+    float gradient = dot(uv - center, grad_dir) * 0.5 + 0.5;
+    vec3 fill_color = mix(color_dark, color_bright, gradient);
+    
+    // 边缘光（柔和 glow）
+    float glow = exp(-abs(d) * 6.0) * 0.5;
+    
+    // 最终合成
+    vec3 color = fill * fill_color + (1.0 - fill) * bg_color + glow * glow_color;
+    
+    fragColor = vec4(color, 1.0);
+}
+```
+
+**关键参数:**
+- fill: 用 `d`（实心），禁用 `abs(d)`（会产生空心）
+- edge_width: 0.01-0.05 UV（柔和边缘）
+- glow: exp(-abs(d) * 4-8) * intensity >= 0.5
+- gradient: dot(uv, dir) 实现方向性渐变
 
 ---
 

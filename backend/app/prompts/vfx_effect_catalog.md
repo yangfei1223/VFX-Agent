@@ -6,8 +6,7 @@
 
 ## Effect Types（必须选择其一）
 
-> **Note**: Current scope is 2D/2.5D UI VFX. Particle system effects are not supported in this version.
-> Only the 5 basic effect types listed below are available.
+> **Note**: Current scope is 2D/2.5D UI VFX. The 9 effect types listed below are available.
 
 | Token | Effect Name | SDF Technique | ALU |
 |-------|-------------|---------------|-----|
@@ -16,6 +15,87 @@
 | `{effect.gradient}` | 渐变背景 | mix() + radial/linear | ~20 |
 | `{effect.frosted}` | 磨砂玻璃 | blur + noise + alpha | ~150 |
 | `{effect.flow}` | 流光效果 | FBM + time offset | ~120 |
+| `{effect.liquid}` | 液态/玻璃 | sdVesica/sdCircle + alpha + blur + refract offset | ~120 |
+| `{effect.particle}` | 粒子/点阵 | hash grid + point SDF + flicker + FBM drift | ~100 |
+| `{effect.warp}` | 域扭曲/视错觉 | FBM domain warp + polar coords + line integral | ~100 |
+| `{effect.shape}` | 几何形状 | sdHeart/sdStar/sdBox + solid fill + edge glow | ~40 |
+
+---
+
+## Effect → Operator Mapping
+
+### {effect.ripple} 算子组合
+```
+d = sdCircle(pos, radius + sin(iTime * speed) * amplitude)
+ring = abs(d) - thickness
+color = palette * (1.0 - smoothstep(0.0, edge, ring))
+```
+
+### {effect.glow} 算子组合
+```
+d = sdShape(pos, params)
+glow = exp(-max(d, 0.0) * intensity)
+color = glow_color * glow
+```
+
+### {effect.gradient} 算子组合
+```
+t = clamp(coord, 0.0, 1.0)  // linear/radial/angular
+color = mix(color1, color2, t)
+```
+
+### {effect.frosted} 算子组合
+```
+d = sdShape(pos, params)
+mask = smoothstep(0.0, edge, d)
+blurred = blur(texture, uv, radius)
+color = mix(blurred, tint_color, mask * alpha)
+noise_detail = FBM(uv * scale) * noise_strength
+color += noise_detail
+```
+
+### {effect.flow} 算子组合
+```
+flow_uv = uv + vec2(iTime * speed_x, iTime * speed_y)
+noise = FBM(flow_uv * frequency)
+color = mix(color1, color2, noise)
+brightness = smoothstep(threshold - width, threshold + width, noise)
+color *= brightness
+```
+
+### {effect.liquid} 算子组合
+```
+d = sdVesica/sdCircle(pos, params)
+alpha = smoothstep(edge, 0.0, d) * 0.4-0.6  // 半透明
+blur_offset = FBM(pos * 3.0 + iTime * 0.2) * 0.02  // 折射偏移
+color = mix(bg_color, tint_color, alpha)
+highlight = pow(max(0.0, dot(normal, lightDir)), specular)  // 高光
+```
+
+### {effect.particle} 算子组合
+```
+cell_id = hash(floor(uv * grid_scale))       // 网格哈希
+particle_pos = fract(cell_id.xy) + FBM_drift // FBM 漂移
+d = length(uv - particle_pos)
+brightness = glow * flicker(cell_id.z, iTime) // 闪烁
+color = palette(cell_id.w) * brightness       // 颜色变化
+```
+
+### {effect.warp} 算子组合
+```
+warped_uv = uv + FBM(uv * freq + iTime * speed) * warp_strength
+d = length(warped_uv - center)
+pattern = sin(d * rings - iTime) * exp(-d * decay)
+color = mix(color1, color2, pattern)
+```
+
+### {effect.shape} 算子组合
+```
+d = sdHeart/sdStar/sdBox(pos, params)
+fill = 1.0 - smoothstep(0.0, edge_width, d)   // 实心填充用 d, NOT abs(d)
+glow = exp(-abs(d) * glow_intensity) * glow_color
+color = fill_color + glow
+```
 
 ---
 
