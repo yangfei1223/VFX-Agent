@@ -1,6 +1,6 @@
 # VFX-Agent 项目信息
 
-> 本文档记录项目架构、开发进度、与设计方案的差距分析，便于后续开发对齐。
+> 本文档记录项目架构、已实现功能、测试结果与优化决策，便于后续开发对齐。
 
 ---
 
@@ -24,25 +24,25 @@
 
 ```
 [输入] 视频/图片/文本描述
-   │
-   ▼
-┌─────────────────────────────────────────────────────────┐
-│  Pipeline Orchestrator (LangGraph)                      │
-│                                                         │
-│  ┌──────────────┐   ┌──────────────┐   ┌──────────────┐ │
-│  │ Decompose    │ → │ Generate     │ → │ Inspect      │ │
-│  │ Agent        │   │ Agent        │   │ Agent        │ │
-│  │ (多模态)     │   │ (代码生成)   │   │ (多模态)     │ │
-│  └──────────────┘   └──────────────┘   └──────────────┘ │
-│         │                  │                  │        │
-│         ▼                  ▼                  ▼        │
-│  visual_description    GLSL shader      对比评分       │
-│  (JSON DSL)           (Shadertoy)      + 反馈指令      │
-│                                                         │
-│  ←←←←←←←←←←←←←←←← 反馈迭代 ←←←←←←←←←←←←←←←←←←←←←←←←←←←←│
-└─────────────────────────────────────────────────────────┘
-   │
-   ▼
+   |
+   v
++-----------------------------------------------------------+
+|  Pipeline Orchestrator (LangGraph)                        |
+|                                                           |
+|  +--------------+   +--------------+   +--------------+  |
+|  | Decompose    | ->| Generate     | ->| Inspect      |  |
+|  | Agent        |   | Agent        |   | Agent        |  |
+|  | (多模态)     |   | (代码生成)   |   | (多模态)     |  |
+|  +--------------+   +--------------+   +--------------+  |
+|        |                  |                  |            |
+|        v                  v                  v            |
+|  visual_description    GLSL shader      对比评分         |
+|  (JSON DSL)           (Shadertoy)      + 反馈指令        |
+|                                                           |
+|  <--- 反馈迭代 (若评分 < threshold) ---                   |
++-----------------------------------------------------------+
+   |
+   v
 [输出] 最终 GLSL Shader + WebGL 预览
 ```
 
@@ -56,21 +56,14 @@
 
 **System Prompt 架构**（参考 Google GenerativeUI 论文 arXiv:2604.09577）：
 ```
-Role → Philosophy → Common Info → Planning Instructions → Skill → Failure Examples
+Role -> Philosophy -> Common Info -> Planning Instructions -> Skill -> Failure Examples
 ```
-
-**核心设计**：
-- **Role**：真实职业定位（而非虚构角色如"代码生成专家"）
-- **Philosophy**：方法论 + 目标导向 + 协作理念（30-35 行）
-- **Common Info**：平台、协作规则、视觉标准、术语约定（三 Agent 共享）
-- **Planning Instructions**：7 步内部思考流程（而非简单推理流程）
-- **Failure Examples**：反例警示（展示错误行为的后果）
 
 ### Pipeline 阶段流程
 
 1. **Extract Keyframes** - FFmpeg 从视频提取关键帧（4-6 帧）
 2. **Decompose** - 多模态 LLM 分析关键帧，输出结构化视效描述
-3. **Generate** - 根据 DSL + Skill 知识库生成 GLSL 代码
+3. **Generate** - 根据 DSL + 算子知识库生成 GLSL 代码
 4. **Render** - Playwright 在 WebGL 预览页渲染 shader 并截图
 5. **Inspect** - 对比渲染截图与设计参考，输出评分和修正指令
 6. **Loop** - 若未通过则迭代生成修正代码，直至收敛或达到最大迭代次数
@@ -79,298 +72,102 @@ Role → Philosophy → Common Info → Planning Instructions → Skill → Fail
 
 ## 已实现功能
 
-### ✅ 核心功能 (MVP)
+### 核心管道
 
-| 功能模块 | 状态 | 文件位置 |
-|----------|------|----------|
-| **Backend 服务** | ✅ | `backend/app/main.py` |
-| **Pipeline 编排** | ✅ | `backend/app/pipeline/graph.py`, `state.py` |
-| **Decompose Agent** | ✅ | `backend/app/agents/decompose.py` |
-| **Generate Agent** | ✅ | `backend/app/agents/generate.py` |
-| **Inspect Agent** | ✅ | `backend/app/agents/inspect.py` |
-| **BaseAgent (多 API 支持)** | ✅ | `backend/app/agents/base.py` |
-| **视频关键帧提取** | ✅ | `backend/app/services/video_extractor.py` |
-| **浏览器截图服务** | ✅ | `backend/app/services/browser_render.py` |
-| **System Prompt 架构** | ✅ | `backend/app/prompts/*.md`（Role → Philosophy → Common Info → Planning → Skill → Failure Examples） |
-| **算子知识库** | ✅ | Operator Catalog 嵌入 generate_system.md |
-| **VFX 术语库** | ✅ | VFX Terminology 嵌入 inspect_system.md |
-| **WebGL Shader 渲染** | ✅ | `frontend/src/lib/shader-renderer.ts` |
-| **WebUI 三栏布局** | ✅ | `frontend/src/App.tsx` |
-| **Agent Process Log** | ✅ | `frontend/src/components/AgentLog.tsx` |
-| **GLSL Editor** | ✅ | `frontend/src/components/ShaderEditor.tsx` |
-| **Parameter Panel** | ✅ | `frontend/src/components/ParameterPanel.tsx` |
-| **Shader Preview** | ✅ | `frontend/src/components/ShaderPreview.tsx` |
-| **代理支持** | ✅ | `backend/.env` PROXY 配置 |
-| **启动脚本** | ✅ | `start.sh` |
+| 功能 | 说明 |
+|------|------|
+| 三 Agent 闭环 | Decompose -> Generate -> Inspect 反馈迭代 |
+| 流式处理 | `astream()` 实时状态更新 |
+| 编译重试限制 | `compile_retry_count` 防止无限循环 |
+| Agent 上下文历史 | generate_history, inspect_history 注入 prompt |
+| 运行时配置 API | GET/PUT `/config` 动态调整参数 |
+| Session 日志 | `session_logger.py` 记录 Agent 完整输入/输出 |
 
-### ✅ 输入支持
+### Prompt 系统优化
 
-| 输入类型 | 状态 | 说明 |
-|----------|------|------|
-| **纯文本描述** | ✅ | 直接输入效果描述，auto-pass 模式 |
-| **图片上传** | ✅ | 支持 PNG/JPG/WebP，单图或多图 |
-| **视频上传** | ⚠️ | 支持 MP4/WebM，但 Pipeline 执行耗时较长 |
+| 功能 | 说明 |
+|------|------|
+| 9 种效果类型 | Plasma, Noise, Gradient, Ripple, Glow/Bloom, Liquid Glass, Particle Field, Domain Warp, Solid Shape |
+| 分类决策树 | Decompose Agent 内置效果分类树，提高识别准确率 |
+| Glow/Bloom 强度标准 | 统一 glow 效果的 intensity 评估基准 |
+| 9 个 Few-shot 示例 | generate_system.md 包含 visual_description JSON -> 完整 GLSL shader 的端到端示例 |
+| 9 个 Shader 模板 | shader_skill_reference.md 包含 Liquid Glass, Particle Field, Domain Warp, Solid Shape 等 9 个模板 |
+| VFX 术语库 | 351 行术语定义，三 Agent 共享 |
+| 效果算子目录 | 282 行算子参考（SDF/噪声/光照/UV 变换） |
 
-### ✅ 日志与进度追踪
+### WebUI
 
-| 功能 | 状态 | 说明 |
+| 功能 | 说明 |
+|------|------|
+| 三栏布局 | 输入面板 + 中间预览/编辑 + 参数/日志面板 |
+| 实时 Shader 预览 | Three.js WebGL 渲染 |
+| GLSL 编辑器 | 语法高亮 + 实时编辑 |
+| Pipeline 进度日志 | 5 阶段时间线 + Agent Reasoning 展示 + 全屏模式 |
+| VFX Discovery Form | 结构化效果描述输入 |
+| Feedback Panel | 人工迭代反馈 |
+| Pipeline Status | 管道状态可视化 |
+| 设置面板 | max_iterations / passing_threshold / compile_retry_limit |
+| 参数面板 | #define / uniform 提取与滑块 |
+
+### 输入支持
+
+| 类型 | 说明 |
+|------|------|
+| 纯文本描述 | 直接输入效果描述 |
+| 图片上传 | PNG/JPG/WebP，单图或多图 |
+| 视频上传 | MP4/WebM（耗时较长） |
+
+### 服务层
+
+| 服务 | 文件 | 说明 |
 |------|------|------|
-| **5 阶段时间线** | ✅ | Extract → Decompose → Generate → Render → Inspect |
-| **实时进度消息** | ✅ | 每阶段显示 started/completed/failed |
-| **持续时间统计** | ✅ | 每阶段显示 duration (ms/s) |
-| **阶段详情展开** | ✅ | 点击展开查看详细信息 |
-| **迭代次数显示** | ✅ | 每条日志显示 Iteration N |
-| **500ms polling** | ✅ | 实时状态更新 |
-| **日志窗口最大化** | ✅ | Maximize 按钮展开全屏显示 |
-| **Agent Reasoning 显示** | ✅ | 点击日志条目展开显示 "Agent Reasoning" 原始响应 |
-
-### ✅ Pipeline 增强
-
-| 功能 | 状态 | 说明 |
-|------|------|------|
-| **流式处理** | ✅ | 使用 `astream()` 替代 `ainvoke()` 实现实时状态更新 |
-| **路由修复** | ✅ | 修复 generate → validate_shader → generate 无限循环 |
-| **编译重试限制** | ✅ | `compile_retry_count` 计数和终止条件 |
-| **节点日志输出** | ✅ | Backend 日志添加 `[Pipeline ID] Node XXX completed` 输出 |
-
-### ✅ 配置与上下文
-
-| 功能 | 状态 | 说明 |
-|------|------|------|
-| **设置面板** | ✅ | 右上角齿轮图标，可配置 max_iterations/passing_threshold/compile_retry_limit |
-| **配置 API** | ✅ | GET/PUT `/config` 动态配置 |
-| **Agent 上下文历史** | ✅ | 每个 Agent 保留工作记录 (generate_history, inspect_history) |
-| **历史上下文注入** | ✅ | Agent prompt 注入历史上下文，避免重复错误 |
-
-### ✅ System Prompt 架构优化 (V3.0)
-
-| 功能 | 状态 | 说明 |
-|------|------|------|
-| **Role 真实职业定位** | ✅ | 视觉分析专家 / 图形程序开发专家 / 视效技术总监（而非虚构角色） |
-| **Philosophy 补充** | ✅ | 方法论 + 目标导向 + 协作理念（30-35 行，而非之前仅 3 行） |
-| **Common Info 共享** | ✅ | 平台、协作规则、视觉标准、术语约定（三 Agent 共享） |
-| **Planning Instructions** | ✅ | 7 步内部思考流程（替代简单的推理流程） |
-| **Failure Examples** | ✅ | 反例警示（展示错误行为的后果，而非仅正面示例） |
-| **历史内容删除** | ✅ | 移除 DSL vs 自然语言对比表（System Prompt 只关心当前方法） |
-
-### ✅ Skill 系统简化
-
-| 功能 | 状态 | 说明 |
-|------|------|------|
-| **内容合并到 prompts** | ✅ | Skill 内容静态 → 合并到 system prompts（无需动态加载） |
-| **SkillLoader 删除** | ✅ | 移除动态加载机制，直接嵌入 system prompt |
-| **职责边界修正** | ✅ | Operator Catalog 归 Generate（Decompose 只做语义描述） |
-
-### ✅ API 修复
-
-| 功能 | 状态 | 说明 |
-|------|------|------|
-| **build_*_prompt 返回值** | ✅ | 函数返回 3 个值（system_prompt, user_prompt, image_paths） |
-| **Form data 使用纠正** | ✅ | API 期待 Form data 而非 JSON body |
-| **SessionLogger 结构** | ✅ | Session 文件使用嵌套结构（input/output 字段） |
+| 关键帧提取 | `video_extractor.py` | FFmpeg 提取 4-6 帧关键帧 |
+| 浏览器渲染截图 | `browser_render.py` | Playwright WebGL 渲染 + 截图 |
+| Prompt 构建 | `context_assembler.py` | 组装 system/user prompt + 历史上下文 |
+| Session 日志 | `session_logger.py` | 记录 Agent 会话完整 IO |
+| Shader 验证 | `shader_validator.py` | GLSL 编译检查 |
+| 输入验证 | `validators.py` | API 输入参数校验 |
 
 ---
 
-## 已知问题与待优化
+## 测试结果与优化决策
 
-### 当前已知问题
+### V2 基线测试 (19 samples, max_iter=3)
 
-| 问题 | 状态 | 说明 |
-|------|------|------|
-| **视频输入 Pipeline 慢** | ⚠️ | 关键帧提取 + 多图多模态分析耗时 2-3 分钟 |
-| **Inspect 评分简化** | ⚠️ | 纯文本模式 auto-pass，缺少量化指标 |
-| **参数面板未同步** | ⚠️ | Parameter Panel 提取 #define/uniform 但未实时联动 |
+| 指标 | 数值 |
+|------|------|
+| >=0.8 通过率 | 9/19 (47%) |
+| 平均分 | 0.73 |
+| 最高 | 4-col-grad 0.95, shiny-circle 0.88, twitter-blue-check 0.87 |
+| 最低 | sparks-drifting 0.00, auroras 0.42 |
 
-### 待优化项（P1）
+### CV 特征提取 A/B 测试 (19 samples, max_iter=1)
 
-1. **增强 Inspect Agent 多维度评估**
-   - 实现 IoU 计算（渲染截图 vs 设计参考 mask）
-   - 实现 MSE 光流对比
-   - 输出结构化修正指令
+| 指标 | 数值 |
+|------|------|
+| 平均分变化 (delta) | -0.02 (CV hurt) |
+| CV 帮助的样本 | 5/16 |
+| CV 损害的样本 | 9/16 |
 
-2. **特征提取增强**
-   - 关键帧 SDF Mask 提取（形态场）
-   - 光流场计算（动态特征）
-   - 色彩频域分析
+**结论**: CV 特征提取（SDF Mask、光流场、色彩频域）**不是瓶颈**。分支 `feat/cv-feature-extraction` 已测试并回退到 master。
 
-3. **参数面板实时联动**
-   - 滑块修改 #define 常量实时更新 shader
-   - uniform 变量实时传递到预览
+### Few-shot Smoke Test (3 samples, max_iter=1)
 
----
+| 样本 | 无 few-shot | 有 few-shot | Delta |
+|------|-------------|-------------|-------|
+| vortex-street | 0.00 (crash) | 0.65 | +0.65 |
+| plasma-waves | 0.18 (crash) | 0.78 | +0.60 |
+| heart-2d | 0.74 | 0.84 | +0.10 |
 
-## 与设计方案的差距分析
+**结论**: Few-shot 示例显著提高 Generate Agent 稳定性，消除 crash 问题。当前优化方向：**增强 Generate Agent 的 few-shot 覆盖面**。
 
-### 设计方案核心要求
+### 关键决策记录
 
-根据 `基于 AI Agent 的操作系统级自定义视效生成管线设计方案.md`：
-
-| 设计要求 | 当前状态 | 差距说明 |
-|----------|----------|----------|
-| **三 Agent 架构** | ✅ 完成 | Decompose → Generate → Inspect 已实现 |
-| **Harness Loop 约束系统** | ❌ 未实现 | 缺少形态收敛(IoU)、动态拟合(MSE)、性能剪枝(AST审计) |
-| **DSL 中间表示** | ⚠️ 部分 | 当前 visual_description 是简化 DSL，缺少算子拓扑描述 |
-| **光流场提取** | ❌ 未实现 | 仅提取关键帧，缺少 Optical Flow 分析 |
-| **形态场(SDF Mask)** | ❌ 未实现 | 缺少关键帧 SDF 轮廓提取 |
-| **色彩频域分析** | ❌ 未实现 | 缺少色彩直方图及空间频率分布分析 |
-| **算子抽象库** | ✅ 完成 | effect-dev Skill 包含 SDF/噪声/光照算子 |
-| **多维特征评估** | ⚠️ 简化版 | Inspect 仅做视觉对比，缺少 IoU/MSE 计算 |
-| **性能剪枝(AST审计)** | ⚠️ 部分 | validate-shader.py 有静态检查，但缺少算力统计 |
-
-### 运行态差距（不在当前 MVP 范围）
-
-| 运行态设计要求 | 状态 | 说明 |
-|----------|----------|----------|
-| **运行时沙盒** | 📋 待单独实现 | 算力熔断器、受限计算图 |
-| **DSL 转译器** | 📋 待单独实现 | GLSL → MSL/SPIR-V |
-| **系统级集成** | 📋 待单独实现 | OS Framebuffer 注入 |
-
-### 关键差距详解
-
-#### 1. Harness Loop 约束系统
-
-设计方案要求三层约束迭代：
-
-```
-形态收敛 (Shape Phase)
-  → 计算 IoU (交并比)，若 < 0.95 则反馈修正 SDF 参数
-
-动态拟合 (Motion Phase)
-  → 计算光流 MSE，修正时间驱动函数
-
-性能剪枝 (Performance Phase)
-  → AST 指令复杂度审计，算子降级
-```
-
-**当前实现**：Inspect Agent 仅做视觉对比评分，缺少量化指标。
-
-**需要补充**：
-- `backend/app/services/mask_extractor.py` - 关键帧 SDF 轮廓提取
-- `backend/app/services/optical_flow.py` - 光流场计算
-- `backend/app/services/performance_audit.py` - AST 指令复杂度审计
-- 修改 Inspect Agent 输出为结构化反馈：`{shape_iou, motion_mse, performance_score, feedback_commands}`
-
-#### 2. DSL 中间表示增强
-
-当前 visual_description JSON 结构：
-
-```json
-{
-  "effect_name": "...",
-  "shape": {"type": "...", "sdf_primitives": [], "parameters": {}},
-  "color": {...},
-  "animation": {...}
-}
-```
-
-设计方案要求更完整的 DSL：
-
-```json
-{
-  "operators": [
-    {"type": "SDF_Box", "params": {"size": [0.5, 0.3], "blend": "smooth_union"}},
-    {"type": "Fractal_Noise", "params": {"octaves": 4, "frequency": 2.0}}
-  ],
-  "topology": "compose(add(mask, noise), multiply(fresnel, gradient))",
-  "uniforms": {"u_time": "fract(t)", "u_pointer": "vec2"},
-  "constraints": {"max_alu": 256, "max_texture_fetch": 8}
-}
-```
-
-**需要补充**：
-- 增强 Decompose Agent system prompt，输出算子拓扑描述
-- 设计 DSL Schema 并验证
-
-#### 3. 特征提取增强
-
-设计方案要求三维度特征：
-
-| 特征维度 | 设计要求 | 当前实现 |
-|----------|----------|----------|
-| **形态场** | 关键帧 SDF Mask | ❌ 未实现 |
-| **光流场** | Optical Flow 矢量 | ❌ 未实现 |
-| **色彩频域** | 直方图 + 频率分布 | ❌ 未实现 |
-
-**需要补充**：
-- `backend/app/services/perception.py` - 多维度特征提取模块
-- 关键帧 SDF 轮廓提取 (使用 OpenCV 或 skimage)
-- 光流计算 (OpenCV `calcOpticalFlowFarneback`)
-- 色彩频域分析 (FFT 或 直方图)
-
-#### 4. 运行时沙盒
-
-设计方案要求：
-
-```
-运行态沙盒
-  ├─ DSL 转译器 (DSL → GLSL/MSL/Warp)
-  ├─ 系统上下文注入 (u_time, u_resolution, u_pointer, u_sysTheme)
-  ├─ 受限计算图 (禁止无界内存读写)
-  └─ 算力熔断器 (单帧 < 2ms)
-```
-
-**当前实现**：仅 WebGL 预览，无安全隔离。
-
-**需要补充**：
-- Shader 执行时间监控 (WebGL `getQuery` 或估算)
-- 禁止危险操作的静态检查
-- 目标平台转译器 (GLSL → MSL for iOS, GLSL → Vulkan SPIR-V for Android)
-
----
-
-## 范围界定
-
-**当前 MVP 范围**：专注于**开发态（编辑态）** Agent 系统，实现从 UX 设计稿到 GLSL Shader 的自动化生成闭环。
-
-**不在当前范围**（后续单独实现）：
-- 运行态沙盒（算力熔断器、受限计算图）
-- 系统级集成（OS Framebuffer 注入）
-- 目标平台转译（GLSL → MSL/SPIR-V）
-
----
-
-## 后续开发优先级（开发态）
-
-### P0 (关键功能，影响核心闭环质量)
-
-1. **完善 Inspect Agent 多维度评估**
-   - 实现 IoU 计算 (渲染截图 vs 设计参考 mask)
-   - 实现 MSE 光流对比
-   - 输出结构化修正指令而非简单评分
-
-2. **增强 DSL 中间表示**
-   - 设计完整 DSL Schema（算子拓扑描述）
-   - Decompose Agent 输出算子组合关系
-   - Generate Agent 解析 DSL 生成 GLSL
-
-3. **特征提取增强**
-   - 关键帧 SDF Mask 提取（形态场）
-   - 光流场计算（动态特征）
-   - 色彩频域分析（直方图 + FFT）
-
-### P1 (重要功能，提升迭代效率)
-
-4. **性能剪枝（AST审计）**
-   - GLSL 指令复杂度静态分析
-   - Texture Fetch/ALU 计数
-   - 超阈值时算子自动降级建议
-
-5. **视频输入优化**
-   - 提升 Pipeline 执行速度（关键帧并行处理）
-   - 关键帧预览缩略图显示
-   - 进度百分比实时显示
-
-### P2 (体验优化)
-
-6. **WebUI 交互增强**
-   - 参数滑块实时联动预览
-   - Shader 编辑器智能补全
-   - 历史版本对比切换
-
-7. **效果模板库**
-   - 预置常用效果模板（涟漪、光晕、磨砂）
-   - 模板参数化快速生成
-   - 用户自定义模板保存
+| 决策 | 原因 |
+|------|------|
+| CV 特征提取已放弃 | A/B 测试证明无效，平均 delta 为负 |
+| DSL 结构化字段已推迟 | Prompt channel 已满载，结构化字段挤占有限上下文 |
+| Few-shot 是当前重点 | Smoke test 证明 few-shot 显著提升 Generate 稳定性 |
 
 ---
 
@@ -378,81 +175,73 @@ Role → Philosophy → Common Info → Planning Instructions → Skill → Fail
 
 ```
 VFX-Agent/
-├── backend/
-│   ├── app/
-│   │   ├── main.py                 # FastAPI 入口
-│   │   ├── config.py               # 环境变量 + 模型配置
-│   │   ├── routers/
-│   │   │   ├── pipeline.py         # Pipeline API
-│   │   │   ├── config.py           # 配置 API (GET/PUT)
-│   │   │   └── __init__.py
-│   │   ├── agents/
-│   │   │   ├── base.py             # Agent 基类 (多 API 支持 + 代理)
-│   │   │   ├── decompose.py        # Decompose Agent
-│   │   │   ├── generate.py         # Generate Agent
-│   │   │   ├── inspect.py          # Inspect Agent
-│   │   │   └── __init__.py
-│   │   ├── pipeline/
-│   │   │   ├── graph.py            # LangGraph 编排 + 阶段日志 + 路由函数
-│   │   │   ├── state.py            # PipelineState TypedDict (含 history 字段)
-│   │   │   └── __init__.py
-│   │   ├── services/
-│   │   │   ├── video_extractor.py  # FFmpeg 关键帧提取
-│   │   │   ├── browser_render.py   # Playwright 截图
-│   │   │   ├── context_assembler.py # Prompt 构建器
-│   │   │   └── __init__.py
-│   │   ├── prompts/                # System Prompts (核心资产)
-│   │   │   ├── decompose_system.md
-│   │   │   ├── generate_system.md  # 含 9 个 few-shot 端到端示例
-│   │   │   ├── inspect_system.md
-│   │   │   ├── vfx_effect_catalog.md
-│   │   │   ├── shader_skill_reference.md
-│   │   │   ├── shared_vfx_constraints.md
-│   │   │   └── shared_vfx_terminology.md
-│   │   └── __init__.py
-│   ├── tests/                      # 测试脚本（按类型分目录）
-│   │   ├── unit/                   # 单元测试（无需后端）
-│   │   │   ├── test_effect_catalog.py
-│   │   │   ├── test_schema_v2.py
-│   │   │   └── test_shared_constraints.py
-│   │   └── e2e/                    # 端到端 Pipeline 测试
-│   │       ├── test_e2e_single.py  # 单样本测试 + HTML 报告
-│   │       ├── test_e2e_batch.py   # 批量测试运行器
-│   │       └── test_e2e_report.py  # 批量 HTML 报告生成
-│   ├── test_results/               # 测试结果归档（gitignored）
-│   ├── requirements.txt
-│   ├── .env                        # 实际配置 (不提交)
-│   └── .env.example                # 配置模板
-├── frontend/
-│   ├── src/
-│   │   ├── App.tsx                 # 主布局 (三栏)
-│   │   ├── components/
-│   │   │   ├── InputPanel.tsx      # 上传 + 文本输入
-│   │   │   ├── AgentLog.tsx        # Pipeline 进度日志 (增强版)
-│   │   │   ├── ShaderEditor.tsx    # GLSL 编辑器 + 语法高亮
-│   │   │   ├── ParameterPanel.tsx  # 参数提取 + 滑块
-│   │   │   ├── ShaderPreview.tsx   # WebGL 渲染预览
-│   │   │   └ SettingsPanel.tsx     # 设置面板 (配置迭代参数)
-│   │   ├── hooks/
-│   │   │   └ usePipeline.ts        # Pipeline 状态订阅 (500ms polling)
-│   │   ├── lib/
-│   │   │   ├── shader-renderer.ts  # Three.js ShaderMaterial 封装
-│   │   │   ├── glsl-parser.ts      # GLSL 参数提取
-│   │   ├── index.css               # Tailwind CSS
-│   │   └ main.tsx
-│   ├── package.json
-│   ├── vite.config.ts
-│   └ tsconfig.json
-├── test-samples/                   # 测试样本视频/图片（gitignored）
-├── example/
-│   ├── demo.webm                   # 测试视频
-│   └ description.txt               # 测试描述
-├── docs/
-│   └── superpowers/plans/          # 实施计划文档
-├── AGENTS.md                       # 本文档
-├── README.md
-├── start.sh                        # 启动脚本
-└── .gitignore
++-- backend/
+|   +-- app/
+|   |   +-- main.py                    # FastAPI 入口
+|   |   +-- config.py                  # 环境变量 + 模型配置
+|   |   +-- routers/
+|   |   |   +-- pipeline.py            # Pipeline API
+|   |   |   +-- config.py              # 配置 API (GET/PUT)
+|   |   +-- agents/
+|   |   |   +-- base.py                # Agent 基类 (多 API 支持 + 代理)
+|   |   |   +-- decompose.py           # Decompose Agent
+|   |   |   +-- generate.py            # Generate Agent
+|   |   |   +-- inspect.py             # Inspect Agent
+|   |   +-- pipeline/
+|   |   |   +-- graph.py               # LangGraph 编排 + 阶段日志 + 路由函数
+|   |   |   +-- state.py               # PipelineState TypedDict
+|   |   +-- services/
+|   |   |   +-- video_extractor.py     # FFmpeg 关键帧提取
+|   |   |   +-- browser_render.py      # Playwright 截图
+|   |   |   +-- context_assembler.py   # Prompt 构建器
+|   |   |   +-- session_logger.py      # Agent 会话日志
+|   |   |   +-- shader_validator.py    # GLSL 编译检查
+|   |   |   +-- validators.py          # API 输入校验
+|   |   +-- prompts/                   # System Prompts (核心资产)
+|   |   |   +-- decompose_system.md    # 624 lines, 含分类决策树
+|   |   |   +-- generate_system.md     # 1238 lines, 含 9 few-shot 示例
+|   |   |   +-- inspect_system.md      # 724 lines, 含 Lighting rubric
+|   |   |   +-- shader_skill_reference.md  # 1233 lines, 9 个 shader 模板
+|   |   |   +-- shared_vfx_constraints.md  # 69 lines, 平台约束
+|   |   |   +-- shared_vfx_terminology.md  # 351 lines, VFX 术语库
+|   |   |   +-- vfx_effect_catalog.md      # 282 lines, 9 种效果算子
+|   +-- tests/
+|   |   +-- unit/                      # 单元测试（无需后端）
+|   |   +-- e2e/                       # 端到端 Pipeline 测试
+|   +-- test_results/                  # 测试结果归档（gitignored）
+|   +-- requirements.txt
+|   +-- .env                           # 实际配置 (不提交)
+|   +-- .env.example                   # 配置模板
++-- frontend/
+|   +-- src/
+|   |   +-- App.tsx                    # 主布局 (三栏)
+|   |   +-- components/
+|   |   |   +-- InputPanel.tsx         # 上传 + 文本输入
+|   |   |   +-- UploadPanel.tsx        # 文件上传组件
+|   |   |   +-- VFXDiscoveryForm.tsx   # 结构化效果描述
+|   |   |   +-- AgentLog.tsx           # Pipeline 进度日志
+|   |   |   +-- ShaderEditor.tsx       # GLSL 编辑器 + 语法高亮
+|   |   |   +-- CodeView.tsx           # 代码查看组件
+|   |   |   +-- ShaderPreview.tsx      # WebGL 渲染预览
+|   |   |   +-- ParameterPanel.tsx     # 参数提取 + 滑块
+|   |   |   +-- SettingsPanel.tsx      # 设置面板
+|   |   |   +-- FeedbackPanel.tsx      # 人工反馈面板
+|   |   |   +-- PipelineStatus.tsx     # 管道状态组件
+|   |   +-- hooks/
+|   |   |   +-- usePipeline.ts         # Pipeline 状态订阅 (500ms polling)
+|   |   +-- lib/
+|   |   |   +-- shader-renderer.ts     # Three.js ShaderMaterial 封装
+|   |   |   +-- glsl-parser.ts         # GLSL 参数提取
++-- test-samples/                      # 测试样本视频/图片（gitignored）
++-- example/
+|   +-- demo.webm                      # 测试视频
+|   +-- description.txt                # 测试描述
++-- docs/
+|   +-- superpowers/plans/             # 实施计划文档
++-- AGENTS.md                          # 本文档
++-- README.md
++-- start.sh                           # 启动脚本
++-- .gitignore
 ```
 
 ---
@@ -485,15 +274,15 @@ cd backend && python tests/e2e/test_e2e_report.py --report-only
 
 ```
 backend/test_results/
-├── 2026-05-18_e2e-v2-baseline-19samples/       # V2 基线测试
-├── 2026-05-19_e2e-v3-cv-debug-5samples/        # CV 特征调试
-├── 2026-05-20_e2e-v4-cv-semantic-5samples/     # 语义级 CV 对比
-├── 2026-05-20_e2e-v1-batch-19samples/          # V1 批量测试
-├── 2026-05-20_ab-cv-toggle-19samples/          # CV 开关 A/B 测试
-└── 2026-05-20_fewshot-smoke-3samples/          # Few-shot 冒烟测试
++-- 2026-05-18_e2e-v2-baseline-19samples/       # V2 基线测试
++-- 2026-05-19_e2e-v3-cv-debug-5samples/        # CV 特征调试
++-- 2026-05-20_e2e-v4-cv-semantic-5samples/     # 语义级 CV 对比
++-- 2026-05-20_e2e-v1-batch-19samples/          # V1 批量测试
++-- 2026-05-20_ab-cv-toggle-19samples/          # CV 开关 A/B 测试
++-- 2026-05-20_fewshot-smoke-3samples/          # Few-shot 冒烟测试
 ```
 
-**命名规则**：`YYYY-MM-DD_描述-样本数samples/`
+**命名规则**: `YYYY-MM-DD_描述-样本数samples/`
 
 每次跑完 E2E 测试后，手动将结果移入对应目录：
 
@@ -504,7 +293,7 @@ mv backend/test_e2e_results backend/test_results/2026-05-21_e2e-fewshot-19sample
 
 ### 测试样本
 
-50 个测试样本在 `test-samples/`（gitignored），每个包含 `.webm` 视频和 `.json` 元数据。V2 基线测试使用的 19 个样本：
+50 个测试样本在 `test-samples/`（gitignored），每个包含 `.webm` 视频和 `.json` 元数据。基线测试使用的 19 个样本：
 
 ```
 4-col-grad, auroras, buffer-bloom, cool-s-distance, electron,
@@ -512,61 +301,6 @@ happy-diwali-2019, heart-2d, hypnotic-ripples, liquid-galss-test,
 liquid-glass-ui, moon-distance-2d, plasma-waves, shiny-circle,
 sparks-drifting, supah-frosted-glass, twitter-blue-check,
 vortex-street, warp-speed2, water-color-blending
-```
-
----
-
-## Git Commits (69)
-
-```
-3744e5a fix: remove historical comparison content from system prompt
-ca32306 feat: complete prompt architecture optimization for all 3 Agents
-6b072c4 fix: strengthen Role section with clear responsibility and goal
-f400fce feat: add Philosophy + Common Info + Planning Instructions + Failure Examples to decompose
-ea6eb9a fix: build_inspect_prompt return value mismatch (same issue as decompose)
-b395f6e fix: build_decompose_prompt return value mismatch
-da9f4f0 refactor: correct decompose/generate responsibility boundaries
-562a910 chore: clear skill directory after content merged
-0b48228 refactor: simplify skill system - merge content to system prompts
-bc11ca1 feat: configurable agent parameters with file-based config
-7eaea58 fix: increase httpx timeout and reduce max_tokens for Qwen API
-17bb935 fix: render_multiple_frames to sync + Pipeline monitoring tool
-38e7d9d fix: convert all pipeline nodes to sync functions (async issue resolved)
-06325e5 feat: complete Phase 4 - config parameters API
-70a8820 fix: correct TypedDict format in PipelineState + debug logs
-9a21663 feat: complete graph.py refactoring with 4-region state (Phase 3 done)
-94497a0 feat: Agent adaptation to new 4-region state (Phase 3 partial)
-e63bbe3 feat: context system refactoring phase 1+2 (V3.0)
-0edace6 feat: add agent session logging for debugging and analysis
-d85ca2a fix: handle None score in inspect history for human iteration mode
-69b41b4 fix: duration tracking in all pipeline nodes
-b4dc435 fix: add missing isFullscreen state to AgentLog
-c0cf6bd feat: add fullscreen toggle to AgentLog component
-d8fbcec docs: clarify scope - focus on development state, runtime deferred
-6ea9697 docs: add AGENTS.md with project overview and gap analysis
-52f4c79 fix: initialize phase_start_time for duration tracking
-d8fa034 chore: remove demo screenshot
-f46012a fix: screenshot size 1024x1024 to avoid mobile warning
-754610a chore: remove test screenshots
-a902c5e fix: WebUI complete fixes
-51631d7 fix: usePipeline stale closure bug with refs
-6550dd8 fix: pipeline graph for text-only input mode
-e6c24d7 fix: Decompose Agent text-only input mode
-bbf3f9a feat: redesign WebUI with professional three-column layout
-aaac772 fix: increase Generate Agent max_tokens to 16384
-3325783 fix: increase max_tokens for Decompose and Generate Agents
-f170a41 fix: improve JSON parsing and add Playwright integration
-6bec888 feat: add proxy support for Gemini and other APIs
-13e42ac fix: update requirements.txt for openai and python-multipart
-43d8e07 fix: add python-multipart for FastAPI form data support
-b21f2f9 fix: upgrade openai package to fix proxies argument error
-33bb9b0 feat: add start.sh script for launching backend and frontend
-9f1dcf0 feat: add Pipeline orchestration and complete WebUI
-c26d6cd feat: add Generate Agent, Inspect Agent, Web Shader Renderer
-9ae40b0 feat: add effect-dev Agent Skill with complete references
-30a03b6 feat: add Decompose Agent with video keyframe extraction
-3f8a0ad feat: add BaseAgent with OpenAI-compatible LLM client
-62b1a1b chore: scaffold backend + frontend project structure
 ```
 
 ---
@@ -582,9 +316,6 @@ c26d6cd feat: add Generate Agent, Inspect Agent, Web Shader Renderer
 
 # 停止服务
 ./start.sh stop
-
-# 测试 Agent
-cd backend && python test_agents.py
 ```
 
 ---
@@ -615,26 +346,29 @@ PROXY=http://127.0.0.1:7890
 
 ---
 
+## 代码统计
+
+| 指标 | 数值 |
+|------|------|
+| Python 文件 (backend/app) | 22 |
+| TSX/TS 文件 (frontend/src) | 16 |
+| Prompt Markdown 文件 | 7 |
+| Python 代码行数 | ~3,973 |
+| TSX/TS 代码行数 | ~3,796 |
+| Prompt 行数 | 4,521 (decompose 624 + generate 1238 + inspect 724 + skill 1233 + constraints 69 + terminology 351 + catalog 282) |
+| 总代码行数 | ~12,290 |
+| Git Commits | 104 |
+
+---
+
 ## 参考文档
 
 - **设计方案**: `基于 AI Agent 的操作系统级自定义视效生成管线设计方案.md`
 - **MVP 实施计划**: `docs/superpowers/plans/2026-04-24-vfx-agent-mvp.md`
-- **System Prompts**: Operator Catalog 已嵌入 `backend/app/prompts/generate_system.md`，VFX Terminology 已嵌入 `backend/app/prompts/inspect_system.md`
+- **System Prompts**: `backend/app/prompts/` (7 个 markdown 文件，共 4521 行)
 - **iq SDF 算子**: https://iquilezles.org/articles/distfunctions2d/
 - **Shadertoy 案例**: https://www.shadertoy.com/
 
 ---
 
-## 代码统计
-
-| 指标 | 数值 |
-|------|------|
-| **总代码文件** | ~43 个核心文件 (25 Python + 15 TSX + 3 Prompts) |
-| **代码行数** | ~10,500 行 (3466 Python + 3363 TSX + 3700 Prompts) |
-| **Git Commits** | 69 条 |
-| **已实现功能** | 40+ 项 ✅ |
-| **设计方案差距** | 6 项待补充（开发态） |
-
----
-
-*最后更新: 2026-05-07*
+*最后更新: 2026-05-20*
