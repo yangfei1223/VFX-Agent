@@ -81,5 +81,7 @@ backend/app/sessions/
 # Test samples (large video files)
 test-samples/
 
-# Test results
-backend/test_e2e_results/
+# Test results (archived with timestamps)
+backend/test_results/
+
+# Note: Use date-stamped subdirs like 2026-05-20_ab-cv-toggle-19samples/
