@@ -400,17 +400,29 @@ VFX-Agent/
 │   │   │   ├── video_extractor.py  # FFmpeg 关键帧提取
 │   │   │   ├── browser_render.py   # Playwright 截图
 │   │   │   ├── context_assembler.py # Prompt 构建器
-│   │   │   └ __init__.py
-│   │   ├── prompts/
-│   │   │   ├── decompose_system.md # Decompose system prompt (737 lines)
-│   │   │   ├── generate_system.md  # Generate system prompt (1447 lines) + Operator Catalog
-│   │   │   └ inspect_system.md    # Inspect system prompt (1516 lines) + VFX Terminology
+│   │   │   └── __init__.py
+│   │   ├── prompts/                # System Prompts (核心资产)
+│   │   │   ├── decompose_system.md
+│   │   │   ├── generate_system.md  # 含 9 个 few-shot 端到端示例
+│   │   │   ├── inspect_system.md
+│   │   │   ├── vfx_effect_catalog.md
+│   │   │   ├── shader_skill_reference.md
+│   │   │   ├── shared_vfx_constraints.md
+│   │   │   └── shared_vfx_terminology.md
 │   │   └── __init__.py
+│   ├── tests/                      # 测试脚本（按类型分目录）
+│   │   ├── unit/                   # 单元测试（无需后端）
+│   │   │   ├── test_effect_catalog.py
+│   │   │   ├── test_schema_v2.py
+│   │   │   └── test_shared_constraints.py
+│   │   └── e2e/                    # 端到端 Pipeline 测试
+│   │       ├── test_e2e_single.py  # 单样本测试 + HTML 报告
+│   │       ├── test_e2e_batch.py   # 批量测试运行器
+│   │       └── test_e2e_report.py  # 批量 HTML 报告生成
+│   ├── test_results/               # 测试结果归档（gitignored）
 │   ├── requirements.txt
 │   ├── .env                        # 实际配置 (不提交)
-│   ├── .env.example                # 配置模板
-│   ├── test_agents.py              # Agent 逐步调试脚本
-│   └── debug_output/               # 调试输出目录
+│   └── .env.example                # 配置模板
 ├── frontend/
 │   ├── src/
 │   │   ├── App.tsx                 # 主布局 (三栏)
@@ -431,16 +443,75 @@ VFX-Agent/
 │   ├── package.json
 │   ├── vite.config.ts
 │   └ tsconfig.json
+├── test-samples/                   # 测试样本视频/图片（gitignored）
 ├── example/
-│   ├── demo.webm                   # 测试视频 (Windows 图标动画)
+│   ├── demo.webm                   # 测试视频
 │   └ description.txt               # 测试描述
 ├── docs/
-│   └── superpowers/plans/
-│       └ 2026-04-24-vfx-agent-mvp.md  # MVP 实施计划
+│   └── superpowers/plans/          # 实施计划文档
 ├── AGENTS.md                       # 本文档
 ├── README.md
 ├── start.sh                        # 启动脚本
 └── .gitignore
+```
+
+---
+
+## 测试规范
+
+### 测试脚本组织
+
+| 目录 | 用途 | 运行方式 |
+|------|------|---------|
+| `backend/tests/unit/` | 单元测试，验证 prompt/schema/catalog 完整性 | `cd backend && python -m pytest tests/unit/ -v` |
+| `backend/tests/e2e/` | 端到端 Pipeline 测试，需后端运行 | 见下方命令 |
+
+### E2E 测试用法
+
+```bash
+# 单样本测试（生成详细 HTML 报告）
+cd backend && python tests/e2e/test_e2e_single.py --sample vortex-street --max-iter 3
+
+# 批量测试（运行多个样本）
+cd backend && python tests/e2e/test_e2e_batch.py --samples vortex-street plasma-waves heart-2d --max-iter 3 --timeout 480
+
+# 生成批量 HTML 报告（从已保存结果）
+cd backend && python tests/e2e/test_e2e_report.py --report-only
+```
+
+### 测试结果归档
+
+测试结果统一存放在 `backend/test_results/`（已 gitignored），目录命名格式：
+
+```
+backend/test_results/
+├── 2026-05-18_e2e-v2-baseline-19samples/       # V2 基线测试
+├── 2026-05-19_e2e-v3-cv-debug-5samples/        # CV 特征调试
+├── 2026-05-20_e2e-v4-cv-semantic-5samples/     # 语义级 CV 对比
+├── 2026-05-20_e2e-v1-batch-19samples/          # V1 批量测试
+├── 2026-05-20_ab-cv-toggle-19samples/          # CV 开关 A/B 测试
+└── 2026-05-20_fewshot-smoke-3samples/          # Few-shot 冒烟测试
+```
+
+**命名规则**：`YYYY-MM-DD_描述-样本数samples/`
+
+每次跑完 E2E 测试后，手动将结果移入对应目录：
+
+```bash
+# 示例：归档批量测试结果
+mv backend/test_e2e_results backend/test_results/2026-05-21_e2e-fewshot-19samples/
+```
+
+### 测试样本
+
+50 个测试样本在 `test-samples/`（gitignored），每个包含 `.webm` 视频和 `.json` 元数据。V2 基线测试使用的 19 个样本：
+
+```
+4-col-grad, auroras, buffer-bloom, cool-s-distance, electron,
+happy-diwali-2019, heart-2d, hypnotic-ripples, liquid-galss-test,
+liquid-glass-ui, moon-distance-2d, plasma-waves, shiny-circle,
+sparks-drifting, supah-frosted-glass, twitter-blue-check,
+vortex-street, warp-speed2, water-color-blending
 ```
 
 ---
