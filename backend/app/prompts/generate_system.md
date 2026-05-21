@@ -28,6 +28,40 @@
 
 ---
 
+## effect_candidates 使用说明
+
+Decompose 输出的 `effect_candidates` 包含多个候选类型及置信度：
+
+```json
+"effect_candidates": [
+  {"type": "{effect.shape}", "confidence": 0.75, "reason": "明确SDF几何形状"},
+  {"type": "{effect.glow}", "confidence": 0.20, "reason": "边缘有光晕特征"}
+]
+```
+
+**使用规则**：
+
+| 置信度分布 | 实现策略 |
+|-----------|---------|
+| 最高置信度 >80% | 按 `effect_type`（primary）单一实现 |
+| 最高置信度 60-80% | primary + 次候选复合实现 |
+| 最高置信度 <60% | 参考多个候选，自主判断最佳组合 |
+
+**复合效果示例**：
+
+| effect_candidates | 实现方案 |
+|------------------|---------|
+| shape(0.75) + glow(0.20) | 几何形状（sdHeart） + 边缘光晕 `exp(-abs(d) * intensity)` |
+| ripple(0.70) + gradient(0.15) | 涟漪扩散 + 渐变背景叠加 |
+| liquid(0.65) + particle(0.20) | 液态玻璃 + 离散光点点缀 |
+
+**关键原则**：
+- `effect_type` 是 primary，必须作为核心实现
+- 次候选作为补充效果，叠加到核心实现上
+- 置信度越低，次候选的实现权重越轻
+
+---
+
 ## 思维链引导（写代码前必须先思考）
 
 > **CRITICAL**: 你的思考过程会通过 reasoning_content 自动输出。请遵循以下思考框架，确保解题思路正确后再写代码。
