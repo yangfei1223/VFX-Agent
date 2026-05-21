@@ -16,10 +16,20 @@ from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
 
-RESULTS_DIR = Path(__file__).parent / "test_e2e_results"
-CLASSIFICATIONS_FILE = RESULTS_DIR / "sample_classifications.json"
-TEST_RESULTS_FILE = RESULTS_DIR / "test_results.json"
-REPORT_FILE = RESULTS_DIR / "index.html"
+RESULTS_ROOT = Path(__file__).parent.parent.parent / "test_results"
+# Default: auto-find latest results dir; override with --results-dir
+RESULTS_DIR = None
+CLASSIFICATIONS_FILE = None
+TEST_RESULTS_FILE = None
+REPORT_FILE = None
+
+
+def _find_latest_results_dir() -> Path | None:
+    """Find the most recent results directory under backend/test_results/"""
+    if not RESULTS_ROOT.exists():
+        return None
+    dirs = sorted([d for d in RESULTS_ROOT.iterdir() if d.is_dir()], reverse=True)
+    return dirs[0] if dirs else None
 
 
 def load_data():
@@ -67,6 +77,11 @@ def generate_html(classifications: dict, test_results: dict) -> str:
     scores = [(n, r.get("score", 0)) for n, r in test_results.items() if r.get("score", 0) > 0]
     avg_score = sum(s for _, s in scores) / len(scores) if scores else 0
     
+    # Three-tier scoring: PASS >= 0.85, ACCEPT 0.8-0.85, FAIL < 0.8
+    pass_count = sum(1 for _, s in scores if s >= 0.85)
+    accept_count = sum(1 for _, s in scores if 0.8 <= s < 0.85)
+    fail_count = sum(1 for _, s in scores if s < 0.8) + (total - len(scores))  # timeouts = fail
+    
     all_issues = []
     for name, r in test_results.items():
         for issue in r.get("issues", []):
@@ -76,10 +91,14 @@ def generate_html(classifications: dict, test_results: dict) -> str:
     issue_by_severity = Counter(i.get("severity", "?") for _, i in all_issues)
     issue_by_stage = Counter(i.get("id", "?")[0] for _, i in all_issues)
     
-    # By category
+    # By category — extract from visual_description.effect_type
     cat_results = defaultdict(list)
     for name, r in test_results.items():
-        cat = classifications.get(name, {}).get("effect_category", "unknown")
+        vd = r.get("visual_description", {})
+        cat = vd.get("effect_type", "unknown") if isinstance(vd, dict) else "unknown"
+        # Normalize: strip {effect.xxx} braces
+        if cat.startswith("{effect."):
+            cat = cat.replace("{effect.", "").rstrip("}")
         cat_results[cat].append(r)
     
     # === Build HTML ===
@@ -90,10 +109,19 @@ def generate_html(classifications: dict, test_results: dict) -> str:
     <div class="header">
         <h1>VFX-Agent E2E Test Report</h1>
         <p>Generated: {now} | Samples: {total} | Avg Score: {avg_score:.2f}</p>
+        <p>Scoring: <span style="color:#4caf50;font-weight:700">PASS ≥0.85</span> | <span style="color:#ff9800;font-weight:700">ACCEPT 0.8-0.85</span> | <span style="color:#f44336;font-weight:700">FAIL &lt;0.8</span></p>
     </div>""")
     
     # --- Overview Dashboard ---
     status_rows = "".join(f'<div class="stat-card"><div class="stat-value">{cnt}</div><div class="stat-label">{s}</div></div>' for s, cnt in statuses.most_common())
+    
+    # Three-tier scoring cards
+    tier_cards = f"""
+    <div class="stats-row" style="margin:16px 0">
+        <div class="stat-card"><div class="stat-value" style="color:#4caf50">{pass_count}</div><div class="stat-label">PASS (≥0.85)</div></div>
+        <div class="stat-card"><div class="stat-value" style="color:#ff9800">{accept_count}</div><div class="stat-label">ACCEPT (0.8-0.85)</div></div>
+        <div class="stat-card"><div class="stat-value" style="color:#f44336">{fail_count}</div><div class="stat-label">FAIL (&lt;0.8)</div></div>
+    </div>"""
     
     cat_rows = ""
     for cat in sorted(cat_results.keys()):
@@ -116,6 +144,7 @@ def generate_html(classifications: dict, test_results: dict) -> str:
     <div class="dashboard">
         <h2>Overview</h2>
         <div class="stats-row">{status_rows}</div>
+        {tier_cards}
         
         <div class="two-col">
             <div>
@@ -140,7 +169,7 @@ def generate_html(classifications: dict, test_results: dict) -> str:
         score = r.get("score", 0)
         iteration = r.get("iteration", 0)
         elapsed = r.get("elapsed_seconds", 0)
-        effect_type = r.get("effect_type", "") or cls.get("effect_category", "?")
+        effect_type = r.get("effect_type", "") or (r.get("visual_description", {}).get("effect_type", "?") if isinstance(r.get("visual_description"), dict) else "?")
         issues = r.get("issues", [])
         
         status_color = {"passed": "#4caf50", "max_iterations": "#ff9800", "failed": "#f44336", "timeout": "#9c27b0"}.get(status, "#999")
@@ -192,7 +221,7 @@ def generate_html(classifications: dict, test_results: dict) -> str:
     max_score = max(s for _, s in scores) if scores else 1
     for name, score in sorted_scores:
         width = (score / max_score * 100) if max_score > 0 else 0
-        color = "#4caf50" if score >= 0.7 else "#ff9800" if score >= 0.4 else "#f44336"
+        color = "#4caf50" if score >= 0.85 else "#ff9800" if score >= 0.8 else "#f44336"
         score_bars += f'<div class="bar-row"><span class="bar-label">{name}</span><div class="bar" style="width:{width}%;background:{color}">{score:.2f}</div></div>'
     
     sections.append(f"""
@@ -254,6 +283,28 @@ th {{ color: var(--text2); font-weight: 500; }}
 
 
 def main():
+    global RESULTS_DIR, CLASSIFICATIONS_FILE, TEST_RESULTS_FILE, REPORT_FILE
+    
+    import argparse
+    parser = argparse.ArgumentParser(description="VFX-Agent E2E Test Report Generator")
+    parser.add_argument("--results-dir", help="Specific results dir path (e.g. backend/test_results/2026-05-20_fewshot-19samples)")
+    args = parser.parse_args()
+    
+    if args.results_dir:
+        RESULTS_DIR = Path(args.results_dir)
+    else:
+        latest = _find_latest_results_dir()
+        if latest:
+            RESULTS_DIR = latest
+            print(f"Using latest results: {RESULTS_DIR.name}")
+        else:
+            print("No test results found under backend/test_results/. Run test_e2e_batch.py first.")
+            sys.exit(1)
+    
+    CLASSIFICATIONS_FILE = RESULTS_DIR / "sample_classifications.json"
+    TEST_RESULTS_FILE = RESULTS_DIR / "test_results.json"
+    REPORT_FILE = RESULTS_DIR / "index.html"
+    
     classifications, test_results = load_data()
     
     if not test_results:

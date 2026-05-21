@@ -98,14 +98,21 @@ class BaseAgent:
         temperature: float = 0.7,
         max_tokens: int = 4096,
         return_raw: bool = False,
+        enable_thinking: bool = False,
+        thinking_budget: int | None = None,
     ) -> str | dict:
         """
         调用 LLM，支持可选的图片输入（多模态）
         
         Args:
             return_raw: 如果 True，返回包含原始响应的 dict，用于显示 reasoning
+            enable_thinking: 开启思考模式（仅支持 Qwen3/DeepSeek 等推理模型）
+            thinking_budget: 思考预算（tokens），建议 1024-4096
         """
-        return self._chat_openai(system_prompt, user_prompt, image_paths, temperature, max_tokens, return_raw)
+        return self._chat_openai(
+            system_prompt, user_prompt, image_paths, temperature, max_tokens, 
+            return_raw, enable_thinking, thinking_budget
+        )
 
     def _chat_openai(
         self,
@@ -115,8 +122,13 @@ class BaseAgent:
         temperature: float,
         max_tokens: int,
         return_raw: bool = False,
+        enable_thinking: bool = False,
+        thinking_budget: int | None = None,
     ) -> str | dict:
-        """OpenAI-compatible API 调用"""
+        """OpenAI-compatible API 调用
+        
+        V2.0: 支持 thinking mode（Qwen3/DeepSeek）
+        """
         content: list[Any] = [{"type": "text", "text": user_prompt}]
 
         if image_paths:
@@ -135,28 +147,48 @@ class BaseAgent:
             {"role": "user", "content": content if image_paths else user_prompt},
         ]
 
+        # 构建 extra_body（thinking mode 参数）
+        extra_body = {}
+        if enable_thinking:
+            extra_body["enable_thinking"] = True
+            if thinking_budget:
+                extra_body["thinking_budget"] = thinking_budget
+
         response = self._openai_client.chat.completions.create(
             model=self.model,
             messages=messages,
             temperature=temperature,
             max_tokens=max_tokens,
+            extra_body=extra_body if extra_body else None,
         )
 
         response_content = response.choices[0].message.content or ""
+        reasoning_content = getattr(response.choices[0].message, 'reasoning_content', None) or ""
         
         # 检查是否被截断（finish_reason 不是 "stop"）
         if response.choices[0].finish_reason != "stop":
             print(f"WARNING: Response truncated (finish_reason={response.choices[0].finish_reason})")
         
+        # 打印 reasoning 信息（如果启用）
+        if enable_thinking and reasoning_content:
+            reasoning_tokens = 0
+            if response.usage and hasattr(response.usage, 'completion_tokens_details'):
+                details = response.usage.completion_tokens_details
+                reasoning_tokens = getattr(details, 'reasoning_tokens', 0) if details else 0
+            print(f"[Thinking] reasoning_tokens={reasoning_tokens}, reasoning_len={len(reasoning_content)}")
+        
         if return_raw:
             return {
                 "content": response_content,
+                "reasoning_content": reasoning_content,
                 "model": self.model,
                 "finish_reason": response.choices[0].finish_reason,
                 "usage": {
                     "prompt_tokens": response.usage.prompt_tokens if response.usage else None,
                     "completion_tokens": response.usage.completion_tokens if response.usage else None,
                     "total_tokens": response.usage.total_tokens if response.usage else None,
+                    "reasoning_tokens": getattr(response.usage.completion_tokens_details, 'reasoning_tokens', None) 
+                        if response.usage and hasattr(response.usage, 'completion_tokens_details') else None,
                 },
             }
         

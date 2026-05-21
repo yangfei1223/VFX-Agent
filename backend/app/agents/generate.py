@@ -63,6 +63,8 @@ class GenerateAgent(BaseAgent):
             temperature=temperature,
             max_tokens=max_tokens,
             return_raw=True,
+            enable_thinking=True,  # V2.0: 启用思考模式
+            thinking_budget=2048,  # 思考预算 2048 tokens
         )
 
         duration_ms = int((time.time() - start_time) * 1000)
@@ -102,6 +104,8 @@ class GenerateAgent(BaseAgent):
         # 保存 session
         if pipeline_id:
             usage = response.get("usage") if isinstance(response, dict) else None
+            reasoning_content = response.get("reasoning_content") if isinstance(response, dict) else None
+            
             SessionLogger.save_session(
                 pipeline_id=pipeline_id,
                 agent_name="generate",
@@ -109,6 +113,7 @@ class GenerateAgent(BaseAgent):
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
                 raw_response=content,
+                reasoning_content=reasoning_content,  # V2.0: 保存思维链
                 parsed_result={"shader": shader[:500] + "..." if len(shader) > 500 else shader},
                 usage=usage,
                 temperature=temperature,
@@ -132,6 +137,7 @@ class GenerateAgent(BaseAgent):
         
         V2.0: Agent 输出 GLSL + Self-check，需要提取 Self-check 之前的 GLSL 部分
         V3.0: 新增 Self-check 评分验证，低分警告
+        V4.0: 处理 qwen3 thinking 模式的混合输出（思考过程 + GLSL）
         """
         text = text.strip()
 
@@ -159,11 +165,33 @@ class GenerateAgent(BaseAgent):
             # 提取 Self-check 之前的 GLSL
             text = text[:self_check_idx].strip()
 
+        # V4.0: 处理混合输出（思考过程 + GLSL）
+        # 找到第一个 GLSL 函数定义（float sd/hash/noise 或 void mainImage）
+        # 思考过程通常是 Markdown 文本，GLSL 从函数定义开始
+        
+        # 先尝试提取 ```glsl 块
         if "```glsl" in text:
             match = re.search(r"```glsl\s*\n(.*?)```", text, re.DOTALL)
             if match:
                 return match.group(1).strip()
 
+        # 找第一个函数定义（忽略思考过程的伪代码块）
+        # Pattern: "float sdXXX" 或 "void mainImage"
+        func_match = re.search(r'^(float (sd|hash|noise|[a-z_]+)\(.*?\)|void mainImage)', text, re.MULTILINE)
+        
+        if func_match:
+            # 从第一个函数定义开始截取
+            start = func_match.start()
+            glsl_part = text[start:]
+            
+            # 如果有 ``` 块结束标记，截取到那里
+            if "```" in glsl_part:
+                block_end = glsl_part.find("```")
+                glsl_part = glsl_part[:block_end].strip()
+            
+            return glsl_part.strip()
+
+        # 兜底：尝试提取 ``` 块
         if "```" in text:
             first_block = text.find("```")
             last_block = text.rfind("```")

@@ -37,6 +37,7 @@ class SessionLogger:
         user_prompt: str,
         image_paths: list[str] | None = None,
         raw_response: str = "",
+        reasoning_content: str | None = None,  # V2.0: 思维链内容
         parsed_result: dict | str | None = None,
         usage: dict | None = None,
         temperature: float = 0.3,
@@ -56,6 +57,7 @@ class SessionLogger:
             user_prompt: User prompt 内容
             image_paths: 输入图片路径列表
             raw_response: LLM 原始响应
+            reasoning_content: 思维链内容（V2.0，仅 Generate Agent）
             parsed_result: 解析后的结果（dict 或 str）
             usage: Token 使用统计
             temperature: Temperature 设置
@@ -100,6 +102,8 @@ class SessionLogger:
             
             "output": {
                 "raw_response": raw_response,
+                "reasoning_content": reasoning_content,  # V2.0: 思维链
+                "reasoning_length": len(reasoning_content) if reasoning_content else 0,
                 "response_length": len(raw_response),
                 "parsed_result": parsed_result if isinstance(parsed_result, dict) else {"text": parsed_result},
                 "usage": usage or {},

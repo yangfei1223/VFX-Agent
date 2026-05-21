@@ -24,13 +24,16 @@ import httpx
 
 # === Config ===
 BACKEND_URL = "http://localhost:8000"
-SAMPLES_DIR = Path(__file__).parent.parent / "test-samples"
-RESULTS_DIR = Path(__file__).parent / "test_e2e_results"
-CLASSIFICATIONS_FILE = RESULTS_DIR / "sample_classifications.json"
-RESULTS_FILE = RESULTS_DIR / "test_results.json"
+SAMPLES_DIR = Path(__file__).parent.parent.parent.parent / "test-samples"
+# Results root: backend/test_results/
+TEST_RESULTS_ROOT = Path(__file__).parent.parent.parent / "test_results"
+# Set in main() via --label: TEST_RESULTS_ROOT / YYYY-MM-DD_label-Nsamples/
+RESULTS_DIR = None
+CLASSIFICATIONS_FILE = None
+RESULTS_FILE = None
 
 MAX_ITERATIONS = 3
-PASSING_THRESHOLD = 0.7
+PASSING_THRESHOLD = 0.85
 POLL_INTERVAL = 3  # seconds
 POLL_TIMEOUT = 360  # seconds per sample (6 min)
 FRAMES_DIR = Path("/tmp/vfx-frames")
@@ -178,10 +181,15 @@ def detect_issues(sample_name: str, state: dict) -> list[dict]:
         if "fragColor" not in shader:
             issues.append({"id": "G-no-fragColor", "severity": "P1", "desc": "Missing fragColor assignment"})
         
-        # Banned items
-        if "raymarching" in shader.lower() or "castRay" in shader:
+        # Banned items（排除 Self-check 部分的误判）
+        # 先提取 Self-check 之前的代码部分
+        shader_code = shader
+        if "[Self-check]" in shader:
+            shader_code = shader[:shader.find("[Self-check]")]
+        
+        if "raymarching" in shader_code.lower() or "castRay" in shader_code:
             issues.append({"id": "G-raymarching-banned", "severity": "P1", "desc": "Contains raymarching code"})
-        if "texture2D" in shader or "texture(" in shader:
+        if "texture2D" in shader_code or "texture(" in shader_code:
             issues.append({"id": "G-texture-fetch", "severity": "P2", "desc": "Contains texture fetch"})
         
         # Code length
@@ -389,19 +397,34 @@ def print_summary(results: dict):
 
 
 def main():
-    global POLL_TIMEOUT
+    global POLL_TIMEOUT, RESULTS_DIR, CLASSIFICATIONS_FILE, RESULTS_FILE
     
     parser = argparse.ArgumentParser(description="VFX-Agent E2E Batch Test")
     parser.add_argument("--all", action="store_true", help="Test all 50 samples")
     parser.add_argument("--samples", nargs="+", help="Test specific samples")
+    parser.add_argument("--label", default="e2e-batch", help="Label for results dir (e.g. 'fewshot-19samples')")
     parser.add_argument("--report-only", action="store_true", help="Only generate report from existing results")
     parser.add_argument("--timeout", type=int, default=POLL_TIMEOUT, help="Per-sample timeout in seconds")
     args = parser.parse_args()
     
+    # Determine samples first (needed for dir name)
+    if args.all:
+        samples = sorted([f.stem for f in SAMPLES_DIR.glob("*.webm")])
+    elif args.samples:
+        samples = args.samples
+    else:
+        samples = SELECTED_SAMPLES
+    
+    # Build results dir: backend/test_results/YYYY-MM-DD_label-Nsamples/
+    date_str = datetime.now().strftime('%Y-%m-%d')
+    RESULTS_DIR = TEST_RESULTS_ROOT / f"{date_str}_{args.label}-{len(samples)}samples"
+    CLASSIFICATIONS_FILE = RESULTS_DIR / "sample_classifications.json"
+    RESULTS_FILE = RESULTS_DIR / "test_results.json"
+    
     POLL_TIMEOUT = args.timeout
     
     # Ensure results dir
-    RESULTS_DIR.mkdir(exist_ok=True)
+    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     
     # Check backend
     if not args.report_only:
@@ -413,18 +436,10 @@ def main():
             print(f"Start with: ./start.sh start")
             sys.exit(1)
     
-    # Determine samples to test
     if args.report_only:
         results = load_results()
         print_summary(results)
         return
-    
-    if args.all:
-        samples = sorted([f.stem for f in SAMPLES_DIR.glob("*.webm")])
-    elif args.samples:
-        samples = args.samples
-    else:
-        samples = SELECTED_SAMPLES
     
     print(f"Samples to test: {len(samples)}")
     print(f"Max iterations: {MAX_ITERATIONS}")

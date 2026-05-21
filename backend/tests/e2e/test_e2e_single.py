@@ -156,7 +156,7 @@ def generate_html_report(state: dict, sample_name: str, pipeline_id: str):
     status = state.get("status", "?")
     iteration = snapshot.get("iteration", 0)
     passed = state.get("passed", False)
-    score = inspect_feedback.get("overall_score", 0)
+    score = inspect_feedback.get("overall_score", 0) if inspect_feedback else 0
     
     # 生成 HTML
     html = f"""<!DOCTYPE html>

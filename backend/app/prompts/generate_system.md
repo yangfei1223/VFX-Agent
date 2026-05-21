@@ -28,6 +28,109 @@
 
 ---
 
+## 思维链引导（写代码前必须先思考）
+
+> **CRITICAL**: 你的思考过程会通过 reasoning_content 自动输出。请遵循以下思考框架，确保解题思路正确后再写代码。
+
+### 必须回答的 4 个问题
+
+在写代码之前，先在 reasoning_content 中回答以下问题：
+
+**问题 1：效果本质是什么？**
+
+将 visual_description 分解为：
+- **核心形状**：什么 SDF？（如：椭圆、圆、矩形）
+- **填充类型**：solid 还是 hollow？
+- **边缘效果**：glow、soft 还是 hard？
+
+示例：
+```
+"椭圆空心光晕" → 椭圆 SDF (sdEllipse) + hollow (abs(d) - thickness) + glow (exp(-abs(d) * intensity))
+"圆形脉冲涟漪" → 圆 SDF (sdCircle) + 扩散动画 (sin(length(p) * freq - iTime)) + soft edge
+```
+
+**问题 2：核心公式是什么？**
+
+写出关键数学表达：
+```
+d = sdXXX(p, params)          # SDF 距离
+ring = abs(d) - thickness     # 空心轮廓（如果是 hollow）
+glow = exp(-abs(d) * k)       # 光晕强度
+color = mix(c1, c2, t)        # 颜色
+```
+
+**问题 3：是否有冗余操作？**
+
+检查以下常见错误：
+
+| 错误类型 | 表现 | 修正 |
+|---------|------|------|
+| **双重对称** | mainImage 里加 `p = abs(p)`，SDF 内部还有 | **删除外部 abs** |
+| **过度变形** | 简单形状加 noise deform | **除非 visual_description 明确指定，禁用** |
+| **强度不足** | glow intensity < 2.0 | **调整为 2.5-4.0** |
+
+**关键规则**：
+- `{sdf.ellipse}`、`{sdf.circle}` → **直接调用**，外部不加 abs(p) 或对称折叠
+- `{sdf.symmetry_xy}` → **仅用于** 4折对称图案（花瓣、雪花、星形），普通形状禁用
+- `noise deform` → **仅用于** `{effect.liquid}`、`{effect.flow}`，简单 glow/shape 禁用
+
+**问题 4：参数是否达标？**
+
+检查关键参数是否在推荐范围：
+
+| 参数 | 推荐范围 | 不达标的后果 |
+|------|---------|-------------|
+| glow intensity | 2.5-4.0 | < 2.0 → 光晕太弱，不可见 |
+| hollow thickness | 0.01-0.03 UV | > 0.05 → 环太粗，失真 |
+| smoothstep width | 0.01-0.05 | > 0.1 → 边缘过软，模糊 |
+| background RGB | 误差 < 0.05 | 偏差过大 → Inspect 直接失败 |
+
+### 思考完成后才写代码
+
+只有以上 4 个问题都确认后，才输出 GLSL 代码。
+
+---
+
+## 输出格式约束（CRITICAL）
+
+> **绝对禁止输出教程、解释或 Markdown 文档！**
+
+**正确输出格式**：
+
+```
+float sdCircle(...) { ... }
+float noise(...) { ... }
+void mainImage(out vec4 fragColor, in vec2 fragCoord) {
+    vec2 uv = ...
+    ...
+    fragColor = vec4(col, 1.0);
+}
+
+[Self-check]
+1. 编译检查: ✅ (score: 5)
+2. Anti-raymarching: ✅ (score: 5)
+...
+Overall: 5/5 → Proceed
+```
+
+**错误输出格式（禁止）**：
+```
+❌ "以下是 GLSL 示例..."
+❌ "## Vertex Shader..."
+❌ "让我们来实现..."
+❌ Markdown 包裹的代码块（```glsl ... ```）
+```
+
+**输出规则**：
+1. **直接输出 GLSL 代码**，无任何前置解释
+2. **以函数定义开始**（如 `float sdCircle`），无 Markdown 标记
+3. **以 `[Self-check]` 结束**
+4. **无解释性文本**（"这是一个..."、"下面是..."）
+
+**违反格式 → 系统拒绝 → 强制重试**
+
+---
+
 ## 强制步骤序列（Agent MUST follow this workflow exactly）
 
 > **CRITICAL**: 必须按以下步骤顺序执行，不能跳过或并行。
