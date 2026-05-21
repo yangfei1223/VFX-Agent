@@ -286,28 +286,40 @@ PROXY=socks5://127.0.0.1:1080
 
 ### 更新日志
 
+#### v0.3.0-thinking-mode (2026-05-20)
+
+**Thinking Mode 启用**：
+- ✨ **Generate Agent thinking mode**：启用 Qwen3.5 thinking API，输出 reasoning_content
+- 🧠 **4-question thinking framework**：效果本质 → 核心公式 → 冗余检查 → 参数验证
+- 📝 **Session 日志增强**：保存 reasoning_content 到 session logger
+- 🐛 **Self-check text pollution 修复**：修复 test_e2e_batch.py 将 Self-check 文本误识别为 shader 的问题
+
+**测试结果**（19 samples, max_iter=1, few-shot enabled）：
+- sparks-drifting: 0.84 ✅ passed at iter=0
+- cool-s-distance: 0.72 (still failing, need further investigation)
+- shiny-circle: 0.35 (hollow识别问题)
+
+**关键改进**：
+- Generate Agent thinking 输出显示算子选择决策（如 "不需要外部 abs(p)，sdCircle 内部已处理"）
+- 消除之前 crash 问题（vortex-street 从 0.00 crash → 0.65）
+
 #### v0.3.0 (2026-05-07)
 
 **System Prompt 架构优化**（参考 Google GenerativeUI 论文）：
 - ✨ **Role 定义修正**：真实职业定位（视觉分析专家/图形程序开发专家/视效技术总监）
-- 📚 **Philosophy 补充**：方法论 + 目标导向 + 协作理念（30-35 行，而非之前仅 3 行）
+- 📚 **Philosophy 补充**：方法论 + 目标导向 + 协作理念
 - 🌐 **Common Info 新增**：平台、协作规则、视觉标准、术语约定（三 Agent 共享）
-- 🧠 **Planning Instructions**：7 步内部思考流程（替代简单的推理流程）
-- ⚠️ **Failure Examples**：反例警示（展示错误行为的后果，而非仅正面示例）
-- 🧹 **历史内容删除**：移除 DSL vs 自然语言对比表（System Prompt 只关心当前方法）
-
-**预期效果**（参考 GenerativeUI Table 5）：
-- Decompose 第一次生成准确性 ↑ 30-50%（明确的量化要求和反例警示）
-- Generate 编译错误率 ↓（清晰的禁止行为和反例）
-- Inspect 反馈可操作性 ↑（语义描述而非模糊评价）
+- 🧠 **Planning Instructions**：7 步内部思考流程
+- ⚠️ **Failure Examples**：反例警示（展示错误行为的后果）
+- 🧹 **历史内容删除**：移除 DSL vs 自然语言对比表
 
 **Skill 系统简化**：
-- 🔄 **内容合并**：Skill 内容合并到 system prompt（静态知识无需动态加载）
-- 📦 **职责边界修正**：Operator Catalog 归 Generate（Decompose 只做语义描述）
+- 🔄 **内容合并**：Skill 内容合并到 system prompt
+- 📦 **职责边界修正**：Operator Catalog 归 Generate
 
 **API 修复**：
-- 🐛 **build_*_prompt 返回值修复**：函数返回 3 个值（system_prompt, user_prompt, image_paths）
-- 📝 **Form data 使用纠正**：API 期待 Form data 而非 JSON body
+- 🐛 **build_*_prompt 返回值修复**：函数返回 3 个值
+- 📝 **Form data 使用纠正**：API 期待 Form data
 
 #### v0.2.0 (2026-04-25)
 
