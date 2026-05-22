@@ -138,17 +138,14 @@ class GenerateAgent(BaseAgent):
         V2.0: Agent 输出 GLSL + Self-check，需要提取 Self-check 之前的 GLSL 部分
         V3.0: 新增 Self-check 评分验证，低分警告
         V4.0: 处理 qwen3 thinking 模式的混合输出（思考过程 + GLSL）
+        V5.0: 修复 [Self-check] 在 ```glsl 块内部导致提取不完整的 bug
         """
         text = text.strip()
 
-        # V2.0: 提取 Self-check 之前的 GLSL 部分
+        # V3.0: 提取 Self-check 评分（从完整文本中，不截断）
         self_check_idx = text.find('[Self-check]')
         if self_check_idx > 0:
-            # V3.0: 先提取 Self-check 部分
             self_check_text = text[self_check_idx:]
-            
-            # 解析 Overall 评分
-            # Pattern: "Overall: X/5" or "Overall: X/Y"
             overall_match = re.search(r'Overall:\s*(\d+)/(\d+)', self_check_text)
             if overall_match:
                 score = int(overall_match.group(1))
@@ -156,27 +153,42 @@ class GenerateAgent(BaseAgent):
                 if score < 3:
                     print(f"⚠️  WARNING: Self-check score {score}/{max_score} below threshold (3)")
                     print(f"   Agent may have produced low-quality output")
-                    # 打印 Self-check 细节
                     lines = self_check_text.split('\n')[:10]
                     for line in lines[:5]:
                         if line.strip():
                             print(f"   {line.strip()}")
-            
-            # 提取 Self-check 之前的 GLSL
-            text = text[:self_check_idx].strip()
 
-        # V4.0: 处理混合输出（思考过程 + GLSL）
-        # 找到第一个 GLSL 函数定义（float sd/hash/noise 或 void mainImage）
-        # 思考过程通常是 Markdown 文本，GLSL 从函数定义开始
-        
-        # 先尝试提取 ```glsl 块
+        # V5.0: 先尝试提取 ```glsl 块（在完整文本上操作）
+        # V6.0: 处理 DeepSeek 输出无闭合 ``` 的情况
         if "```glsl" in text:
             match = re.search(r"```glsl\s*\n(.*?)```", text, re.DOTALL)
             if match:
-                return match.group(1).strip()
+                shader = match.group(1).strip()
+                # 在提取的 shader 中去掉 [Self-check] 部分
+                sc_idx = shader.find('[Self-check]')
+                if sc_idx > 0:
+                    shader = shader[:sc_idx].strip()
+                return shader
+            
+            # V6.0 fallback: 如果 ```glsl 存在但没有闭合 ```，提取到末尾
+            glsl_start = text.find("```glsl")
+            if glsl_start >= 0:
+                shader = text[glsl_start + 7:]  # 跳过 ```glsl
+                # 去掉 [Self-check] 部分
+                sc_idx = shader.find('[Self-check]')
+                if sc_idx > 0:
+                    shader = shader[:sc_idx].strip()
+                # 去掉末尾可能的 ```（如果有）
+                if shader.endswith('```'):
+                    shader = shader[:-3].strip()
+                return shader.strip()
 
+        # V2.0 fallback: 如果没有 ```glsl 块，先去掉 [Self-check]
+        if self_check_idx > 0:
+            text = text[:self_check_idx].strip()
+
+        # V4.0: 处理混合输出（思考过程 + GLSL）
         # 找第一个函数定义（忽略思考过程的伪代码块）
-        # Pattern: "float sdXXX" 或 "void mainImage"
         func_match = re.search(r'^(float (sd|hash|noise|[a-z_]+)\(.*?\)|void mainImage)', text, re.MULTILINE)
         
         if func_match:
