@@ -46,17 +46,45 @@ def _run_pipeline(pipeline_id: str, initial_state: PipelineState):
             
             print(f"[Pipeline {pipeline_id}] All nodes completed")
             
-            result_dict = {k: v for k, v in current_state.items()}
-            if current_state.get("passed"):
+            # === 最终输出逻辑：使用 best 版本而非 current ===
+            # 当达到 max_iterations 且未通过时，检查 checkpoint 是否更好
+            final_state = current_state
+            checkpoint = current_state.get("checkpoint", {})
+            snapshot = current_state.get("snapshot", {})
+            
+            if not current_state.get("passed") and current_state.get("iteration", 0) >= get_runtime_config().max_iterations:
+                best_score = checkpoint.get("best_score", 0)
+                current_score = snapshot.get("inspect_feedback", {}).get("overall_score", 0)
+                
+                if best_score > current_score and checkpoint.get("best_shader"):
+                    print(f"[Pipeline {pipeline_id}] Using checkpoint best (score {best_score:.2f} > current {current_score:.2f})")
+                    # 使用 checkpoint 的 best 版本
+                    final_state = {
+                        **current_state,
+                        "snapshot": {
+                            **snapshot,
+                            "shader": checkpoint.get("best_shader", snapshot.get("shader", "")),
+                            "inspect_feedback": {
+                                **snapshot.get("inspect_feedback", {}),
+                                "overall_score": best_score,
+                            },
+                        },
+                    }
+                else:
+                    print(f"[Pipeline {pipeline_id}] Using current snapshot (best {best_score:.2f} <= current {current_score:.2f})")
+            
+            result_dict = {k: v for k, v in final_state.items()}
+            if final_state.get("passed"):
                 result_dict["status"] = "passed"
-            elif current_state.get("iteration", 0) >= get_runtime_config().max_iterations:
+            elif final_state.get("iteration", 0) >= get_runtime_config().max_iterations:
                 result_dict["status"] = "max_iterations"
-            elif current_state.get("error"):
+            elif final_state.get("error"):
                 result_dict["status"] = "failed"
             else:
                 result_dict["status"] = "completed"
             
             print(f"[Pipeline {pipeline_id}] Final status: {result_dict['status']}")
+            print(f"[Pipeline {pipeline_id}] Final score: {result_dict.get('snapshot', {}).get('inspect_feedback', {}).get('overall_score', 0):.2f}")
             pipeline_results[pipeline_id] = result_dict
         
         asyncio.run(_async_run())
