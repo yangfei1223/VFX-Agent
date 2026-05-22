@@ -9,6 +9,10 @@ VALID_EFFECT_TYPES = {
     "{effect.gradient}",
     "{effect.frosted}",
     "{effect.flow}",
+    "{effect.shape}",
+    "{effect.liquid}",
+    "{effect.particle}",
+    "{effect.warp}",
 }
 
 VALID_SDF_TYPES = {
@@ -17,12 +21,24 @@ VALID_SDF_TYPES = {
     "{sdf.rounded_box}",
     "{sdf.ellipse}",
     "{sdf.segment}",
+    "{sdf.ring}",
+    "{sdf.arc}",
+    "{sdf.triangle}",
+    "{sdf.pentagon}",
+    "{sdf.hexagon}",
+    "{sdf.octagon}",
+    "{sdf.star}",
+    "{sdf.vesica}",
+    "{sdf.capsule}",
+    "{sdf.heart}",
 }
 
 VALID_EDGE_TYPES = {
     "{edge.hard}",
+    "{edge.soft_thin}",
     "{edge.soft_medium}",
     "{edge.soft_wide}",
+    "{edge.glow}",
 }
 
 VALID_BG_TYPES = {
