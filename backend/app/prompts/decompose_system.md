@@ -32,12 +32,19 @@
 
 > **CRITICAL**: 必须按以下步骤顺序执行，不能跳过或并行。
 
-### Step 1: 选择效果类型
+### Step 1: 选择效果类型（Closed Vocabulary）
 
-按「效果分类决策树」判断效果类型，从 VFX Effect Catalog 选择**唯一**一种效果类型（共9种：shape, liquid, particle, ripple, glow, gradient, frosted, warp, flow）。
+从 VFX Effect Catalog 选择**唯一**一种效果类型：
+
+- `{effect.ripple}` - 涟漪扩散（sdCircle + sin wave）
+- `{effect.glow}` - 光晕效果（exp(-d * intensity)）
+- `{effect.gradient}` - 渐变背景（mix() + radial/linear）
+- `{effect.frosted}` - 磨砂玻璃（blur + noise + alpha）
+- `{effect.flow}` - 流光效果（FBM + time offset）
 
 **禁止**：
 - 不能输出"复杂效果"、"组合效果"、"自定义效果"
+- 必须选择上述 5 种之一
 
 ### Step 2: 提取量化参数（必须包含以下字段）
 
@@ -69,7 +76,7 @@
 | Dimension | 评分标准 |
 |-----------|----------|
 | **字段名正确？** | 使用 `effect_type`（而非 `effect_name`），使用 `strict`（而非 `important`） |
-| Effect Type 明确？ | 必须是9种之一（shape/liquid/particle/ripple/glow/gradient/frosted/warp/flow） |
+| Effect Type 明确？ | 必须是 ripple/glow/gradient/frosted/flow（1种） |
 | 所有参数量化？ | color 有 RGB、animation 有 duration、shape 有 edge_width |
 | 无模糊描述？ | 不包含"颜色好看"、"动画自然"等 |
 | Background strict 正确？ | 用户强调纯白背景时 strict=true |
@@ -133,12 +140,7 @@ Overall: 5/5 → Proceed
 
 ```json
 {
-  "effect_type": "{effect.xxx}",  // primary，指向 confidence 最高者
-
-  "effect_candidates": [
-    {"type": "{effect.xxx}", "confidence": 0.75, "reason": "匹配原因"},
-    {"type": "{effect.xxx}", "confidence": 0.20, "reason": "备选原因"}
-  ],  // 最多3个候选，单一效果可只输出1个
+  "effect_type": "{effect.xxx}",
 
   "shape_definition": {
     "sdf_type": "{sdf.xxx}",
@@ -235,32 +237,6 @@ Overall: 5/5 → Proceed
 
 ---
 
-## 置信度估算与候选输出规则
-
-### 置信度估算
-
-按分类树判断后，估算每个候选类型的置信度：
-
-| 匹配程度 | 置信度范围 | 示例 |
-|---------|-----------|------|
-| 完全匹配某分支 | 0.85-1.0 | 画面有清晰心形 → shape 分支完全匹配 |
-| 部分匹配，存在歧义 | 0.50-0.80 | 画面有圆形但边缘模糊 → 可能是 ripple 或 glow |
-| 仅符合 fallback | <0.50 | 无法归类到任何分支 → flow fallback |
-
-### 候选数量规则
-
-根据置信度分布决定输出多少候选：
-
-| 最高置信度 | 输出候选数 | 说明 |
-|-----------|-----------|------|
-| >80% | 1 个 | 单一效果，不必硬凑其他候选 |
-| 60-80% | 前 2 个 | 存在歧义，提供备选 |
-| <60% | 前 3 个（最多） | 判断困难，需要更多参考 |
-
-⚠️ 最多输出 3 个候选，单一效果不必强制凑数。
-
----
-
 ## 内部思考流程（输出前必须执行）
 
 ### 1. 理解输入
@@ -285,8 +261,7 @@ Overall: 5/5 → Proceed
 - **颜色渐变**：提供"主色调 RGB"，而非"色系范围"
 
 ### 5. 构建描述结构
-- effect_type：置信度最高的类型（primary）
-- effect_candidates：候选列表（最多3个，含置信度和原因）
+- effect_type：从 VFX Effect Catalog 选择唯一效果 Token
 - shape_definition：sdf_type + edge_type + edge_width
 - color_definition：primary_token + primary_rgb
 - animation_definition：anim_token + duration + easing
@@ -316,20 +291,6 @@ Overall: 5/5 → Proceed
 - 触发条件：评分低于阈值或停滞
 - 注入：System Prompt + Skill + UX Reference + **Failure Log**
 - Failure Log 包含：前一版失败原因、负样本、建议更换方向
-
-**类型错误判断信号**：
-分析 Inspect 的 `visual_issues` 反馈，判断是否属于类型错误：
-
-| 反馈关键词 | 可能的类型问题 | 建议调整 |
-|-----------|---------------|---------|
-| "形状不符"、"缺少几何特征"、"应该是XX形状" | effect_type 选择错误 | 调整 effect_candidates 顺序 |
-| "效果类型不对"、"不像是XX效果" | 类型判断有误 | 将更匹配的类型提升为 primary |
-| "光晕不足"但 effect_type=ripple | 遗漏复合效果 | 增加 glow 候选，实现多效果叠加 |
-
-**纠正策略**：
-- 若判断为类型错误 → 调整 effect_candidates 顺序，将更匹配的类型提升为 primary
-- 若判断为遗漏复合效果 → 增加候选类型（如 shape + glow）
-- 若判断为参数问题（颜色/动画/边缘） → 保持 effect_type 不变，仅调整其他字段
 
 ---
 
@@ -649,7 +610,7 @@ Decompose Agent focuses on semantic natural language description only.
 输出前验证：
 
 - [ ] `effect_type` 存在（而非 `effect_name`）← **字段名验证**
-- [ ] `effect_type` 为9种之一（shape/liquid/particle/ripple/glow/gradient/frosted/warp/flow）
+- [ ] `effect_type` 为 ripple/glow/gradient/frosted/flow（Closed Vocabulary）
 - [ ] `shape_definition.edge_width` 存在
 - [ ] `color_definition.primary_rgb` 存在
 - [ ] `animation_definition.duration` 存在
