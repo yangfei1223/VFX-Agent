@@ -248,6 +248,11 @@ VFX-Agent/
 
 ## 测试规范
 
+> 基线标准：`backend/test_results/2026-05-18_e2e-v2-baseline-19samples/`
+> 以后所有测试必须按此标准执行。
+
+---
+
 ### 测试脚本组织
 
 | 目录 | 用途 | 运行方式 |
@@ -255,53 +260,196 @@ VFX-Agent/
 | `backend/tests/unit/` | 单元测试，验证 prompt/schema/catalog 完整性 | `cd backend && python -m pytest tests/unit/ -v` |
 | `backend/tests/e2e/` | 端到端 Pipeline 测试，需后端运行 | 见下方命令 |
 
-### E2E 测试用法
+---
+
+### E2E 测试参数
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `max_iterations` | **3** | 最大迭代次数，必须跑满 3 次 |
+| `passing_threshold` | **0.85** | 通过阈值 |
+| `acceptable_threshold` | **0.80** | 可接受阈值 |
+| `timeout` | **900s** | 单样本超时时间 |
+
+**评分标准**：
+- **≥0.85**: ✅ PASS（通过）
+- **0.80-0.85**: ⚠️ ACCEPTABLE（可接受）
+- **<0.80**: ❌ FAIL（不可接受）
+
+---
+
+### E2E 测试命令
 
 ```bash
-# 单样本测试（生成详细 HTML 报告）
-cd backend && python tests/e2e/test_e2e_single.py --sample vortex-street --max-iter 3
+# 单样本测试
+cd backend && python tests/e2e/test_e2e_single.py <sample_name>
 
-# 批量测试（运行多个样本）
-cd backend && python tests/e2e/test_e2e_batch.py --samples vortex-street plasma-waves heart-2d --max-iter 3 --timeout 480
+# 批量测试（所有样本）
+cd backend && python tests/e2e/test_e2e_batch.py --all
 
-# 生成批量 HTML 报告（从已保存结果）
+# 批量测试（指定样本）
+cd backend && python tests/e2e/test_e2e_batch.py --samples 4-col-grad heart-2d shiny-circle
+
+# 生成 HTML 报告（从已保存结果）
 cd backend && python tests/e2e/test_e2e_report.py --report-only
 ```
 
-### 测试结果归档
+---
 
-测试结果统一存放在 `backend/test_results/`（已 gitignored），目录命名格式：
+### 测试结果目录结构
+
+每次测试结果必须保存到 `backend/test_results/<YYYY-MM-DD_描述>/`：
 
 ```
-backend/test_results/
-+-- 2026-05-18_e2e-v2-baseline-19samples/       # V2 基线测试
-+-- 2026-05-19_e2e-v3-cv-debug-5samples/        # CV 特征调试
-+-- 2026-05-20_e2e-v4-cv-semantic-5samples/     # 语义级 CV 对比
-+-- 2026-05-20_e2e-v1-batch-19samples/          # V1 批量测试
-+-- 2026-05-20_ab-cv-toggle-19samples/          # CV 开关 A/B 测试
-+-- 2026-05-20_fewshot-smoke-3samples/          # Few-shot 冒烟测试
+backend/test_results/2026-05-18_e2e-v2-baseline-19samples/
++-- index.html                    # 主 HTML 报告（可视化对比）
++-- test_results.json             # 测试结果汇总（JSON）
++-- sample_classifications.json   # 样本分类信息
++-- <sample_name>/                # 每个样本的详细数据
+|   +-- pipeline_state.json       # Pipeline 状态快照
+|   +-- reference_frame.png       # 设计参考截图
+|   +-- render_0.png              # 迭代 0 渲染截图
+|   +-- render_1.png              # 迭代 1 渲染截图
+|   +-- render_2.png              # 迭代 2 渲染截图
+|   +-- render_3.png              # 迭代 3 渲染截图（如有）
+|   +-- shader.glsl               # 最终生成的 shader
+|   +-- visual_description.json   # Decompose 输出的 visual_description
 ```
 
-**命名规则**: `YYYY-MM-DD_描述-样本数samples/`
+---
 
-每次跑完 E2E 测试后，手动将结果移入对应目录：
+### test_results.json 结构
+
+每个样本的测试结果必须包含以下字段：
+
+```json
+{
+  "<sample_name>": {
+    "sample_name": "4-col-grad",
+    "pipeline_id": "xxx-xxx-xxx",
+    "status": "passed|failed|timeout",
+    "elapsed_seconds": 79.2,
+    "score": 0.95,
+    "iteration": 0,
+    "effect_type": "{effect.gradient}",
+    "shader_lines": 19,
+    "issues": [
+      {
+        "id": "P-pipeline-failed",
+        "severity": "P0|P1|P2",
+        "desc": "问题描述"
+      }
+    ],
+    "issue_count": 0,
+    "timestamp": "2026-05-19T13:25:00"
+  }
+}
+```
+
+**Issue Severity**：
+- **P0**: 关键问题（pipeline 失败、超时、无 shader）
+- **P1**: 重要问题（编译错误、渲染失败）
+- **P2**: 次要问题（字段缺失、格式问题）
+
+---
+
+### sample_classifications.json 结构
+
+样本分类信息用于记录每个样本的预期效果类型：
+
+```json
+{
+  "<sample_name>": {
+    "effect_category": "gradient",
+    "effect_name": "Smooth Multi-color Gradient Background",
+    "visual_description": "自然语言描述",
+    "dominant_colors": ["Green", "Red"],
+    "has_animation": false,
+    "complexity": "simple|medium|complex",
+    "is_2d": true,
+    "key_elements": ["Color blending", "Smooth transition"],
+    "shape_type": "abstract",
+    "fill_type": "solid|hollow|mixed",
+    "animation_type": "none|flow|pulse|rotate"
+  }
+}
+```
+
+---
+
+### 测试样本列表
+
+基线测试使用的 **19 个样本**（存放于 `test-samples/`）：
+
+| 样本名 | 效果类型 | 预期难度 |
+|--------|---------|---------|
+| 4-col-grad | gradient | simple |
+| auroras | flow | complex |
+| buffer-bloom | glow | simple |
+| cool-s-distance | shape/warp | medium |
+| electron | particle | complex |
+| happy-diwali-2019 | particle | medium |
+| heart-2d | shape | simple |
+| hypnotic-ripples | ripple | simple |
+| liquid-galss-test | liquid | medium |
+| liquid-glass-ui | liquid/special | medium |
+| moon-distance-2d | warp | medium |
+| plasma-waves | flow/glow | medium |
+| shiny-circle | glow | simple |
+| sparks-drifting | particle | complex |
+| supah-frosted-glass | gradient/liquid | simple |
+| twitter-blue-check | shape | simple |
+| vortex-street | liquid | medium |
+| warp-speed2 | particle/space | medium |
+| water-color-blending | liquid | medium |
+
+---
+
+### V2 基线测试结果（2026-05-18）
+
+| 样本 | 评分 | 状态 | 效果类型 | Shader 行数 |
+|------|------|------|---------|------------|
+| 4-col-grad | **0.95** | ✅ PASS | gradient | 19 |
+| shiny-circle | **0.88** | ✅ PASS | glow | 72 |
+| twitter-blue-check | **0.87** | ✅ PASS | shape | 83 |
+| water-color-blending | **0.86** | ✅ PASS | flow | 80 |
+| hypnotic-ripples | **0.86** | ✅ PASS | ripple | 56 |
+| plasma-waves | **0.83** | ⚠️ ACCEPT | flow | 66 |
+| supah-frosted-glass | **0.82** | ⚠️ ACCEPT | liquid | 66 |
+| vortex-street | **0.81** | ⚠️ ACCEPT | warp | 109 |
+| warp-speed2 | **0.81** | ⚠️ ACCEPT | particle | 112 |
+| buffer-bloom | **0.74** | ❌ FAIL | glow | 96 |
+| happy-diwali-2019 | **0.78** | ❌ FAIL | particle | 112 |
+| heart-2d | **0.78** | ❌ FAIL | shape | 68 |
+| moon-distance-2d | **0.72** | ❌ FAIL | warp | 106 |
+| liquid-glass-ui | **0.73** | ❌ FAIL | liquid | 155 |
+| electron | **0.68** | ❌ FAIL | particle | 145 |
+| liquid-galss-test | **0.52** | ❌ FAIL | liquid | 106 |
+| cool-s-distance | **0.52** | ❌ FAIL | warp | 109 |
+| auroras | **0.42** | ❌ FAIL | flow | 121 |
+| sparks-drifting | **0.00** | ❌ TIMEOUT | - | 0 |
+
+**统计**：
+- Passed (≥0.85): **5/19 (26.3%)**
+- Acceptable (0.80-0.85): **4/19 (21.1%)**
+- Failed (<0.80): **10/19 (52.6%)**
+- Average Score: **0.71**
+
+---
+
+### 测试报告查看
 
 ```bash
-# 示例：归档批量测试结果
-mv backend/test_e2e_results backend/test_results/2026-05-21_e2e-fewshot-19samples/
+# 打开 V2 基线报告
+open backend/test_results/2026-05-18_e2e-v2-baseline-19samples/index.html
 ```
 
-### 测试样本
-
-50 个测试样本在 `test-samples/`（gitignored），每个包含 `.webm` 视频和 `.json` 元数据。基线测试使用的 19 个样本：
-
-```
-4-col-grad, auroras, buffer-bloom, cool-s-distance, electron,
-happy-diwali-2019, heart-2d, hypnotic-ripples, liquid-galss-test,
-liquid-glass-ui, moon-distance-2d, plasma-waves, shiny-circle,
-sparks-drifting, supah-frosted-glass, twitter-blue-check,
-vortex-street, warp-speed2, water-color-blending
-```
+HTML 报告包含：
+- 评分分布柱状图
+- 每个样本的渲染对比（reference vs render）
+- effect_type 分类统计
+- shader 行数分布
+- issue severity 分析
 
 ---
 
