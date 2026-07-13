@@ -229,19 +229,47 @@ class PipelineOrchestrator:
     ) -> str:
         """Build the user prompt passed to codex via stdin."""
         keyframe_list = "\n".join(f"- {p}" for p in keyframes)
-        return f"""Generate a GLSL shader that matches the reference images below.
+        return f"""You are running inside a VFX shader generation pipeline.
 
-## Reference Images ({len(keyframes)} keyframes in workdir/keyframes/)
+## Setup
+
+Your working directory contains:
+- `AGENTS.md` (auto-loaded) — project context and VFX terminology
+- `skills/vfx-shader/SKILL.md` — the 6-phase workflow you MUST follow
+- `skills/vfx-shader/reference/` — shader templates + few-shot examples + scripts
+- `keyframes/001.png`, `002.png`, ... — reference images ({len(keyframes)} provided)
+
+## Your Task
+
+1. FIRST: `Read skills/vfx-shader/SKILL.md` to understand the 6-phase workflow.
+2. Then execute phases 1-6 in order:
+   - Phase 1: Analyze keyframes → write `visual_description.json`
+   - Phase 2: Generate → write `shader.glsl`
+   - Phase 3: Validate via `python skills/vfx-shader/reference/scripts/validate_shader.py shader.glsl`
+   - Phase 4: Render via `python skills/vfx-shader/reference/scripts/render_shader.py shader.glsl 2.0`
+   - Phase 5: Spawn subagent evaluator with `fork_turns="none"` (MANDATORY — no self-eval)
+   - Phase 6: If subagent score >= 0.85, finalize. Else iterate (max {max_iterations} times).
+
+## Reference Images
 {keyframe_list}
 
 ## User Notes
 {notes or "(none)"}
 
-## Constraints
-- Maximum {max_iterations} improvement iterations
-- Output `final_shader.glsl` (best shader) and `evaluation.json` (latest subagent evaluation)
-- Use skill `vfx-shader-generation`. Follow its workflow EXACTLY.
-- Phase 5 (evaluation) MUST spawn subagent -- do NOT self-evaluate.
+## Output Requirements
+
+When you finish (either passed or max_iterations reached), these files MUST exist:
+- `visual_description.json`
+- `shader.glsl` (latest version)
+- `final_shader.glsl` (best version, copied from shader.glsl)
+- `evaluation.json` (latest subagent evaluation)
+
+## Critical Rules (from SKILL.md)
+
+- NO self-evaluation in Phase 5. MUST spawn subagent.
+- NO skipping Phase 3 (validation) before Phase 4 (render).
+- Maximum {max_iterations} iterations total.
+- Stop as soon as subagent score >= 0.85.
 """
 
     # ------------------------------------------------------------------
