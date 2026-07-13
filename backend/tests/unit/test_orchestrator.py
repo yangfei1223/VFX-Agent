@@ -1,4 +1,5 @@
 """Test orchestrator (mock codex subprocess)."""
+import asyncio
 import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -166,3 +167,84 @@ async def test_orchestrator_handles_codex_crash(fake_workdir, fake_codex_output,
     assert record.status == "failed"
     assert "codex subprocess error" in (record.error or "")
     assert "API key invalid" in (record.error or "")
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_timeout_with_valid_outputs_marks_passed(
+    fake_workdir, fake_codex_output, tmp_path, monkeypatch
+):
+    """If codex times out but wrote final_shader.glsl + evaluation.json with score >= 0.85,
+    status should be 'passed' (not 'timeout'). Mirrors heart-2d MVP observed behavior.
+    """
+    # Pre-write the outputs codex would have produced
+    (fake_workdir / "final_shader.glsl").write_text("void mainImage(...) {}")
+    (fake_workdir / "evaluation.json").write_text(json.dumps({
+        "overall_score": 0.901,
+        "passed": True,
+        "dimension_scores": {"color": {"score": 0.9}},
+    }))
+
+    mock_proc = MagicMock()
+    mock_proc.stdin = AsyncMock()
+    mock_proc.stdin.write = MagicMock()
+    mock_proc.stdin.drain = AsyncMock()
+    mock_proc.stdin.close = MagicMock()
+    mock_proc.stdin.wait_closed = AsyncMock()
+    mock_proc.wait = AsyncMock(return_value=0)
+    mock_proc.returncode = 0
+
+    async def mock_stdout():
+        # Yield some events then EOF (codex timed out mid-stream)
+        for event in fake_codex_output[:3]:
+            yield (json.dumps(event) + "\n").encode()
+    mock_proc.stdout = mock_stdout()
+    mock_proc.stderr = AsyncMock()
+    mock_proc.stderr.read = AsyncMock(return_value=b"")
+
+    async def _fake_cse(*args, **kwargs):
+        return mock_proc
+
+    # Force timeout=0.001 to trigger TimeoutError immediately after first event
+    monkeypatch.setattr(StateStore, "STORE_DIR", tmp_path / "states")
+    with patch("asyncio.create_subprocess_exec", _fake_cse):
+        # Patch timeout to near-zero to force the timeout path
+        orch = PipelineOrchestrator()
+        orch.CODEX_TIMEOUT = 0.001
+        record = await orch.run(
+            pipeline_id="test-timeout-pass",
+            workdir=str(fake_workdir),
+            keyframes=[],
+            notes="",
+            max_iterations=3,
+        )
+
+    assert record.final_score == 0.901
+    assert record.status == "passed"  # NOT timeout, because outputs are valid and score >= 0.85
+    assert record.error is None  # error cleared on pass
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_timeout_with_missing_outputs_marks_timeout(
+    fake_workdir, fake_codex_output, tmp_path, monkeypatch
+):
+    """If codex times out and produced NO outputs, status should be 'timeout'."""
+    # No outputs written
+
+    async def _fake_spawn_and_stream(*args, **kwargs):
+        # Simulate codex hanging forever — raise TimeoutError directly
+        raise asyncio.TimeoutError("fake timeout")
+        yield  # noqa: never reached, makes this an async generator
+
+    monkeypatch.setattr(StateStore, "STORE_DIR", tmp_path / "states")
+    monkeypatch.setattr(PipelineOrchestrator, "_spawn_and_stream", _fake_spawn_and_stream)
+    orch = PipelineOrchestrator()
+    record = await orch.run(
+        pipeline_id="test-timeout-real",
+        workdir=str(fake_workdir),
+        keyframes=[],
+        notes="",
+        max_iterations=3,
+    )
+
+    assert record.status == "timeout"
+    assert "timed out" in (record.error or "")

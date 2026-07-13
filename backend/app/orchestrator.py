@@ -72,6 +72,8 @@ class PipelineOrchestrator:
             # 2. Spawn codex + stream JSONL
             events: list[dict] = []
             usage: Optional[dict] = None
+            timeout_flag = False
+            runtime_error: Optional[str] = None
             try:
                 async for event in self._spawn_and_stream(
                     pipeline_id, workdir, keyframes, notes, max_iterations,
@@ -82,15 +84,15 @@ class PipelineOrchestrator:
                     record.events = events[-100:]  # keep last 100
                     StateStore.save(record)
             except asyncio.TimeoutError:
-                record.status = PipelineStatus.TIMEOUT
-                record.error = "codex subprocess timed out"
-                return record
+                # Don't return early — codex may have written outputs before timeout.
+                # Fall through to extraction; mark as failed only if outputs missing.
+                timeout_flag = True
+                record.error = "codex subprocess timed out (outputs may still be valid)"
             except RuntimeError as e:
-                record.status = PipelineStatus.FAILED
-                record.error = f"codex subprocess error: {e}"
-                return record
+                runtime_error = f"codex subprocess error: {e}"
+                record.error = runtime_error
 
-            # 3. Extract outputs
+            # 3. Extract outputs (always, even on timeout/runtime error)
             record.final_shader = self._read_file(workdir / "final_shader.glsl") or \
                 self._read_file(workdir / "shader.glsl", default="")
             evaluation = self._read_json(workdir / "evaluation.json")
@@ -98,19 +100,30 @@ class PipelineOrchestrator:
             record.codex_usage = usage
 
             # 4. Determine status
-            #   - no shader at all          → failed
+            #   - runtime error AND no usable outputs → failed
+            #   - no shader at all          → failed (or timeout if timeout_flag)
             #   - has shader, no evaluation → failed (codex didn't finish workflow)
-            #   - has both                 → passed / max_iterations by score
-            if not record.final_shader:
+            #   - has both, score >= 0.85   → passed (timeout irrelevant if passed)
+            #   - has both, score < 0.85    → max_iterations (or timeout if flag)
+            if runtime_error and not record.final_shader:
                 record.status = PipelineStatus.FAILED
-                record.error = "no shader output written"
+            elif not record.final_shader:
+                record.status = PipelineStatus.TIMEOUT if timeout_flag else PipelineStatus.FAILED
+                if not record.error:
+                    record.error = "no shader output written"
             elif evaluation is None:
-                record.status = PipelineStatus.FAILED
-                record.error = "no evaluation.json written — codex did not complete workflow"
+                record.status = PipelineStatus.TIMEOUT if timeout_flag else PipelineStatus.FAILED
+                if not record.error:
+                    record.error = "no evaluation.json written — codex did not complete workflow"
                 record.final_score = 0.0
             else:
                 record.final_score = evaluation.get("overall_score", 0.0)
-                record.status = PipelineStatus.PASSED if record.final_score >= self.PASSING_SCORE else PipelineStatus.MAX_ITERATIONS
+                if record.final_score >= self.PASSING_SCORE:
+                    # Score passed — timeout is irrelevant, run succeeded
+                    record.status = PipelineStatus.PASSED
+                    record.error = None  # clear timeout warning since we got a pass
+                else:
+                    record.status = PipelineStatus.TIMEOUT if timeout_flag else PipelineStatus.MAX_ITERATIONS
 
             return record
         finally:
