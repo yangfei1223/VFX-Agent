@@ -1,20 +1,24 @@
 """Inspect Agent：对比渲染截图与设计参考，输出语义反馈
 
-使用 ContextAssembler 组装专属上下文：
-- System Prompt + Skill Context + UX Reference + Render Screenshots + Shader + Gradient Window
+Phase C A/B Cross-validation Agent（独立可运行，不依赖 v1.0 被删除模块）
+- 不再继承 BaseAgent（v1.0 已移除），内联 LLM 调用逻辑
+- 不再依赖 context_assembler，内联 prompt 构建逻辑
+- 不再依赖 PipelineState TypedDict，使用通用 dict
 
-输出格式：visual_issues/visual_goals（自然语言，非参数调整）
+V2.0: 保留作为离线评分 Agent，用于 A/B 对比 v2.0 codex-od 输出
 """
 
+import base64
 import json
 import time
 from pathlib import Path
+from typing import Any
 
-from app.agents.base import BaseAgent
+import httpx
+from openai import OpenAI
+
 from app.config import settings
-from app.services.context_assembler import build_inspect_prompt
 from app.services.session_logger import SessionLogger
-from app.pipeline.state import PipelineState
 
 
 # Dimension weights (per system prompt)
@@ -30,14 +34,145 @@ DIMENSION_WEIGHTS = {
 }
 
 
-class InspectAgent(BaseAgent):
+class InspectAgent:
     def __init__(self):
-        super().__init__(model_config=settings.inspect)
+        self.model_config = settings.inspect
+        self.model = self.model_config.model
         self.system_prompt = Path("app/prompts/inspect_system.md").read_text()
+
+        # 独立创建 OpenAI client（原来自 BaseAgent）
+        proxy_url = self.model_config.proxy
+        if not proxy_url:
+            import os
+            proxy_url = os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY") or os.environ.get("ALL_PROXY")
+
+        timeout = httpx.Timeout(120.0, connect=10.0, read=120.0, write=120.0)
+        self._http_client = httpx.Client(timeout=timeout, proxy=proxy_url) if proxy_url else httpx.Client(timeout=timeout)
+        self._openai_client = OpenAI(
+            api_key=self.model_config.api_key,
+            base_url=self.model_config.base_url,
+            http_client=self._http_client,
+        )
+
+    def _chat(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        image_paths: list[str] | None = None,
+        temperature: float = 0.2,
+        return_raw: bool = True,
+    ) -> str | dict:
+        """Inline from BaseAgent._chat_openai — standalone LLM call with image support"""
+        content: list[Any] = [{"type": "text", "text": user_prompt}]
+
+        if image_paths:
+            for path in image_paths:
+                image_data = base64.b64encode(Path(path).read_bytes()).decode()
+                ext = Path(path).suffix.lower()
+                mime_map = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp"}
+                mime = mime_map.get(ext, "image/png")
+                content.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{mime};base64,{image_data}"},
+                })
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": content if image_paths else user_prompt},
+        ]
+
+        response = self._openai_client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=4096,
+        )
+
+        response_content = response.choices[0].message.content or ""
+
+        if response.choices[0].finish_reason != "stop":
+            print(f"WARNING: Response truncated (finish_reason={response.choices[0].finish_reason})")
+
+        if return_raw:
+            return {
+                "content": response_content,
+                "model": self.model,
+                "finish_reason": response.choices[0].finish_reason,
+                "usage": {
+                    "prompt_tokens": response.usage.prompt_tokens if response.usage else None,
+                    "completion_tokens": response.usage.completion_tokens if response.usage else None,
+                    "total_tokens": response.usage.total_tokens if response.usage else None,
+                },
+            }
+
+        return response_content
+
+    @staticmethod
+    def _load_prompt(prompt_name: str) -> str:
+        """Inline from context_assembler.load_prompt"""
+        prompt_path = Path(f"app/prompts/{prompt_name}.md")
+        if prompt_path.exists():
+            return prompt_path.read_text()
+        print(f"WARNING: Prompt file not found: {prompt_path}")
+        return ""
+
+    def _build_inspect_prompt(self, state: dict) -> tuple[str, str, list[str]]:
+        """Inline from context_assembler.build_inspect_prompt
+
+        Prompt Stack:
+        - Layer 1: Shared VFX Constraints
+        - Layer 2: VFX Effect Catalog
+        - Layer 3: Inspect System Prompt
+        """
+        baseline = state.get("baseline", {})
+        snapshot = state.get("snapshot", {})
+
+        # Prompt Stack 层叠注入
+        constraints = self._load_prompt("shared_vfx_constraints")
+        catalog = self._load_prompt("vfx_effect_catalog")
+        terminology = self._load_prompt("shared_vfx_terminology")
+        base_system = self._load_prompt("inspect_system")
+
+        system_prompt = f"{base_system}\n\n---\n\n{constraints}\n\n---\n\n{catalog}\n\n---\n\n{terminology}"
+
+        # User prompt
+        user_parts = []
+
+        # 1. UX Reference
+        design_screenshots = baseline.get("keyframe_paths", [])
+        if design_screenshots:
+            user_parts.append(f"### 设计参考\n{chr(10).join(design_screenshots)}")
+
+        # 2. Render Screenshots
+        render_screenshots = snapshot.get("render_screenshots", [])
+        if render_screenshots:
+            user_parts.append(f"### 渲染截图\n{chr(10).join(render_screenshots)}")
+
+        # 3. Visual Description
+        visual_description = snapshot.get("visual_description", {})
+        if visual_description:
+            user_parts.append(f"### Visual Description\n```json\n{json.dumps(visual_description, indent=2, ensure_ascii=False)}\n```")
+
+        # 4. Current Shader
+        shader = snapshot.get("shader", "")
+        if shader:
+            user_parts.append(f"### 当前 Shader\n```glsl\n{shader}\n```")
+
+        # 5. Human Feedback (如有)
+        human_feedback = state.get("human_feedback")
+        if human_feedback:
+            user_parts.append(f"### 用户反馈\n{human_feedback}")
+
+        user_prompt = "\n\n".join(user_parts)
+
+        # 合并图片路径（设计参考 + 渲染截图）
+        image_paths = design_screenshots + render_screenshots
+
+        return system_prompt, user_prompt, image_paths
 
     def run(
         self,
-        state: PipelineState,
+        state: dict,
         return_raw: bool = False,
     ) -> dict:
         """
@@ -55,10 +190,10 @@ class InspectAgent(BaseAgent):
         snapshot = state.get("snapshot", {})
         iteration = snapshot.get("iteration", 0)
 
-        # 使用 ContextAssembler 组装上下文
-        system_prompt, user_prompt, image_paths = build_inspect_prompt(state)
+        # 使用内联 prompt 构建
+        system_prompt, user_prompt, image_paths = self._build_inspect_prompt(state)
 
-        response = self.chat(
+        response = self._chat(
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             image_paths=image_paths,
@@ -219,15 +354,30 @@ def run_legacy(
     pipeline_id: str | None = None,
     return_raw: bool = False,
 ) -> dict:
-    """向后兼容接口"""
-    from app.pipeline.state import create_initial_state
-
-    # 创建临时 state
-    temp_state = create_initial_state(
-        pipeline_id=pipeline_id or "temp",
-        input_type="image",
-        image_paths=design_images,
-    )
+    """向后兼容接口（独立可运行，不依赖被删除的 state.py）"""
+    # 内联最小 state，替代 create_initial_state（已删除）
+    temp_state: dict = {
+        "pipeline_id": pipeline_id or "temp",
+        "baseline": {
+            "input_type": "image",
+            "image_paths": design_images,
+            "keyframe_paths": design_images,
+            "user_notes": "",
+        },
+        "snapshot": {
+            "visual_description": {},
+            "shader": "",
+            "render_screenshots": [],
+            "inspect_feedback": None,
+            "iteration": 0,
+        },
+        "gradient_window": [],
+        "checkpoint": {},
+        "config": {},
+        "human_feedback": None,
+        "human_iteration_mode": False,
+        "human_iteration_count": 0,
+    }
 
     temp_state["snapshot"]["visual_description"] = visual_description or {}
     temp_state["snapshot"]["render_screenshots"] = render_screenshots
