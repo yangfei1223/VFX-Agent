@@ -64,3 +64,20 @@ def test_save_creates_store_dir(temp_store, tmp_path):
     
     assert store_dir.exists()
     assert (store_dir / "test-789.json").exists()
+
+
+def test_delete_removes_file(temp_store, tmp_path):
+    record = PipelineRecord(
+        pipeline_id="del-me",
+        status="running",
+        workdir="/tmp",
+        keyframe_paths=[],
+    )
+    temp_store.save(record)
+    assert temp_store.load("del-me") is not None
+    
+    temp_store.delete("del-me")
+    assert temp_store.load("del-me") is None
+    
+    # delete nonexistent id should not crash
+    temp_store.delete("nonexistent")  # no exception
