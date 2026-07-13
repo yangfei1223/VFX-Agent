@@ -122,4 +122,4 @@ async def test_orchestrator_handles_missing_final_shader(fake_workdir, fake_code
         )
 
     assert record.final_shader == "// fallback shader"
-    assert record.status == "max_iterations"
+    assert record.status == "failed"

@@ -99,8 +99,8 @@ class PipelineOrchestrator:
             record.status = "failed"
             record.error = "no shader output written"
         elif evaluation is None:
-            record.status = "max_iterations"
-            record.error = "no evaluation.json written"
+            record.status = "failed"
+            record.error = "no evaluation.json written — codex did not complete workflow"
             record.final_score = 0.0
         else:
             record.final_score = evaluation.get("overall_score", 0.0)
