@@ -18,7 +18,7 @@ import uuid
 from dataclasses import asdict
 from pathlib import Path
 
-from fastapi import APIRouter, UploadFile, File, Form, BackgroundTasks, HTTPException
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 
 from app.config import settings
 from app.orchestrator import PipelineOrchestrator
@@ -30,7 +30,6 @@ router = APIRouter(prefix="/pipeline", tags=["pipeline"])
 
 @router.post("/run")
 async def run_pipeline(
-    background_tasks: BackgroundTasks,
     notes: str = Form(""),
     images: list[UploadFile] = File(default=[]),
 ):
@@ -48,14 +47,21 @@ async def run_pipeline(
     keyframes_dir = workdir / "keyframes"
     keyframes_dir.mkdir(exist_ok=True)
 
-    # Save uploaded images as keyframes
+    # Save uploaded images as keyframes (with error handling)
     keyframe_paths: list[str] = []
-    for i, img in enumerate(images, start=1):
-        suffix = Path(img.filename or "").suffix or ".png"
-        kf_path = keyframes_dir / f"{i:03d}{suffix}"
-        with kf_path.open("wb") as f:
-            shutil.copyfileobj(img.file, f)
-        keyframe_paths.append(str(kf_path.resolve()))
+    try:
+        for i, img in enumerate(images, start=1):
+            suffix = Path(img.filename or "x.png").suffix or ".png"
+            kf_path = keyframes_dir / f"{i:03d}{suffix}"
+            with kf_path.open("wb") as f:
+                shutil.copyfileobj(img.file, f)
+            keyframe_paths.append(str(kf_path.resolve()))
+    except Exception as e:
+        shutil.rmtree(workdir, ignore_errors=True)
+        raise HTTPException(
+            status_code=400,
+            detail=f"image save failed: {type(e).__name__}: {e}",
+        )
 
     runtime_cfg = get_runtime_config()
     max_iterations = runtime_cfg.max_iterations
