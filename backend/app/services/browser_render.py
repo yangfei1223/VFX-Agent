@@ -11,6 +11,10 @@ from playwright.sync_api import sync_playwright
 from app.config import settings
 
 
+# Path to standalone HTML renderer (no UI chrome)
+STANDALONE_HTML_PATH = Path(__file__).parent / "shader_render_page.html"
+
+
 async def render_and_screenshot(
     shader_code: str,
     time_seconds: float = 1.0,
@@ -19,6 +23,9 @@ async def render_and_screenshot(
 ) -> str:
     """
     在浏览器中渲染 shader 并截图，返回截图文件路径。
+
+    v2.0: uses standalone HTML renderer (no UI chrome), not frontend dev server.
+    v1.0 fallback retained for backward compatibility via render_via_frontend().
 
     Args:
         shader_code: Shadertoy 格式 GLSL 代码
@@ -32,10 +39,12 @@ async def render_and_screenshot(
     width = width or settings.screenshot_width
     height = height or settings.screenshot_height
 
-    # 将 shader 代码编码为 URL-safe base64，通过 URL 参数传给前端
+    # Use standalone HTML (file:// URL) for pure shader render
     shader_b64 = base64.urlsafe_b64encode(shader_code.encode()).decode()
-
-    preview_url = f"{settings.frontend_url}?shader={shader_b64}&t={time_seconds}"
+    preview_url = (
+        f"file://{STANDALONE_HTML_PATH.resolve()}"
+        f"?shader={shader_b64}&t={time_seconds}&w={width}&h={height}"
+    )
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
