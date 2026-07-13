@@ -81,6 +81,9 @@ htmlcov/
 # Agent sessions (包含完整 prompt 和响应，可能敏感)
 backend/app/sessions/
 
+# Pipeline state files (runtime data, one JSON per pipeline)
+backend/app/pipeline_states/
+
 # Test samples (large video files)
 test-samples/
 
