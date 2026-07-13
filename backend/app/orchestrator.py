@@ -122,22 +122,23 @@ class PipelineOrchestrator:
     # ------------------------------------------------------------------
 
     def _setup_codex_workspace(self, workdir: Path) -> None:
-        """Symlink skill assets into ``workdir/.codex/``."""
-        codex_dir = workdir / ".codex"
-        codex_dir.mkdir(exist_ok=True)
+        """Symlink skill assets into workdir root.
 
+        Codex discovers AGENTS.md and skills/ from CWD root (workdir),
+        NOT from workdir/.codex/. So we put symlinks at workdir root.
+        """
         backend_root = Path(__file__).resolve().parent.parent
         skills_src = backend_root / "app" / "skills"
         if not skills_src.exists():
             raise RuntimeError(f"skills source not found: {skills_src}")
 
-        # Symlink the entire skills directory
-        skills_link = codex_dir / "skills"
+        # Symlink skills/ at workdir root (codex discovers via CWD)
+        skills_link = workdir / "skills"
         if not skills_link.exists():
             skills_link.symlink_to(skills_src.absolute(), target_is_directory=True)
 
-        # Symlink the top-level AGENTS.md (consumed by codex for context)
-        agents_link = codex_dir / "AGENTS.md"
+        # Symlink top-level AGENTS.md at workdir root (codex primary discovery)
+        agents_link = workdir / "AGENTS.md"
         if not agents_link.exists():
             agents_link.symlink_to((skills_src / "AGENTS.md").resolve())
 
