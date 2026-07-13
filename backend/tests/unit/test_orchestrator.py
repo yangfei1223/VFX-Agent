@@ -58,6 +58,7 @@ async def test_orchestrator_run_success(fake_workdir, fake_codex_output, tmp_pat
     mock_proc.stdin.close = MagicMock()
     mock_proc.stdin.wait_closed = AsyncMock()
     mock_proc.wait = AsyncMock(return_value=0)
+    mock_proc.returncode = 0
 
     async def mock_stdout():
         for event in fake_codex_output:
@@ -99,6 +100,7 @@ async def test_orchestrator_handles_missing_final_shader(fake_workdir, fake_code
     mock_proc.stdin.close = MagicMock()
     mock_proc.stdin.wait_closed = AsyncMock()
     mock_proc.wait = AsyncMock(return_value=0)
+    mock_proc.returncode = 0
 
     async def mock_stdout():
         for event in fake_codex_output:
@@ -123,3 +125,44 @@ async def test_orchestrator_handles_missing_final_shader(fake_workdir, fake_code
 
     assert record.final_shader == "// fallback shader"
     assert record.status == "failed"
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_handles_codex_crash(fake_workdir, fake_codex_output, tmp_path, monkeypatch):
+    """If codex subprocess crashes (returncode != 0), record.error contains stderr snippet."""
+    # No outputs written - codex crashed before producing anything
+
+    mock_proc = MagicMock()
+    mock_proc.stdin = AsyncMock()
+    mock_proc.stdin.write = MagicMock()
+    mock_proc.stdin.drain = AsyncMock()
+    mock_proc.stdin.close = MagicMock()
+    mock_proc.stdin.wait_closed = AsyncMock()
+    mock_proc.wait = AsyncMock(return_value=2)  # non-zero exit
+    mock_proc.returncode = 2
+
+    async def mock_stdout():
+        for event in fake_codex_output[:2]:
+            yield (json.dumps(event) + "\n").encode()
+    mock_proc.stdout = mock_stdout()
+
+    mock_proc.stderr = AsyncMock()
+    mock_proc.stderr.read = AsyncMock(return_value=b"Error: API key invalid\n")
+
+    async def _fake_cse(*args, **kwargs):
+        return mock_proc
+
+    monkeypatch.setattr(StateStore, "STORE_DIR", tmp_path / "states")
+    with patch("asyncio.create_subprocess_exec", _fake_cse):
+        orch = PipelineOrchestrator()
+        record = await orch.run(
+            pipeline_id="test-crash",
+            workdir=str(fake_workdir),
+            keyframes=[],
+            notes="",
+            max_iterations=3,
+        )
+
+    assert record.status == "failed"
+    assert "codex subprocess error" in (record.error or "")
+    assert "API key invalid" in (record.error or "")

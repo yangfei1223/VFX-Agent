@@ -6,10 +6,11 @@ Does NOT do phase switching / iteration control / scoring (all delegated to code
 import asyncio
 import json
 import os
+import time
 from pathlib import Path
 from typing import AsyncIterator, Optional
 
-from app.state_store import PipelineRecord, StateStore
+from app.state_store import PipelineStatus, PipelineRecord, StateStore
 
 
 class CodexEvent:
@@ -53,61 +54,68 @@ class PipelineOrchestrator:
 
         Returns a ``PipelineRecord`` reflecting the final state.
         """
+        start_time = time.monotonic()
         workdir = Path(workdir)
 
         record = PipelineRecord(
             pipeline_id=pipeline_id,
-            status="running",
+            status=PipelineStatus.RUNNING,
             workdir=str(workdir),
             keyframe_paths=keyframes,
         )
         StateStore.save(record)
 
-        # 1. Setup codex workspace (symlink skill assets)
-        self._setup_codex_workspace(workdir)
-
-        # 2. Spawn codex + stream JSONL
-        events: list[dict] = []
-        usage: Optional[dict] = None
         try:
-            async for event in self._spawn_and_stream(
-                pipeline_id, workdir, keyframes, notes, max_iterations,
-            ):
-                events.append(event.raw)
-                if event.type == "turn.completed" and event.usage:
-                    usage = event.usage
-                record.events = events[-100:]  # keep last 100
-                StateStore.save(record)
-        except asyncio.TimeoutError:
-            record.status = "timeout"
-            record.error = "codex subprocess timed out"
-            StateStore.save(record)
+            # 1. Setup codex workspace (symlink skill assets)
+            self._setup_codex_workspace(workdir)
+
+            # 2. Spawn codex + stream JSONL
+            events: list[dict] = []
+            usage: Optional[dict] = None
+            try:
+                async for event in self._spawn_and_stream(
+                    pipeline_id, workdir, keyframes, notes, max_iterations,
+                ):
+                    events.append(event.raw)
+                    if event.type == "turn.completed" and event.usage:
+                        usage = event.usage
+                    record.events = events[-100:]  # keep last 100
+                    StateStore.save(record)
+            except asyncio.TimeoutError:
+                record.status = PipelineStatus.TIMEOUT
+                record.error = "codex subprocess timed out"
+                return record
+            except RuntimeError as e:
+                record.status = PipelineStatus.FAILED
+                record.error = f"codex subprocess error: {e}"
+                return record
+
+            # 3. Extract outputs
+            record.final_shader = self._read_file(workdir / "final_shader.glsl") or \
+                self._read_file(workdir / "shader.glsl", default="")
+            evaluation = self._read_json(workdir / "evaluation.json")
+            record.evaluation = evaluation
+            record.codex_usage = usage
+
+            # 4. Determine status
+            #   - no shader at all          → failed
+            #   - has shader, no evaluation → failed (codex didn't finish workflow)
+            #   - has both                 → passed / max_iterations by score
+            if not record.final_shader:
+                record.status = PipelineStatus.FAILED
+                record.error = "no shader output written"
+            elif evaluation is None:
+                record.status = PipelineStatus.FAILED
+                record.error = "no evaluation.json written — codex did not complete workflow"
+                record.final_score = 0.0
+            else:
+                record.final_score = evaluation.get("overall_score", 0.0)
+                record.status = PipelineStatus.PASSED if record.final_score >= self.PASSING_SCORE else PipelineStatus.MAX_ITERATIONS
+
             return record
-
-        # 3. Extract outputs
-        record.final_shader = self._read_file(workdir / "final_shader.glsl") or \
-            self._read_file(workdir / "shader.glsl", default="")
-        evaluation = self._read_json(workdir / "evaluation.json")
-        record.evaluation = evaluation
-        record.codex_usage = usage
-
-        # 4. Determine status
-        #   - no shader at all          → failed
-        #   - has shader, no evaluation → max_iterations (codex ran but eval incomplete)
-        #   - has both                 → passed / max_iterations by score
-        if not record.final_shader:
-            record.status = "failed"
-            record.error = "no shader output written"
-        elif evaluation is None:
-            record.status = "failed"
-            record.error = "no evaluation.json written — codex did not complete workflow"
-            record.final_score = 0.0
-        else:
-            record.final_score = evaluation.get("overall_score", 0.0)
-            record.status = "passed" if record.final_score >= self.PASSING_SCORE else "max_iterations"
-
-        StateStore.save(record)
-        return record
+        finally:
+            record.duration_ms = int((time.monotonic() - start_time) * 1000)
+            StateStore.save(record)
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -195,6 +203,15 @@ class PipelineOrchestrator:
                         continue
 
                 await proc.wait()
+
+                # Capture stderr + check exit code
+                stderr_bytes = await proc.stderr.read() if proc.stderr else b""
+                stderr_text = stderr_bytes.decode(errors="replace") if stderr_bytes else ""
+                if proc.returncode != 0:
+                    raise RuntimeError(
+                        f"codex exited with code {proc.returncode}. "
+                        f"stderr (last 2000 chars): ...{stderr_text[-2000:]}"
+                    )
         except asyncio.TimeoutError:
             proc.terminate()
             try:

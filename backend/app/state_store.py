@@ -5,16 +5,30 @@ Replaces v1.0's PipelineState 4-region (baseline/snapshot/gradient_window/checkp
 v2.0 codex manages these in workdir via files; Python only mirrors final state.
 """
 from dataclasses import dataclass, field, asdict
+from enum import StrEnum
 from pathlib import Path
 import json
 from typing import Optional
+
+
+class PipelineStatus(StrEnum):
+    """Well-known pipeline status values.
+
+    Serializes to plain string in JSON (StrEnum), so PipelineRecord is
+    backward-compatible with any existing consumers.
+    """
+    RUNNING = "running"
+    PASSED = "passed"
+    FAILED = "failed"
+    TIMEOUT = "timeout"
+    MAX_ITERATIONS = "max_iterations"
 
 
 @dataclass
 class PipelineRecord:
     """Final state record for a v2.0 pipeline run."""
     pipeline_id: str
-    status: str  # running | passed | failed | timeout | max_iterations
+    status: str  # PipelineStatus enum value: running | passed | failed | timeout | max_iterations
     workdir: str
     keyframe_paths: list[str]
     final_shader: str = ""
