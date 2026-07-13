@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     screenshot_width: int = 512
     screenshot_height: int = 512
 
+    # Workdir root for pipeline runs
+    workdir_root: str = "/tmp/vfx_workdirs"
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
     @property

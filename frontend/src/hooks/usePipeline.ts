@@ -1,310 +1,129 @@
-// hooks/usePipeline.ts
+/**
+ * v2.0 PipelineOrchestrator-based polling hook.
+ *
+ * NOTE: Other components (App.tsx, AgentLog.tsx, etc.) currently use v1.0
+ * PipelineState fields (current_shader, history, checkpoint, iteration, etc.).
+ * Those will break visually after this rewrite because the v2.0
+ * PipelineRecord has a different shape. Phase B/D will update each
+ * component for the v2.0 shape.
+ */
+
 import { useState, useCallback, useRef, useEffect } from "react";
 
-export interface PipelineIteration {
-  iteration: number;
-  score: number;
-  passed: boolean;
-  feedback: string;
-}
+// ─── Types ──────────────────────────────────────────────────────────────────
 
-export interface PhaseLog {
-  phase: string;
-  timestamp: number;
-  status: string;
-  message: string;
-  details?: string;
-  duration_ms?: number;
-  agent_response?: string;  // Agent's raw response for displaying reasoning
-  human_iteration?: boolean;  // Whether this was a human-triggered iteration
-  human_feedback?: string;  // User feedback for human iterations
-  visual_issues?: string[];  // Inspect Agent: visual problems detected
-  visual_goals?: string[];  // Inspect Agent: expected visual goals
-  correct_aspects?: string[];  // Inspect Agent: aspects to preserve
-  re_decompose_triggered?: boolean;  // Inspect Agent: flag to re-decompose
-  rollback_triggered?: boolean;  // Inspect Agent: flag indicating score regression
-}
-
-export interface InspectResult {
-  passed: boolean;
-  overall_score: number;
-  feedback_summary?: string;
-  visual_issues?: string[];
-  visual_goals?: string[];
-  correct_aspects?: string[];
-}
-
-export interface CheckpointData {
-  best_score: number;
-  best_shader: string;
-  best_iteration: number;
-}
-
-export interface PipelineResult {
-  status: string;
-  current_shader: string;
-  visual_description: Record<string, unknown>;
-  iteration: number;
-  passed: boolean;
-  history: PipelineIteration[];
-  inspect_result: InspectResult | null;
+export interface PipelineRecord {
+  pipeline_id: string;
+  status: "running" | "passed" | "failed" | "timeout" | "max_iterations" | "not_found";
+  workdir: string;
+  keyframe_paths: string[];
+  final_shader: string;
+  final_score: number;
+  evaluation: Record<string, unknown> | null;
+  codex_usage: Record<string, unknown> | null;
+  duration_ms: number;
   error: string | null;
-  // Phase tracking fields
-  current_phase?: string;
-  phase_status?: string;
-  phase_message?: string;
-  detailed_logs?: PhaseLog[];
-  // Extended fields for detailed logging
-  logs?: PipelineLogEntry[];
-  // Checkpoint data for version comparison
-  checkpoint?: CheckpointData;
+  events: Record<string, unknown>[];
 }
 
-export interface PipelineLogEntry {
-  id: string;
-  timestamp: number;
-  phase: 'extract_keyframes' | 'decompose' | 'generate' | 'render' | 'inspect' | 'system';
-  iteration?: number;
-  message: string;
-  details?: string;
-  status?: 'started' | 'running' | 'completed' | 'failed';
-  duration_ms?: number;
-  metadata?: Record<string, unknown>;
-  visual_issues?: string[];
-  visual_goals?: string[];
-  correct_aspects?: string[];
-  re_decompose_triggered?: boolean;
-  rollback_triggered?: boolean;
-}
-
-interface UsePipelineReturn {
+export interface UsePipelineReturn {
   pipelineId: string | null;
-  result: PipelineResult | null;
-  loading: boolean;
-  logs: PipelineLogEntry[];
-  phaseLogs: PhaseLog[];
-  currentPhase: string | null;
-  phaseMessage: string | null;
-  startPipeline: (formData: FormData) => Promise<void>;
-  clearPipeline: () => void;
-  humanIterate: (pipelineId: string, feedback: string, modifiedShader: string | null) => Promise<void>;
+  record: PipelineRecord | null;
+  isRunning: boolean;
+  start: (notes: string, images: File[]) => Promise<void>;
+  cancel: () => void;
+  error: string | null;
 }
+
+// ─── Hook ───────────────────────────────────────────────────────────────────
 
 export function usePipeline(): UsePipelineReturn {
   const [pipelineId, setPipelineId] = useState<string | null>(null);
-  const [result, setResult] = useState<PipelineResult | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [logs, setLogs] = useState<PipelineLogEntry[]>([]);
-  const [phaseLogs, setPhaseLogs] = useState<PhaseLog[]>([]);
-  const [currentPhase, setCurrentPhase] = useState<string | null>(null);
-  const [phaseMessage, setPhaseMessage] = useState<string | null>(null);
+  const [record, setRecord] = useState<PipelineRecord | null>(null);
+  const [isRunning, setIsRunning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const pollingRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Use refs to track latest values for poll function (avoids stale closures)
-  const resultRef = useRef<PipelineResult | null>(null);
-  const logsRef = useRef<PipelineLogEntry[]>([]);
-  const phaseLogsRef = useRef<PhaseLog[]>([]);
-  const processedPhasesRef = useRef<Set<string>>(new Set());
+  // Terminal statuses that stop polling
+  const terminalStatuses = new Set([
+    "passed", "failed", "timeout", "max_iterations", "not_found",
+  ]);
 
-  // Sync refs with state
-  useEffect(() => {
-    resultRef.current = result;
-  }, [result]);
-
-  useEffect(() => {
-    logsRef.current = logs;
-  }, [logs]);
-
-  useEffect(() => {
-    phaseLogsRef.current = phaseLogs;
-  }, [phaseLogs]);
-
-  const addLog = useCallback((entry: Omit<PipelineLogEntry, 'id' | 'timestamp'>) => {
-    setLogs(prev => [...prev, {
-      ...entry,
-      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      timestamp: Date.now()
-    }]);
-  }, []);
-
-  const clearPipeline = useCallback(() => {
-    setPipelineId(null);
-    setResult(null);
-    setLogs([]);
-    setPhaseLogs([]);
-    setCurrentPhase(null);
-    setPhaseMessage(null);
-    setLoading(false);
-    processedPhasesRef.current = new Set();
+  // ── start ────────────────────────────────────────────────────────────────
+  const start = useCallback(async (notes: string, images: File[]) => {
+    // Cancel any in-flight polling
     if (pollingRef.current) {
       clearTimeout(pollingRef.current);
       pollingRef.current = null;
     }
-  }, []);
 
-  const startPipeline = useCallback(async (formData: FormData) => {
-    // Clear previous state
-    clearPipeline();
-    setLoading(true);
-
-    addLog({
-      phase: 'system',
-      message: 'Starting pipeline...',
-      details: 'Uploading media and initializing agent process'
-    });
+    setPipelineId(null);
+    setRecord(null);
+    setError(null);
+    setIsRunning(true);
 
     try {
+      const formData = new FormData();
+      formData.append("notes", notes);
+      for (const img of images) {
+        formData.append("images", img);
+      }
+
       const res = await fetch("http://localhost:8000/pipeline/run", {
         method: "POST",
         body: formData,
       });
 
       if (!res.ok) {
-        throw new Error(`HTTP error! status: ${res.status}`);
+        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
       }
 
       const data = await res.json();
       setPipelineId(data.pipeline_id);
 
-      addLog({
-        phase: 'system',
-        message: 'Pipeline initialized',
-        details: `Pipeline ID: ${data.pipeline_id}`,
-        metadata: { pipelineId: data.pipeline_id }
-      });
-
-      // Poll for status (500ms for better real-time updates)
+      // ── Poll status ──
       const poll = async () => {
         try {
-          const statusRes = await fetch(`http://localhost:8000/pipeline/status/${data.pipeline_id}`);
+          const statusRes = await fetch(
+            `http://localhost:8000/pipeline/status/${data.pipeline_id}`,
+          );
 
           if (!statusRes.ok) {
-            throw new Error(`Status check failed: ${statusRes.status}`);
+            throw new Error(`Poll failed: HTTP ${statusRes.status}`);
           }
 
-          const statusData: PipelineResult = await statusRes.json();
+          const statusData: PipelineRecord = await statusRes.json();
+          setRecord(statusData);
 
-          // "not_found" means pipeline is still initializing, continue polling
-          if (statusData.status === "not_found") {
-            pollingRef.current = setTimeout(poll, 500);
+          if (terminalStatuses.has(statusData.status)) {
+            setIsRunning(false);
             return;
           }
 
-          // Update phase tracking
-          if (statusData.current_phase) {
-            setCurrentPhase(statusData.current_phase);
-            setPhaseMessage(statusData.phase_message || null);
-          }
-
-          // Process detailed phase logs from backend
-          if (statusData.detailed_logs && statusData.detailed_logs.length > 0) {
-            const newPhaseLogs: PhaseLog[] = [];
-            statusData.detailed_logs.forEach((log: PhaseLog) => {
-              const logKey = `${log.phase}-${log.timestamp}`;
-              if (!processedPhasesRef.current.has(logKey)) {
-                processedPhasesRef.current.add(logKey);
-                newPhaseLogs.push(log);
-
-                // Add to UI logs (extract iteration from phase if possible, default to current iteration)
-                const iteration = statusData.iteration ?? 0;
-                addLog({
-                  phase: log.phase as PipelineLogEntry['phase'],
-                  iteration: iteration,
-                  message: log.message,
-                  details: log.details,
-                  status: log.status as PipelineLogEntry['status'],
-                  duration_ms: log.duration_ms,
-                });
-              }
-            });
-            if (newPhaseLogs.length > 0) {
-              setPhaseLogs(prev => [...prev, ...newPhaseLogs]);
-            }
-          }
-
-          // Add phase-specific logs for iterations (fallback if detailed_logs not present)
-          if (!statusData.detailed_logs && statusData.iteration > (resultRef.current?.iteration || 0)) {
-            const iteration = statusData.iteration;
-
-            // Decompose phase
-            addLog({
-              phase: 'decompose',
-              iteration,
-              message: `Iteration ${iteration}: Decomposing visual description`,
-              details: JSON.stringify(statusData.visual_description, null, 2)
-            });
-
-            // Generate phase
-            addLog({
-              phase: 'generate',
-              iteration,
-              message: `Iteration ${iteration}: Generating shader code`,
-              details: statusData.current_shader
-                ? `Generated ${statusData.current_shader.length} characters`
-                : 'Generating...'
-            });
-          }
-
-          // Inspect phase logs from history (fallback if detailed_logs not present)
-          if (!statusData.detailed_logs && statusData.history && statusData.history.length > 0) {
-            const latestHistory = statusData.history[statusData.history.length - 1];
-            const existingLog = logsRef.current.find(l =>
-              l.phase === 'inspect' &&
-              l.iteration === latestHistory.iteration
-            );
-
-            if (!existingLog) {
-              addLog({
-                phase: 'inspect',
-                iteration: latestHistory.iteration,
-                message: `Iteration ${latestHistory.iteration + 1}: Inspection complete`,
-                details: `Score: ${latestHistory.score.toFixed(2)} | Passed: ${latestHistory.passed}`,
-                metadata: {
-                  score: latestHistory.score,
-                  passed: latestHistory.passed,
-                  feedback: latestHistory.feedback
-                }
-              });
-            }
-          }
-
-          setResult(statusData);
-
-          if (statusData.status === "running") {
-            pollingRef.current = setTimeout(poll, 500); // Faster polling
-          } else {
-            setLoading(false);
-            addLog({
-              phase: 'system',
-              message: `Pipeline ${statusData.status}`,
-              details: statusData.error || `Final status: ${statusData.status}`,
-              metadata: { finalResult: statusData }
-            });
-          }
+          pollingRef.current = setTimeout(poll, 1000);
         } catch (err) {
-          setLoading(false);
-          const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-          addLog({
-            phase: 'system',
-            message: 'Polling error',
-            details: errorMessage
-          });
+          setError(err instanceof Error ? err.message : "Polling error");
+          setIsRunning(false);
         }
       };
 
       poll();
     } catch (err) {
-      setLoading(false);
-      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-      addLog({
-        phase: 'system',
-        message: 'Pipeline failed to start',
-        details: errorMessage
-      });
+      setError(err instanceof Error ? err.message : "Start failed");
+      setIsRunning(false);
     }
-  }, [addLog, clearPipeline]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Cleanup on unmount
+  // ── cancel ───────────────────────────────────────────────────────────────
+  const cancel = useCallback(() => {
+    if (pollingRef.current) {
+      clearTimeout(pollingRef.current);
+      pollingRef.current = null;
+    }
+    setIsRunning(false);
+  }, []);
+
+  // ── Cleanup on unmount ───────────────────────────────────────────────────
   useEffect(() => {
     return () => {
       if (pollingRef.current) {
@@ -313,65 +132,10 @@ export function usePipeline(): UsePipelineReturn {
     };
   }, []);
 
-  // Trigger human iteration
-  const humanIterate = useCallback(async (
-    pipelineId: string,
-    feedback: string,
-    modifiedShader: string | null
-  ): Promise<void> => {
-    setLoading(true);
-    addLog({
-      phase: 'system',
-      message: 'Starting human iteration...',
-      details: `Feedback: ${feedback.substring(0, 50)}...`
-    });
+  // ── Legacy v1.0 aliases (will be removed in Phase B/D) ──────────────────
+  // We expose these for now so App.tsx doesn't crash at compile time,
+  // but they return dummy values.
+  // const loading = isRunning;
 
-    try {
-      const formData = new FormData();
-      formData.append('feedback', feedback);
-      if (modifiedShader) {
-        formData.append('modified_shader', modifiedShader);
-      }
-
-      const res = await fetch(`http://localhost:8000/pipeline/${pipelineId}/human-iterate`, {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!res.ok) {
-        throw new Error(`Human iterate failed: ${res.status}`);
-      }
-
-      const data = await res.json();
-      addLog({
-        phase: 'system',
-        message: 'Human iteration triggered',
-        details: `Iteration count: ${data.human_iteration_count}`
-      });
-
-      // Polling will continue from the existing poll loop
-    } catch (err) {
-      setLoading(false);
-      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-      addLog({
-        phase: 'system',
-        message: 'Human iteration failed',
-        details: errorMessage
-      });
-      throw err;
-    }
-  }, [addLog, setLoading]);
-
-  return {
-    pipelineId,
-    result,
-    loading,
-    logs,
-    phaseLogs,
-    currentPhase,
-    phaseMessage,
-    startPipeline,
-    clearPipeline,
-    humanIterate
-  };
+  return { pipelineId, record, isRunning, start, cancel, error };
 }
