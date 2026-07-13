@@ -51,9 +51,9 @@ def main():
         sys.exit(1)
 
     time_seconds = float(sys.argv[2]) if len(sys.argv) > 2 else 1.0
-    shader_code = shader_file.read_text()
 
     try:
+        shader_code = shader_file.read_text()
         path = asyncio.run(render_and_screenshot(shader_code, time_seconds=time_seconds))
         print(json.dumps({
             "screenshot_path": str(Path(path).resolve()) if path else "",
