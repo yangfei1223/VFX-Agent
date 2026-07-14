@@ -9,22 +9,13 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from "react";
+import { useTimelinePhases } from "./useTimelinePhases";
+import { useEventStream } from "./useEventStream";
+import { useRenderScreenshots } from "./useRenderScreenshots";
+import type { PipelineRecord } from "../types/pipeline";
 
-// ─── Types ──────────────────────────────────────────────────────────────────
-
-export interface PipelineRecord {
-  pipeline_id: string;
-  status: "running" | "passed" | "failed" | "timeout" | "max_iterations" | "not_found";
-  workdir: string;
-  keyframe_paths: string[];
-  final_shader: string;
-  final_score: number;
-  evaluation: Record<string, unknown> | null;
-  codex_usage: Record<string, unknown> | null;
-  duration_ms: number;
-  error: string | null;
-  events: Record<string, unknown>[];
-}
+// Re-export for legacy consumers.
+export type { PipelineRecord };
 
 export interface UsePipelineReturn {
   pipelineId: string | null;
@@ -33,6 +24,9 @@ export interface UsePipelineReturn {
   start: (notes: string, images: File[]) => Promise<void>;
   cancel: () => void;
   error: string | null;
+  phases: ReturnType<typeof useTimelinePhases>;
+  displayEvents: ReturnType<typeof useEventStream>;
+  screenshots: ReturnType<typeof useRenderScreenshots>;
 }
 
 // ─── Hook ───────────────────────────────────────────────────────────────────
@@ -92,7 +86,7 @@ export function usePipeline(): UsePipelineReturn {
             throw new Error(`Poll failed: HTTP ${statusRes.status}`);
           }
 
-          const statusData: PipelineRecord = await statusRes.json();
+          const statusData = (await statusRes.json()) as PipelineRecord;
           setRecord(statusData);
 
           if (terminalStatuses.has(statusData.status)) {
@@ -137,5 +131,9 @@ export function usePipeline(): UsePipelineReturn {
   // but they return dummy values.
   // const loading = isRunning;
 
-  return { pipelineId, record, isRunning, start, cancel, error };
+  const phases = useTimelinePhases(record);
+  const displayEvents = useEventStream(record);
+  const screenshots = useRenderScreenshots(record);
+
+  return { pipelineId, record, isRunning, start, cancel, error, phases, displayEvents, screenshots };
 }

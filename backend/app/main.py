@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
-from app.routers import pipeline, config
+from app.routers import pipeline, config, files
 
 app = FastAPI(title="VFX Agent", version="0.1.0")
 
@@ -15,6 +15,7 @@ app.add_middleware(
 
 app.include_router(pipeline.router)
 app.include_router(config.router)
+app.include_router(files.router)
 
 
 @app.on_event("startup")

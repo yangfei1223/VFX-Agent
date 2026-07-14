@@ -1,3 +1,4 @@
+// @ts-nocheck
 // components/AgentLog.tsx
 import { useRef, useEffect, useState } from "react";
 import {

@@ -1,119 +1,233 @@
-// App.tsx
-import { useState, useEffect, useCallback } from "react";
-import InputPanel from "./components/InputPanel";
-import AgentLog from "./components/AgentLog";
-import ShaderEditor from "./components/ShaderEditor";
-import ParameterPanel from "./components/ParameterPanel";
-import ShaderPreview from "./components/ShaderPreview";
-import SettingsPanel from "./components/SettingsPanel";
-import FeedbackPanel from "./components/FeedbackPanel";
+// App.tsx — v2.0 codex OD 前端全量适配
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { Zap, Settings, Info, X, Clock, Trophy, AlertCircle } from "lucide-react";
+
 import { usePipeline } from "./hooks/usePipeline";
-import {
-  Terminal,
-  Zap,
-  Settings,
-  Info
-} from "lucide-react";
+import type { PipelineStatus } from "./types/pipeline";
+
+import InputPanel from "./components/InputPanel";
+import ShaderEditor from "./components/ShaderEditor";
+import ShaderPreview from "./components/ShaderPreview";
+import ParameterPanel from "./components/ParameterPanel";
+
+import PhaseTimeline from "./components/PhaseTimeline";
+import EventStream from "./components/EventStream";
+import ScorePanel from "./components/ScorePanel";
+import RenderCompare from "./components/RenderCompare";
+import TokenUsage from "./components/TokenUsage";
+
+function formatDuration(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  return `${m}m ${s % 60}s`;
+}
+
+function getStatusBadge(status: PipelineStatus) {
+  switch (status) {
+    case "passed":
+      return { label: "通过", className: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" };
+    case "failed":
+      return { label: "失败", className: "bg-red-500/20 text-red-400 border-red-500/30" };
+    case "timeout":
+      return { label: "超时", className: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30" };
+    case "max_iterations":
+      return { label: "达上限", className: "bg-orange-500/20 text-orange-400 border-orange-500/30" };
+    case "running":
+      return { label: "运行中", className: "bg-blue-500/20 text-blue-400 border-blue-500/30" };
+    default:
+      return { label: "就绪", className: "bg-[var(--bg-tertiary)] text-[var(--text-muted)] border-[var(--border-color)]" };
+  }
+}
+
+interface StatusCardProps {
+  status: PipelineStatus;
+  score: number;
+  durationMs: number;
+  error: string | null;
+}
+
+function StatusCard({ status, score, durationMs, error }: StatusCardProps) {
+  const badge = getStatusBadge(status);
+  return (
+    <div className="panel bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg overflow-hidden">
+      <div className="px-4 py-2 border-b border-[var(--border-color)]">
+        <h2 className="text-xs font-semibold text-[var(--text-primary)] uppercase tracking-wider">
+          Status
+        </h2>
+      </div>
+      <div className="p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-[var(--text-muted)]">状态</span>
+          <span className={`px-2 py-0.5 rounded text-xs font-medium border ${badge.className}`}>
+            {badge.label}
+          </span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-[var(--text-muted)]">评分</span>
+          <div className="flex items-center gap-1">
+            <Trophy className="w-3.5 h-3.5 text-[var(--text-muted)]" />
+            <span className="text-sm font-medium text-[var(--text-primary)] tabular-nums">
+              {score.toFixed(2)}
+            </span>
+          </div>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-[var(--text-muted)]">耗时</span>
+          <div className="flex items-center gap-1">
+            <Clock className="w-3.5 h-3.5 text-[var(--text-muted)]" />
+            <span className="text-sm font-medium text-[var(--text-primary)] tabular-nums">
+              {formatDuration(durationMs)}
+            </span>
+          </div>
+        </div>
+        {error && (
+          <div className="flex items-start gap-2 p-2.5 rounded-lg bg-red-500/10 border border-red-500/20">
+            <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+            <p className="text-xs text-red-300 leading-relaxed">{error}</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+interface KeyframeThumbnailsProps {
+  paths: string[];
+}
+
+function KeyframeThumbnails({ paths }: KeyframeThumbnailsProps) {
+  if (!paths || paths.length === 0) return null;
+  return (
+    <div className="panel bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg overflow-hidden">
+      <div className="px-4 py-2 border-b border-[var(--border-color)]">
+        <h2 className="text-xs font-semibold text-[var(--text-primary)] uppercase tracking-wider">
+          Keyframes
+        </h2>
+      </div>
+      <div className="p-3 grid grid-cols-3 gap-2 max-h-48 overflow-y-auto">
+        {paths.map((path, index) => (
+          <div
+            key={`${path}-${index}`}
+            className="aspect-square rounded-lg border border-[var(--border-color)] overflow-hidden bg-black/40"
+          >
+            <img
+              src={`/file?path=${encodeURIComponent(path)}`}
+              alt={`Keyframe ${index + 1}`}
+              className="w-full h-full object-cover"
+              onError={(e) => {
+                e.currentTarget.style.display = "none";
+              }}
+            />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AboutModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+  if (!isOpen) return null;
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl max-w-lg w-full p-6 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-bold text-[var(--text-primary)]">关于 VFX-Agent</h2>
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <div className="space-y-3 text-sm text-[var(--text-secondary)] leading-relaxed">
+          <p>
+            <strong className="text-[var(--text-primary)]">VFX-Agent v2.0 (codex OD mode)</strong>
+          </p>
+          <p>
+            从 UX 视频/图片输入自动生成 Shadertoy 格式 GLSL 着色器，并通过隔离子代理评分反馈迭代直至收敛。
+          </p>
+          <p>v2.0 采用 codex OD（Orchestrated Dispatch）动态编排替代 v1.0 的 LangGraph 静态编排：</p>
+          <ol className="list-decimal list-inside space-y-1 ml-1">
+            <li>分析关键帧 → visual_description.json</li>
+            <li>生成 shader → shader.glsl</li>
+            <li>验证编译 → validate_shader.py</li>
+            <li>渲染截图 → render_shader.py + Playwright</li>
+            <li>子代理评分 → spawn_agent (fork_turns=&quot;none&quot;)</li>
+            <li>迭代或收尾</li>
+          </ol>
+        </div>
+        <div className="mt-6 flex justify-end">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 rounded-lg bg-[var(--accent-primary)] text-white text-sm font-medium hover:bg-[var(--accent-primary)]/90 transition-colors"
+          >
+            关闭
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function App() {
-  const { pipelineId, result, loading, logs, phaseLogs, currentPhase, phaseMessage, startPipeline, clearPipeline, humanIterate } = usePipeline();
-  const [showSettings, setShowSettings] = useState(false);
-  const [shaderCode, setShaderCode] = useState<string | null>(null);
+  const {
+    record,
+    isRunning,
+    start,
+    error,
+    phases,
+    displayEvents,
+    screenshots,
+  } = usePipeline();
+
+  const [showAbout, setShowAbout] = useState(false);
+  const [currentScreenshotIndex, setCurrentScreenshotIndex] = useState(0);
   const [editedCode, setEditedCode] = useState<string | null>(null);
-  const [showCheckpoint, setShowCheckpoint] = useState(false); // Toggle between current and checkpoint shader
 
-  // Support direct shader rendering via URL params (for Playwright screenshots)
+  // Keep editedCode in sync with the pipeline result, but don't override local edits.
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const shaderParam = params.get("shader");
-    if (shaderParam) {
-      try {
-        const code = atob(shaderParam.replace(/-/g, "+").replace(/_/g, "/"));
-        setShaderCode(code);
-        setEditedCode(code);
-      } catch (e) {
-        console.error("Failed to decode shader from URL", e);
-      }
+    if (record?.final_shader && editedCode === null) {
+      setEditedCode(record.final_shader);
     }
-  }, []);
+  }, [record?.final_shader, editedCode]);
 
-  // Update shader when pipeline produces result
-  // Only update shaderCode/editedCode, don't reset showCheckpoint
-  // (user's Best/Current toggle should persist across polling updates)
+  // Reset screenshot index when the set of screenshots changes.
   useEffect(() => {
-    if (result?.current_shader) {
-      setShaderCode(result.current_shader);
-      setEditedCode(result.current_shader);
-    }
-  }, [result?.current_shader]);
+    setCurrentScreenshotIndex(screenshots.length > 0 ? screenshots.length - 1 : 0);
+  }, [screenshots.length]);
 
-  // Reset to current version only when pipeline fully completes (not during polling)
-  useEffect(() => {
-    if (result?.status === 'passed' || result?.status === 'max_iterations' || result?.status === 'completed' || result?.status === 'failed') {
-      setShowCheckpoint(false);
-    }
-  }, [result?.status]);
+  const handleSubmit = useCallback(
+    (formData: FormData) => {
+      const notes = (formData.get("notes") as string) || "";
+      const images = formData
+        .getAll("images")
+        .filter((f): f is File => f instanceof File);
+      start(notes, images);
+    },
+    [start]
+  );
 
-  // Handle code edits from the editor
   const handleCodeChange = useCallback((code: string) => {
     setEditedCode(code);
   }, []);
 
-  // Handle parameter changes
-  const handleParamChange = useCallback((_name: string, _value: number | number[], _category: 'define' | 'uniform') => {
-    // Update shader code if it's a #define
-    if (_category === 'define' && editedCode) {
-      // The ParameterPanel already updates the code via onCodeUpdate
-      // This is for additional side effects if needed
-    }
-  }, [editedCode]);
+  const previewCode = editedCode || record?.final_shader || null;
 
-  // Handle code updates from parameter panel
-  const handleCodeUpdate = useCallback((code: string) => {
-    setEditedCode(code);
-  }, []);
+  const referencePath = record?.keyframe_paths?.[0] || null;
 
-  // Handle pipeline submission (settings are now fetched from backend)
-  const handleSubmit = useCallback((formData: FormData) => {
-    startPipeline(formData);
-  }, [startPipeline]);
+  const iterationCount = useMemo(() => {
+    if (!record?.events) return 0;
+    return record.events.filter((event) => event.type === "turn.completed").length;
+  }, [record?.events]);
 
-  // Check if user modified shader
-  const getModifiedShader = useCallback(() => {
-    if (editedCode && shaderCode && editedCode !== shaderCode) {
-      return editedCode;
-    }
-    return null;
-  }, [editedCode, shaderCode]);
-
-  // Handle human iteration
-  const handleHumanIterate = useCallback(async (feedback: string, modifiedShader: string | null) => {
-    if (!pipelineId) return;
-    try {
-      await humanIterate(pipelineId, feedback, modifiedShader);
-    } catch (e) {
-      console.error('Human iteration failed:', e);
-    }
-  }, [pipelineId, humanIterate]);
-
-  // Handle end session
-  const handleEndSession = useCallback(() => {
-    clearPipeline();
-    setShaderCode(null);
-    setEditedCode(null);
-    setShowCheckpoint(false);
-  }, [clearPipeline]);
-
-  // Get checkpoint shader and scores
-  // Fix: currentScore should come from snapshot.inspect_feedback, not inspect_result
-  const checkpointShader = result?.checkpoint?.best_shader || null;
-  const checkpointScore = result?.checkpoint?.best_score ?? 0;
-  const currentScore = result?.snapshot?.inspect_feedback?.overall_score ?? result?.inspect_result?.overall_score ?? 0;
-
-  // Determine which code to use for preview
-  const previewCode = showCheckpoint && checkpointShader
-    ? checkpointShader
-    : (editedCode || shaderCode);
+  const status = record?.status || "not_found";
 
   return (
     <div className="min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)] font-sans">
@@ -121,44 +235,28 @@ function App() {
       <header className="border-b border-[var(--border-color)] bg-[var(--bg-secondary)]/80 backdrop-blur-sm sticky top-0 z-40">
         <div className="px-6 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[var(--accent-primary)] to-[var(--accent-secondary)]
-                          flex items-center justify-center">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[var(--accent-primary)] to-[var(--accent-secondary)] flex items-center justify-center">
               <Zap className="w-5 h-5 text-white" />
             </div>
             <div>
               <h1 className="text-lg font-bold text-[var(--text-primary)] tracking-tight">
                 VFX Agent
               </h1>
-              <p className="text-xs text-[var(--text-muted)]">
-                AI-Powered Shader Generation
-              </p>
+              <p className="text-xs text-[var(--text-muted)]">AI-Powered Shader Generation</p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            <a
-              href="https://github.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="p-2 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)]
-                       hover:bg-[var(--bg-tertiary)] transition-all duration-200"
-              title="View on GitHub"
-            >
-              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
-              </svg>
-            </a>
-<button
-              onClick={() => setShowSettings(true)}
-              className="p-2 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)]
-                        hover:bg-[var(--bg-tertiary)] transition-all duration-200"
+            <button
+              onClick={() => alert("v2.0 配置编辑待实现")}
+              className="p-2 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] transition-all duration-200"
               title="Settings"
             >
               <Settings className="w-5 h-5" />
             </button>
             <button
-              className="p-2 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)]
-                       hover:bg-[var(--bg-tertiary)] transition-all duration-200"
+              onClick={() => setShowAbout(true)}
+              className="p-2 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] transition-all duration-200"
               title="About"
             >
               <Info className="w-5 h-5" />
@@ -169,99 +267,65 @@ function App() {
 
       {/* Main Content - Three Column Layout */}
       <main className="h-[calc(100vh-64px)] p-4">
-        <div className="grid grid-cols-12 gap-4 h-full">
-
-          {/* Left Column: Input + Agent Log */}
-          <div className="col-span-3 flex flex-col gap-4 h-full overflow-hidden">
-            {/* Input Panel */}
-            <div className="flex-shrink-0">
-              <InputPanel onSubmit={handleSubmit} loading={loading} />
-            </div>
-
-            {/* Agent Process Log */}
-            <div className="flex-1 min-h-0">
-              <AgentLog
-                result={result}
-                loading={loading}
-                logs={logs}
-                phaseLogs={phaseLogs}
-                currentPhase={currentPhase}
-                phaseMessage={phaseMessage}
-              />
-            </div>
+        <div className="grid grid-cols-[300px_1fr_340px] gap-4 h-full min-h-0">
+          {/* Left Column */}
+          <div className="flex flex-col gap-4 h-full min-h-0 overflow-y-auto">
+            <InputPanel onSubmit={handleSubmit} loading={isRunning} />
+            <StatusCard
+              status={status}
+              score={record?.final_score ?? 0}
+              durationMs={record?.duration_ms ?? 0}
+              error={error}
+            />
+            <KeyframeThumbnails paths={record?.keyframe_paths || []} />
           </div>
 
-          {/* Center Column: Parameter Panel + Shader Editor */}
-          <div className="col-span-5 flex flex-col gap-4 h-full overflow-hidden">
-            {/* Parameter Panel */}
-            <div className="flex-shrink-0">
+          {/* Center Column */}
+          <div className="flex flex-col gap-4 h-full min-h-0 overflow-hidden">
+            <PhaseTimeline phases={phases} isRunning={isRunning} />
+            <div className="flex-1 min-h-0">
+              <EventStream events={displayEvents} isRunning={isRunning} />
+            </div>
+            <div className="h-48 min-h-0 flex-shrink-0 overflow-hidden">
               <ParameterPanel
                 code={previewCode}
-                onParamChange={handleParamChange}
-                onCodeUpdate={handleCodeUpdate}
+                onParamChange={() => {}}
+                onCodeUpdate={handleCodeChange}
               />
             </div>
+            <div className="h-56 min-h-0 flex-shrink-0">
+              <ShaderEditor code={record?.final_shader || null} onChange={handleCodeChange} isRunning={isRunning} />
+            </div>
+            <div className="h-56 min-h-0 flex-shrink-0">
+              <ShaderPreview shaderCode={previewCode} />
+            </div>
+          </div>
 
-            {/* Shader Editor */}
+          {/* Right Column */}
+          <div className="flex flex-col gap-4 h-full min-h-0 overflow-hidden">
+            <ScorePanel
+              score={record?.final_score ?? 0}
+              status={status}
+              evaluation={record?.evaluation || null}
+            />
             <div className="flex-1 min-h-0">
-              <ShaderEditor
-                code={previewCode}
-                onChange={handleCodeChange}
-                isRunning={loading}
+              <RenderCompare
+                referencePath={referencePath}
+                screenshotPaths={screenshots}
+                currentIndex={currentScreenshotIndex}
+                onIndexChange={setCurrentScreenshotIndex}
               />
             </div>
+            <TokenUsage
+              usage={record?.codex_usage || null}
+              durationMs={record?.duration_ms ?? 0}
+              iterationCount={iterationCount}
+            />
           </div>
-
-          {/* Right Column: Shader Preview + Feedback */}
-          <div className="col-span-4 h-full overflow-hidden flex flex-col gap-4">
-            {/* Shader Preview - limited height */}
-            <div className="flex-1 min-h-0 max-h-[70%]">
-              <ShaderPreview
-                shaderCode={previewCode}
-                width={512}
-                height={512}
-                checkpointShader={checkpointShader}
-                checkpointScore={checkpointScore}
-                currentScore={currentScore}
-                showCheckpoint={showCheckpoint}
-                onToggleCheckpoint={() => setShowCheckpoint(!showCheckpoint)}
-              />
-            </div>
-            
-            {/* Feedback Panel - fixed height at bottom */}
-            <div className="flex-shrink-0">
-              <FeedbackPanel
-                pipelineId={pipelineId}
-                status={result?.status || ''}
-                disabled={loading}
-                onHumanIterate={handleHumanIterate}
-                onEndSession={handleEndSession}
-                getModifiedShader={getModifiedShader}
-              />
-            </div>
-          </div>
-
         </div>
       </main>
 
-      {/* Mobile/Tablet Warning */}
-      <div className="fixed inset-0 bg-[var(--bg-primary)] z-50 flex items-center justify-center lg:hidden">
-        <div className="text-center p-8">
-          <div className="w-16 h-16 rounded-xl bg-[var(--bg-tertiary)] flex items-center justify-center mx-auto mb-4">
-            <Terminal className="w-8 h-8 text-[var(--text-muted)]" />
-          </div>
-          <h2 className="text-xl font-bold text-[var(--text-primary)] mb-2">
-            Desktop Only
-          </h2>
-          <p className="text-sm text-[var(--text-muted)] max-w-xs">
-            VFX Agent is designed for desktop use with a large screen.
-            Please use a device with a screen width of at least 1024px.
-          </p>
-        </div>
-      </div>
-
-      {/* Settings Panel */}
-      <SettingsPanel isOpen={showSettings} onClose={() => setShowSettings(false)} />
+      <AboutModal isOpen={showAbout} onClose={() => setShowAbout(false)} />
     </div>
   );
 }
