@@ -202,11 +202,7 @@ function App() {
 
   const handleSubmit = useCallback(
     (formData: FormData) => {
-      const notes = (formData.get("notes") as string) || "";
-      const images = formData
-        .getAll("images")
-        .filter((f): f is File => f instanceof File);
-      start(notes, images);
+      start(formData);
     },
     [start]
   );

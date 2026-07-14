@@ -21,7 +21,7 @@ export interface UsePipelineReturn {
   pipelineId: string | null;
   record: PipelineRecord | null;
   isRunning: boolean;
-  start: (notes: string, images: File[]) => Promise<void>;
+  start: (formData: FormData) => Promise<void>;
   cancel: () => void;
   error: string | null;
   phases: ReturnType<typeof useTimelinePhases>;
@@ -44,7 +44,7 @@ export function usePipeline(): UsePipelineReturn {
   ]);
 
   // ── start ────────────────────────────────────────────────────────────────
-  const start = useCallback(async (notes: string, images: File[]) => {
+  const start = useCallback(async (formData: FormData) => {
     // Cancel any in-flight polling
     if (pollingRef.current) {
       clearTimeout(pollingRef.current);
@@ -57,12 +57,6 @@ export function usePipeline(): UsePipelineReturn {
     setIsRunning(true);
 
     try {
-      const formData = new FormData();
-      formData.append("notes", notes);
-      for (const img of images) {
-        formData.append("images", img);
-      }
-
       const res = await fetch("http://localhost:8000/pipeline/run", {
         method: "POST",
         body: formData,
