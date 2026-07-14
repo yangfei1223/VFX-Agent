@@ -113,7 +113,11 @@ function buildDisplayEvent(event: PipelineEvent, index: number): DisplayEvent {
 export function useEventStream(record: PipelineRecord | null): DisplayEvent[] {
   return useMemo(() => {
     if (!record?.events) return [];
-    return record.events.map((event, index) => buildDisplayEvent(event, index));
+    // Filter out item.started — only item.completed is needed (it has full data).
+    // Without this filter, each item produces two DisplayEvents (started + completed).
+    return record.events
+      .filter((event) => event.type !== "item.started")
+      .map((event, index) => buildDisplayEvent(event, index));
   }, [record]);
 }
 

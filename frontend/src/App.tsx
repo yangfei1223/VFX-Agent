@@ -224,7 +224,12 @@ function App() {
 
   const iterationCount = useMemo(() => {
     if (!record?.events) return 0;
-    return record.events.filter((event) => event.type === "turn.completed").length;
+    // Count turn.completed events as iteration count.
+    // Use String(event.type) to guard against non-string type values in raw events.
+    const count = record.events.filter(
+      (event) => String(event.type) === "turn.completed"
+    ).length;
+    return Number.isFinite(count) ? count : 0;
   }, [record?.events]);
 
   const status = record?.status || "not_found";
