@@ -19,7 +19,11 @@ from app.orchestrator import PipelineOrchestrator
 from app.state_store import StateStore
 
 REPO_ROOT = BACKEND_ROOT.parent
-TEST_SAMPLES = REPO_ROOT / "test-samples" / "data"
+# test-samples/ is gitignored so not in worktree. Look in main repo first, fall back to worktree.
+MAIN_REPO = Path("/Users/yangfei/Code/VFX-Agent")
+TEST_SAMPLES = (MAIN_REPO / "test-samples" / "data")
+if not TEST_SAMPLES.exists():
+    TEST_SAMPLES = REPO_ROOT / "test-samples" / "data"
 WORKDIR_ROOT = Path("/tmp/vfx_v2_runs")
 
 

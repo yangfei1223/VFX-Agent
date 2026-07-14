@@ -1,5 +1,8 @@
 """A/B cross-validation: run v1.0 InspectAgent on v2.0 outputs.
 
+# NOTE: This script depends on v1.0 InspectAgent which was deleted in Phase E.
+# Kept as historical reference for Phase C A/B cross-validation results.
+
 Usage:
     python tests/e2e/v1_inspect_crossval.py <v2_workdir> [--render-name render_iteration3.png]
 
