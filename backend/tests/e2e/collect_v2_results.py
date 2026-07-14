@@ -57,7 +57,8 @@ def collect_sample(runs_root: Path, sample_name: str) -> dict:
     # Try v2.0 workdirs (3 different locations used during dev)
     candidates = [
         runs_root / sample_name,                   # /tmp/vfx_v2_runs/<sample>
-        Path("/tmp/vfx_" + sample_name),           # /tmp/vfx_heart-2d etc (early MVP)
+        Path("/tmp/vfx_" + sample_name),           # /tmp/vfx_heart-2d
+        Path("/tmp/vfx_" + sample_name.replace("-", "_")),  # /tmp/vfx_heart_2d (heart-2d MVP)
     ]
     workdir = next((c for c in candidates if c.exists() and (c / "shader.glsl").exists()), None)
 
@@ -84,12 +85,15 @@ def collect_sample(runs_root: Path, sample_name: str) -> dict:
         if kfs:
             entry["images"]["reference"] = encode_image_b64(kfs[0])
 
-    # Find render image (prefer final render_iterN.png, fallback to screenshot_path)
-    render_candidates = sorted(workdir.glob("render_iter*.png"), reverse=True)
-    if not render_candidates:
-        render_candidates = sorted(workdir.glob("render_iteration*.png"), reverse=True)
-    if render_candidates:
-        entry["images"]["render"] = encode_image_b64(render_candidates[0])
+    # Find render image (priority: render_final.png > render_iter*.png > render_iteration*.png)
+    render_candidates: list[Path] = []
+    render_candidates.append(workdir / "render_final.png")
+    render_candidates.extend(sorted(workdir.glob("render_iter*.png"), reverse=True))
+    render_candidates.extend(sorted(workdir.glob("render_iteration*.png"), reverse=True))
+    for cand in render_candidates:
+        if cand.exists():
+            entry["images"]["render"] = encode_image_b64(cand)
+            break
 
     # Read visual_description.json
     vd_path = workdir / "visual_description.json"

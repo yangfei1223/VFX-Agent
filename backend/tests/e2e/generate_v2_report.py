@@ -160,6 +160,11 @@ def render_pixel_evidence(px: dict | None) -> str:
         return ""
     avg = px.get("avg_color_distance", "?")
     samples = px.get("sample_differences", "")
+    # sample_differences may be dict (per-position) or string; coerce to string
+    if isinstance(samples, dict):
+        samples = "; ".join(f"{k}: {v}" for k, v in samples.items())
+    elif not isinstance(samples, str):
+        samples = str(samples)
     return f"""
       <div class="eval-section pixel-evidence">
         <strong>Pixel evidence:</strong>
