@@ -175,6 +175,36 @@ function AboutModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
   );
 }
 
+function usePersistedLayout(key: string) {
+  const defaultLayout = useMemo<Layout | undefined>(() => {
+    try {
+      const saved = localStorage.getItem(key);
+      if (saved) {
+        const parsed = JSON.parse(saved) as Layout;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+    } catch {
+      // Ignore parse errors.
+    }
+    return undefined;
+  }, [key]);
+
+  const handleLayoutChange = useCallback(
+    (layout: Layout) => {
+      try {
+        localStorage.setItem(key, JSON.stringify(layout));
+      } catch {
+        // Ignore storage errors.
+      }
+    },
+    [key]
+  );
+
+  return { defaultLayout, handleLayoutChange };
+}
+
 function App() {
   const {
     record,
@@ -188,30 +218,10 @@ function App() {
   const [showAbout, setShowAbout] = useState(false);
   const [editedCode, setEditedCode] = useState<string | null>(null);
 
-  // Load persisted panel layout from localStorage.
-  const defaultLayout = useMemo<Layout | undefined>(() => {
-    try {
-      const saved = localStorage.getItem("vfx-layout");
-      if (saved) {
-        const parsed = JSON.parse(saved) as Layout;
-        if (Array.isArray(parsed) && parsed.length === 3) {
-          return parsed;
-        }
-      }
-    } catch {
-      // Ignore parse errors.
-    }
-    return undefined;
-  }, []);
-
-  // Persist layout changes to localStorage.
-  const handleLayoutChange = useCallback((layout: Layout) => {
-    try {
-      localStorage.setItem("vfx-layout", JSON.stringify(layout));
-    } catch {
-      // Ignore storage errors.
-    }
-  }, []);
+  const horizontalLayout = usePersistedLayout("vfx-layout-horizontal");
+  const leftVerticalLayout = usePersistedLayout("vfx-layout-left");
+  const centerVerticalLayout = usePersistedLayout("vfx-layout-center");
+  const rightVerticalLayout = usePersistedLayout("vfx-layout-right");
 
   // Keep editedCode in sync with the pipeline result, but don't override local edits.
   useEffect(() => {
@@ -289,8 +299,8 @@ function App() {
       <main className="h-[calc(100vh-64px)] p-6">
         <Group
           orientation="horizontal"
-          defaultLayout={defaultLayout}
-          onLayoutChanged={handleLayoutChange}
+          defaultLayout={horizontalLayout.defaultLayout}
+          onLayoutChanged={horizontalLayout.handleLayoutChange}
           className="h-full min-h-0"
         >
           {/* Left Column */}
@@ -298,58 +308,97 @@ function App() {
             defaultSize={20}
             minSize={15}
             maxSize={30}
-            className="flex flex-col gap-5 h-full min-h-0 overflow-y-auto"
+            className="h-full min-h-0 overflow-hidden"
           >
-            <InputPanel onSubmit={handleSubmit} loading={isRunning} />
-            <StatusCard
-              status={status}
-              score={record?.final_score ?? 0}
-              durationMs={record?.duration_ms ?? 0}
-              error={error}
-            />
-            <KeyframeThumbnails paths={record?.keyframe_paths || []} />
+            <Group
+              orientation="vertical"
+              defaultLayout={leftVerticalLayout.defaultLayout}
+              onLayoutChanged={leftVerticalLayout.handleLayoutChange}
+              className="h-full flex flex-col"
+            >
+              <Panel defaultSize={60} minSize={35} maxSize={75} className="overflow-hidden">
+                <InputPanel onSubmit={handleSubmit} loading={isRunning} />
+              </Panel>
+              <Separator className="w-full h-[1px] bg-[var(--border-color)] hover:h-[2px] hover:bg-[var(--accent-primary)] active:h-[3px] active:bg-[var(--accent-primary)] data-[separator=focus]:h-[3px] data-[separator=focus]:bg-[var(--accent-primary)] cursor-row-resize transition-colors duration-150" />
+              <Panel defaultSize={15} minSize={10} maxSize={25} className="overflow-hidden">
+                <StatusCard
+                  status={status}
+                  score={record?.final_score ?? 0}
+                  durationMs={record?.duration_ms ?? 0}
+                  error={error}
+                />
+              </Panel>
+              <Separator className="w-full h-[1px] bg-[var(--border-color)] hover:h-[2px] hover:bg-[var(--accent-primary)] active:h-[3px] active:bg-[var(--accent-primary)] data-[separator=focus]:h-[3px] data-[separator=focus]:bg-[var(--accent-primary)] cursor-row-resize transition-colors duration-150" />
+              <Panel defaultSize={25} minSize={15} maxSize={35} className="overflow-hidden">
+                <KeyframeThumbnails paths={record?.keyframe_paths || []} />
+              </Panel>
+            </Group>
           </Panel>
 
-          <Separator className="h-full w-[1px] bg-[var(--border-color)] hover:w-[2px] hover:bg-[var(--accent-primary)] active:w-[3px] active:bg-[var(--accent-primary)] data-[separator=focus]:w-[3px] data-[separator=focus]:bg-[var(--accent-primary)] cursor-col-resize transition-colors duration-150" />
+          <Separator className="h-full w-[3px] bg-[var(--border-color)] hover:w-[4px] hover:bg-[var(--accent-primary)] active:w-[5px] active:bg-[var(--accent-primary)] data-[separator=focus]:w-[5px] data-[separator=focus]:bg-[var(--accent-primary)] cursor-col-resize transition-colors duration-150" />
 
           {/* Center Column */}
           <Panel
             defaultSize={50}
             minSize={30}
             maxSize={70}
-            className="flex flex-col gap-5 h-full min-h-0 overflow-hidden"
+            className="h-full min-h-0 overflow-hidden"
           >
-            <PhaseTimeline phases={phases} isRunning={isRunning} />
-            <div className="flex-1 min-h-0">
-              <EventStream events={displayEvents} isRunning={isRunning} />
-            </div>
-            <div className="h-48 min-h-0 flex-shrink-0">
-              <ShaderEditor code={record?.final_shader || null} onChange={handleCodeChange} isRunning={isRunning} />
-            </div>
+            <Group
+              orientation="vertical"
+              defaultLayout={centerVerticalLayout.defaultLayout}
+              onLayoutChanged={centerVerticalLayout.handleLayoutChange}
+              className="h-full flex flex-col"
+            >
+              <Panel defaultSize={12} minSize={8} maxSize={20} className="overflow-hidden">
+                <PhaseTimeline phases={phases} isRunning={isRunning} />
+              </Panel>
+              <Separator className="w-full h-[1px] bg-[var(--border-color)] hover:h-[2px] hover:bg-[var(--accent-primary)] active:h-[3px] active:bg-[var(--accent-primary)] data-[separator=focus]:h-[3px] data-[separator=focus]:bg-[var(--accent-primary)] cursor-row-resize transition-colors duration-150" />
+              <Panel defaultSize={58} minSize={35} maxSize={75} className="overflow-hidden">
+                <EventStream events={displayEvents} isRunning={isRunning} />
+              </Panel>
+              <Separator className="w-full h-[1px] bg-[var(--border-color)] hover:h-[2px] hover:bg-[var(--accent-primary)] active:h-[3px] active:bg-[var(--accent-primary)] data-[separator=focus]:h-[3px] data-[separator=focus]:bg-[var(--accent-primary)] cursor-row-resize transition-colors duration-150" />
+              <Panel defaultSize={30} minSize={15} maxSize={45} className="overflow-hidden">
+                <ShaderEditor code={record?.final_shader || null} onChange={handleCodeChange} isRunning={isRunning} />
+              </Panel>
+            </Group>
           </Panel>
 
-          <Separator className="h-full w-[1px] bg-[var(--border-color)] hover:w-[2px] hover:bg-[var(--accent-primary)] active:w-[3px] active:bg-[var(--accent-primary)] data-[separator=focus]:w-[3px] data-[separator=focus]:bg-[var(--accent-primary)] cursor-col-resize transition-colors duration-150" />
+          <Separator className="h-full w-[3px] bg-[var(--border-color)] hover:w-[4px] hover:bg-[var(--accent-primary)] active:w-[5px] active:bg-[var(--accent-primary)] data-[separator=focus]:w-[5px] data-[separator=focus]:bg-[var(--accent-primary)] cursor-col-resize transition-colors duration-150" />
 
           {/* Right Column */}
           <Panel
             defaultSize={30}
             minSize={20}
             maxSize={40}
-            className="flex flex-col gap-5 h-full min-h-0 overflow-hidden"
+            className="h-full min-h-0 overflow-hidden"
           >
-            <ScorePanel
-              score={record?.final_score ?? 0}
-              status={status}
-              evaluation={record?.evaluation || null}
-            />
-            <div className="flex-1 min-h-0">
-              <ShaderPreview shaderCode={previewCode} />
-            </div>
-            <TokenUsage
-              usage={record?.codex_usage || null}
-              durationMs={record?.duration_ms ?? 0}
-              iterationCount={iterationCount}
-            />
+            <Group
+              orientation="vertical"
+              defaultLayout={rightVerticalLayout.defaultLayout}
+              onLayoutChanged={rightVerticalLayout.handleLayoutChange}
+              className="h-full flex flex-col"
+            >
+              <Panel defaultSize={35} minSize={20} maxSize={45} className="overflow-hidden">
+                <ScorePanel
+                  score={record?.final_score ?? 0}
+                  status={status}
+                  evaluation={record?.evaluation || null}
+                />
+              </Panel>
+              <Separator className="w-full h-[1px] bg-[var(--border-color)] hover:h-[2px] hover:bg-[var(--accent-primary)] active:h-[3px] active:bg-[var(--accent-primary)] data-[separator=focus]:h-[3px] data-[separator=focus]:bg-[var(--accent-primary)] cursor-row-resize transition-colors duration-150" />
+              <Panel defaultSize={45} minSize={25} maxSize={60} className="overflow-hidden">
+                <ShaderPreview shaderCode={previewCode} />
+              </Panel>
+              <Separator className="w-full h-[1px] bg-[var(--border-color)] hover:h-[2px] hover:bg-[var(--accent-primary)] active:h-[3px] active:bg-[var(--accent-primary)] data-[separator=focus]:h-[3px] data-[separator=focus]:bg-[var(--accent-primary)] cursor-row-resize transition-colors duration-150" />
+              <Panel defaultSize={20} minSize={12} maxSize={30} className="overflow-hidden">
+                <TokenUsage
+                  usage={record?.codex_usage || null}
+                  durationMs={record?.duration_ms ?? 0}
+                  iterationCount={iterationCount}
+                />
+              </Panel>
+            </Group>
           </Panel>
         </Group>
       </main>
