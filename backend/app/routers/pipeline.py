@@ -3,8 +3,9 @@
 Endpoints
 ---------
 POST /pipeline/run
-    Accept uploaded keyframe images + notes, spawn PipelineOrchestrator in
-    background, return ``{"pipeline_id": "..."}``.
+    Accept uploaded keyframe images / video + notes, spawn PipelineOrchestrator
+    in background, return ``{"pipeline_id": "..."}``. Video is auto-split into
+    8 keyframes via FFmpeg.
 GET  /pipeline/status/{pipeline_id}
     Return current ``PipelineRecord`` (or ``{"status": "not_found"}``).
 POST /pipeline/{pipeline_id}/human-iterate
@@ -23,6 +24,7 @@ from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from app.config import settings
 from app.orchestrator import PipelineOrchestrator
 from app.routers.config import get_runtime_config
+from app.services.video_extractor import extract_keyframes
 from app.state_store import StateStore
 
 router = APIRouter(prefix="/pipeline", tags=["pipeline"])
@@ -32,12 +34,15 @@ router = APIRouter(prefix="/pipeline", tags=["pipeline"])
 async def run_pipeline(
     notes: str = Form(""),
     images: list[UploadFile] = File(default=[]),
+    video: UploadFile | None = File(default=None),
 ):
     """Spawn a new pipeline run in background.
 
-    Accepts form data with optional ``notes`` (text) and ``images``
-    (one or more image files). Returns immediately with a ``pipeline_id``;
-    poll ``GET /pipeline/status/{id}`` for progress.
+    Accepts form data with optional ``notes`` (text), ``images``
+    (one or more image files), and/or ``video`` (single video file).
+    Video is split into 8 keyframes via FFmpeg before being fed to codex
+    (codex CLI does not support native video input). Returns immediately
+    with a ``pipeline_id``; poll ``GET /pipeline/status/{id}`` for progress.
     """
     pipeline_id = f"p{int(time.time())}-{uuid.uuid4().hex[:8]}"
 
@@ -62,6 +67,28 @@ async def run_pipeline(
             status_code=400,
             detail=f"image save failed: {type(e).__name__}: {e}",
         )
+
+    # Process uploaded video: extract keyframes via FFmpeg
+    if video is not None:
+        try:
+            video_suffix = Path(video.filename or "input.mp4").suffix or ".mp4"
+            video_path = workdir / f"input{video_suffix}"
+            with video_path.open("wb") as f:
+                shutil.copyfileobj(video.file, f)
+
+            video_keyframes = extract_keyframes(
+                video_path=str(video_path),
+                output_dir=str(keyframes_dir),
+                max_frames=8,
+            )
+            # Deduplicate: add paths not already in keyframe_paths
+            keyframe_paths.extend(p for p in video_keyframes if p not in keyframe_paths)
+        except Exception as e:
+            shutil.rmtree(workdir, ignore_errors=True)
+            raise HTTPException(
+                status_code=400,
+                detail=f"video keyframe extraction failed: {type(e).__name__}: {e}",
+            )
 
     runtime_cfg = get_runtime_config()
     max_iterations = runtime_cfg.max_iterations
