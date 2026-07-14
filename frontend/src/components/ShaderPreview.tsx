@@ -84,6 +84,28 @@ export default function ShaderPreview({
     };
   }, []);
 
+  // Resize canvas when container dimensions change (incl. panel drag)
+  useEffect(() => {
+    const container = containerRef.current;
+    const renderer = rendererRef.current;
+    if (!container || !renderer) return;
+
+    const resize = () => {
+      const w = container.clientWidth;
+      const h = container.clientHeight;
+      if (w > 0 && h > 0) {
+        renderer.resize(w, h);
+      }
+    };
+
+    // Resize immediately (in case initial render was 0x0)
+    resize();
+
+    const ro = new ResizeObserver(resize);
+    ro.observe(container);
+    return () => ro.disconnect();
+  }, []);
+
   // Update FPS counter
   useEffect(() => {
     if (status !== 'running') {
