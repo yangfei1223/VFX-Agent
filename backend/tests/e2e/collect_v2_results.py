@@ -78,6 +78,39 @@ def collect_sample(runs_root: Path, sample_name: str) -> dict:
     entry["v2"]["present"] = True
     entry["v2"]["workdir"] = str(workdir)
 
+    # Pull iteration/usage data from pipeline state file (if exists)
+    entry["v2"]["iterations"] = 0
+    entry["v2"]["duration_s"] = 0
+    entry["v2"]["codex_usage"] = None
+    # State files are in backend/app/pipeline_states/
+    backend_root = Path(__file__).resolve().parents[2]
+    states_dir = backend_root / "app" / "pipeline_states"
+    # Find state file matching this sample (latest by mtime)
+    state_candidates = sorted(
+        states_dir.glob("*.json"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    for sf in state_candidates:
+        try:
+            st = json.loads(sf.read_text())
+            wd = st.get("workdir", "")
+            if workdir.name in wd or wd.endswith(workdir.name):
+                # Count wait_agent calls (item.completed only, to avoid double-counting)
+                iters = 0
+                for ev in st.get("events", []):
+                    if ev.get("type") != "item.completed":
+                        continue
+                    item = ev.get("item", {})
+                    if isinstance(item, dict) and item.get("type") == "collab_tool_call" and item.get("tool") == "wait":
+                        iters += 1
+                entry["v2"]["iterations"] = iters
+                entry["v2"]["duration_s"] = st.get("duration_ms", 0) // 1000
+                entry["v2"]["codex_usage"] = st.get("codex_usage")
+                break
+        except Exception:
+            continue
+
     # Find reference image
     kf_dir = workdir / "keyframes"
     if kf_dir.exists():

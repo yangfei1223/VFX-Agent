@@ -73,6 +73,7 @@ def render_sample_card(sample: dict) -> str:
 
     shader_lines = v2.get("shader_lines", 0)
     duration = v2.get("duration_s", 0)
+    iters = v2.get("iterations", 0)
 
     return f"""
     <div class="sample-card" id="sample-{escape(name)}">
@@ -99,8 +100,8 @@ def render_sample_card(sample: dict) -> str:
           <div class="score-value" style="color:{delta_c}">{delta_str}</div>
         </div>
         <div class="score-block">
-          <div class="score-label">shader</div>
-          <div class="score-value">{shader_lines} lines</div>
+          <div class="score-label">iters / lines / dur</div>
+          <div class="score-value">{iters} / {shader_lines} / {duration}s</div>
         </div>
       </div>
       <div class="image-comparison">
