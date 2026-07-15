@@ -440,7 +440,7 @@ def main():
     # Auto-name output dir by date
     if args.output is None:
         date_str = datetime.now().strftime("%Y-%m-%d")
-        out_dir = Path("test_results") / f"{date_str}_v2-codex-od-19samples"
+        out_dir = Path("test_results") / f"{date_str}_v2-codex-od-20samples"
         out_dir.mkdir(parents=True, exist_ok=True)
         out_path = out_dir / "index.html"
     else:

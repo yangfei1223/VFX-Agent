@@ -98,17 +98,22 @@ async def capture_pipeline_id(page) -> str | None:
         page.remove_listener("response", on_response)
 
 
-async def poll_pipeline_status(pipeline_id: str, timeout: int = 600) -> dict:
+async def poll_pipeline_status(pipeline_id: str, timeout: int = 700) -> dict:
     """Poll /pipeline/status/ via direct HTTP until terminal or timeout.
 
     Uses direct requests to avoid browser context timing issues and
     bypass system proxy for localhost connections.
+
+    timeout default 700s > backend orchestrator CODEX_TIMEOUT (600s) + 100s buffer,
+    to ensure backend has updated terminal status before we stop polling.
+    Otherwise we'd race with backend state writes and miss the final score/workdir.
     """
     start = time.time()
     terminal = {"passed", "failed", "timeout", "max_iterations"}
     session = requests.Session()
     # Bypass system proxy for localhost
     session.trust_env = False
+    last_result = None
     while time.time() - start < timeout:
         try:
             r = session.get(
@@ -117,13 +122,32 @@ async def poll_pipeline_status(pipeline_id: str, timeout: int = 600) -> dict:
             )
             r.raise_for_status()
             result = r.json()
+            last_result = result
             status = result.get("status")
             if status in terminal:
                 return result
         except requests.RequestException as exc:
             print(f"[ui-runner] WARN: poll error for {pipeline_id}: {exc}")
         await asyncio.sleep(3)
-    return {"status": "timeout", "pipeline_id": pipeline_id, "final_score": 0, "workdir": None}
+    # Fallback: poll timed out. Last attempt to grab real data from backend
+    # (backend orchestrator may have just finished writing terminal state).
+    for _ in range(5):  # retry up to 5 times over ~15s
+        try:
+            r = session.get(
+                f"{BACKEND_URL}/pipeline/status/{pipeline_id}",
+                timeout=10,
+            )
+            r.raise_for_status()
+            result = r.json()
+            if result.get("status") in terminal:
+                print(f"[ui-runner] recovered final state for {pipeline_id} on fallback retry")
+                return result
+        except requests.RequestException:
+            pass
+        await asyncio.sleep(3)
+    # True fallback: only if backend never returned terminal status
+    print(f"[ui-runner] WARN: giving up on {pipeline_id} after {timeout}s + 15s retry")
+    return last_result or {"status": "timeout", "pipeline_id": pipeline_id, "final_score": 0, "workdir": None}
 
 
 async def run_one_sample(page, sample: str) -> dict:

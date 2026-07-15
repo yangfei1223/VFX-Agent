@@ -2,11 +2,16 @@
 """Render GLSL shader at given time. Returns absolute screenshot path.
 
 Usage: render_shader.py <shader_file> [time_seconds]
-Output: JSON to stdout
+Output: JSON to stdout, screenshot copied to CWD/render_output.png
 
 Used by codex as skill reference script (Bash invocation).
 Wraps v1.0 backend/app/services/browser_render.py.
+
+By default copies the screenshot to CWD/render_output.png so codex/subagent
+can reliably find it in workdir (browser_render uses tempfile by default
+which is unstable across calls).
 """
+import shutil
 import sys
 import json
 import asyncio
@@ -55,8 +60,23 @@ def main():
     try:
         shader_code = shader_file.read_text()
         path = asyncio.run(render_and_screenshot(shader_code, time_seconds=time_seconds))
+        if not path:
+            raise RuntimeError("render_and_screenshot returned empty path")
+
+        # Copy to CWD/render_output.png so codex/subagent can find it reliably
+        # (browser_render uses tempfile by default which scatters files).
+        # Multiple renders overwrite — last one wins.
+        local_path = Path.cwd() / "render_output.png"
+        try:
+            shutil.copy(path, local_path)
+            final_path = str(local_path.resolve())
+        except Exception as copy_err:
+            # Fallback: use original tempfile path
+            final_path = str(Path(path).resolve())
+            print(f"WARN: copy to CWD failed: {copy_err}", file=sys.stderr)
+
         print(json.dumps({
-            "screenshot_path": str(Path(path).resolve()) if path else "",
+            "screenshot_path": final_path,
             "success": True,
             "error": None,
         }))

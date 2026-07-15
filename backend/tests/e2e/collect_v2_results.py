@@ -97,6 +97,8 @@ def collect_sample(
 
     entry["v2"]["present"] = True
     entry["v2"]["workdir"] = str(workdir)
+    if pipeline_id:
+        entry["v2"]["pipeline_id"] = pipeline_id
 
     # Pull iteration/usage data from pipeline state file (if exists)
     entry["v2"]["iterations"] = 0
@@ -155,6 +157,7 @@ def collect_sample(
     # Find render image (priority: render_final.png > render_iter*.png > render_iteration*.png)
     render_candidates: list[Path] = []
     render_candidates.append(workdir / "render_final.png")
+    render_candidates.append(workdir / "render_output.png")
     render_candidates.extend(sorted(workdir.glob("render_iter*.png"), reverse=True))
     render_candidates.extend(sorted(workdir.glob("render_iteration*.png"), reverse=True))
     for cand in render_candidates:
@@ -332,20 +335,22 @@ def persist_to_test_results(
     for entry in samples:
         sample_name = entry["sample_name"]
 
-        # Find pipeline_id from state file
-        pipeline_id = None
-        try:
-            for sf in sorted(states_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
-                try:
-                    st = json.loads(sf.read_text())
-                    wd = st.get("workdir", "")
-                    if sample_name in wd or wd.endswith(sample_name):
-                        pipeline_id = st.get("pipeline_id", sf.stem)
-                        break
-                except Exception:
-                    continue
-        except Exception:
-            pass
+        # Find pipeline_id from entry (UI-driven mode) first, fallback to state scan
+        pipeline_id = entry.get("v2", {}).get("pipeline_id") if isinstance(entry.get("v2"), dict) else None
+        if not pipeline_id:
+            try:
+                for sf in sorted(states_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+                    try:
+                        st = json.loads(sf.read_text())
+                        wd = st.get("workdir", "")
+                        if sample_name in wd or wd.endswith(sample_name):
+                            pipeline_id = st.get("pipeline_id", sf.stem)
+                            break
+                    except Exception:
+                        continue
+            except Exception:
+                pass
+
         if pipeline_id is None:
             pipeline_id = f"v2-{sample_name}"
 
@@ -469,9 +474,9 @@ def persist_to_test_results(
         except Exception:
             pass
 
-        # 5. Render images
+        # 5. Render images (priority: render_final.png > render_output.png > render_iter*)
         try:
-            for p in [workdir / "render_final.png"]:
+            for p in [workdir / "render_final.png", workdir / "render_output.png"]:
                 if p.exists():
                     shutil.copy(p, sample_dir / "render_final.png")
                     break
@@ -487,17 +492,28 @@ def persist_to_test_results(
         except Exception:
             pass
 
-        # 6. pipeline_state.json (from pipeline_states dir matching this sample)
+        # 6. pipeline_state.json (precise pipeline_id match first, fuzzy workdir.name fallback)
+        entry_pid = entry.get("v2", {}).get("pipeline_id") if isinstance(entry.get("v2"), dict) else None
         try:
-            for sf in sorted(states_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
-                try:
-                    st = json.loads(sf.read_text())
-                    wd = st.get("workdir", "")
-                    if sample_name in wd or wd.endswith(sample_name):
-                        shutil.copy(sf, sample_dir / "pipeline_state.json")
-                        break
-                except Exception:
-                    continue
+            copied = False
+            # Precise pipeline_id match
+            if entry_pid:
+                sf = states_dir / f"{entry_pid}.json"
+                if sf.exists():
+                    shutil.copy(sf, sample_dir / "pipeline_state.json")
+                    copied = True
+            # Fallback: fuzzy workdir.name matching
+            if not copied:
+                for sf in sorted(states_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+                    try:
+                        st = json.loads(sf.read_text())
+                        wd = st.get("workdir", "")
+                        if sample_name in wd or wd.endswith(sample_name):
+                            shutil.copy(sf, sample_dir / "pipeline_state.json")
+                            copied = True
+                            break
+                    except Exception:
+                        continue
         except Exception:
             pass
 
