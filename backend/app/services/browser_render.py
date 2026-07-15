@@ -47,7 +47,18 @@ async def render_and_screenshot(
     )
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
+        # Chromium args: force software WebGL (swiftshader) for stability under
+        # repeated launches. Hardware GPU context leaks across back-to-back
+        # invocations causing intermittent blank screenshots.
+        browser = await p.chromium.launch(
+            headless=True,
+            args=[
+                "--enable-unsafe-swiftshader",  # use software WebGL renderer
+                "--disable-gpu",                # disable HW GPU entirely
+                "--no-sandbox",                 # faster startup, no sandbox overhead
+                "--use-gl=swiftshader",         # explicit GL backend
+            ],
+        )
         page = await browser.new_page(viewport={"width": width, "height": height})
         await page.goto(preview_url, wait_until="networkidle")
 
@@ -59,6 +70,33 @@ async def render_and_screenshot(
             "() => window.__shaderReady === true",
             timeout=settings.render_timeout_ms,
         )
+
+        # 额外 wait: 让 GPU 命令队列刷新 (swiftshader 软件渲染稍慢)
+        await page.wait_for_timeout(300)
+
+        # 验证 canvas 真的渲染了内容 (中央像素非空白)
+        # 避免"截图成功但内容是白色"的 silently-failure
+        rendered = await page.evaluate(
+            """() => {
+                const c = document.querySelector('canvas');
+                if (!c) return false;
+                const gl = c.getContext('webgl2') || c.getContext('webgl');
+                if (!gl) return false;
+                const px = new Uint8Array(4);
+                gl.readPixels(c.width/2 | 0, c.height/2 | 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+                // 拒绝纯白 (255,255,255,255) 和纯透明 (0,0,0,0)
+                const isBlank = (px[0] === 255 && px[1] === 255 && px[2] === 255) ||
+                                 (px[0] === 0 && px[1] === 0 && px[2] === 0 && px[3] === 0);
+                return !isBlank;
+            }"""
+        )
+        if not rendered:
+            # 重试一次: 重新触发渲染
+            await page.evaluate(
+                "(t) => { if (window.__setShaderTime) window.__setShaderTime(t); }",
+                time_seconds,
+            )
+            await page.wait_for_timeout(500)
 
         # 截图
         screenshot_path = Path(tempfile.mktemp(suffix=".png", prefix="vfx_screenshot_"))
