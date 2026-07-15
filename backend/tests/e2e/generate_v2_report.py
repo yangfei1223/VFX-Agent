@@ -57,6 +57,8 @@ def render_sample_card(sample: dict) -> str:
 
     ref_img = images.get("reference")
     render_img = images.get("render")
+    ui_pre_img = images.get("ui_pre")
+    ui_post_img = images.get("ui_post")
 
     vd = sample.get("visual_description") or {}
     effect_type = vd.get("effect_type", "?")
@@ -67,6 +69,8 @@ def render_sample_card(sample: dict) -> str:
 
     ref_html = f'<img src="{ref_img}" alt="reference" />' if ref_img else '<div class="img-placeholder">No reference</div>'
     render_html = f'<img src="{render_img}" alt="render" />' if render_img else '<div class="img-placeholder">No render</div>'
+    ui_pre_html = f'<img src="{ui_pre_img}" alt="ui_pre" />' if ui_pre_img else '<div class="img-placeholder">No UI pre</div>'
+    ui_post_html = f'<img src="{ui_post_img}" alt="ui_post" />' if ui_post_img else '<div class="img-placeholder">No UI post</div>'
 
     issues_html = "".join(f"<li>{escape(i)}</li>" for i in visual_issues) or "<li class='muted'>(none)</li>"
     correct_html = "".join(f"<li>{escape(i)}</li>" for i in correct_aspects) or "<li class='muted'>(none)</li>"
@@ -114,6 +118,19 @@ def render_sample_card(sample: dict) -> str:
           {render_html}
         </div>
       </div>
+      <details class="evaluation-details">
+        <summary>Frontend UI screenshots (pre / post)</summary>
+        <div class="image-comparison">
+          <div class="image-cell">
+            <div class="image-label">UI before run</div>
+            {ui_pre_html}
+          </div>
+          <div class="image-cell">
+            <div class="image-label">UI after run</div>
+            {ui_post_html}
+          </div>
+        </div>
+      </details>
       <details class="evaluation-details">
         <summary>Subagent evaluation (8-dim)</summary>
         <div class="eval-grid">

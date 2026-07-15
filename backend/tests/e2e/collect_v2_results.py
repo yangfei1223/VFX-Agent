@@ -165,6 +165,17 @@ def collect_sample(
             entry["images"]["render"] = encode_image_b64(cand)
             break
 
+    # UI screenshots (前端运行界面截图,from UI-driven mode)
+    # Read directly from ui_pre_screenshot / ui_post_screenshot paths
+    if ui_pre_screenshot:
+        ui_pre_path = Path(ui_pre_screenshot)
+        if ui_pre_path.exists():
+            entry["images"]["ui_pre"] = encode_image_b64(ui_pre_path)
+    if ui_post_screenshot:
+        ui_post_path = Path(ui_post_screenshot)
+        if ui_post_path.exists():
+            entry["images"]["ui_post"] = encode_image_b64(ui_post_path)
+
     # Read visual_description.json
     vd_path = workdir / "visual_description.json"
     if vd_path.exists():
