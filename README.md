@@ -55,7 +55,7 @@ WebUI 三栏布局：左侧输入面板（上传 + 描述）+ 中间 WebGL shade
 v2.0 的 **codex OD（Orchestrated Dispatch）动态编排** 借鉴了当前流行的 agent 系统模式：
 
 - **[AutoResearchClaw](https://github.com/aiming-lab/AutoResearchClaw)** — 23-stage 自主研究管线，通过 [acpx 协议](https://github.com/openclaw/acpx)抽象 agent 后端，支持 Claude Code / Codex / OpenCode / Copilot / Gemini / Kimi 多 ACP 后端，stage 间可回滚 / PIVOT。本项目的"orchestrator 退化为骨架 + agent 自主路由"思路直接受其启发。
-- **OpenDesign** — design agent 的自主编排模式
+- **[OpenDesign](https://github.com/nexu-io/open-design)** — agent-native 设计工具，coding agent（Claude Code / Codex / Cursor 等）通过 `SKILL.md` + `DESIGN.md` + plugins 自主生成设计产物。本项目复用其 `SKILL.md` 编排模式（agent skills 标准化、文件即合约）。
 - **[OpenCode](https://opencode.ai)** / **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)** — terminal-native agent skills 标准
 
 **核心思想**：将"路由 / 迭代控制 / 评分"等决策权下放给 agent 自主管理（通过 `SKILL.md` 约束），而非 Python orchestrator 硬编码静态 DAG（v1.0 LangGraph 模式）。Orchestrator 退化为最小骨架（FFmpeg + spawn + JSONL 解析），agent 自己决定何时迭代、何时收尾。
