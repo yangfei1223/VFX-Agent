@@ -16,11 +16,16 @@
 
 ### 项目简介
 
-VFX-Agent 是一个 AI Agent 驱动的自动化系统，从 UX 视频/图片输入生成 Shadertoy 格式 GLSL 着色器代码。v2.0 采用 **codex OD（动态编排）架构**，单次 `codex exec` 调用自主完成全流程：分析关键帧 → 生成 visual_description → 编写 GLSL → 验证编译 → 渲染截图 → 子 Agent 评分 → 迭代优化。
+VFX-Agent 是一个 AI Agent 驱动的视效代码自动生成系统：从 UX 视频 / 图片 / 文本描述输入，自动生成 Shadertoy 格式 GLSL 着色器代码，并经隔离子 Agent 评分反馈迭代直至收敛。
+
+**核心架构思想 —— 动态编排（Dynamic Orchestration）**：orchestrator 退化为最小骨架（关键帧提取 + 任务派发 + 状态持久化），将路由 / 迭代控制 / 评分等决策权下放给 agent 通过 `SKILL.md` 自主管理，避开传统静态 DAG（如 LangGraph）的路由僵化问题。
+
+**后端可插拔**：架构层面不绑定特定 agent runtime。当前 MVP 实现基于 [codex CLI](https://developers.openai.com/codex)，编排层已与具体后端解耦，后续可扩展到 [Claude Code](https://docs.anthropic.com/en/docs/claude-code) / [OpenCode](https://opencode.ai) 等支持 agent skills 标准的流行多 agent 后端 —— 只需替换 spawn 调用，SKILL 资产 / orchestrator / 前端 / 测试基础设施全部复用。
 
 **核心能力**：
 - 🎨 多模态输入：支持图片、视频、纯文本描述
-- 🤖 单 Agent 自主编排：codex exec 按 SKILL.md 6-phase 工作流执行
+- 🤖 动态编排：agent 按 `SKILL.md` 6-phase 自主工作流执行（分析 → 生成 → 验证 → 渲染 → 评分 → 迭代），orchestrator 不做硬编码路由
+- 🔌 后端可插拔：当前 MVP 用 codex CLI，架构上可替换为其他支持 agent skills 标准的流行多 agent 后端
 - 🔄 自动迭代优化：子 Agent 隔离评分 + 语义反馈修正
 - ⚡ 实时预览：WebGL Shader 渲染 + 实时编辑
 
@@ -222,6 +227,20 @@ VFX-Agent/
 
 > 📊 **完整 benchmark 详情**（每 sample 含 reference vs render 对比、UI 截图、codex 关键事件时间线、8 维 dimension 评分、shader 源码）见 [**GitHub Release v2.0.1**](https://github.com/yangfei1223/VFX-Agent/releases/tag/v2.0.1)（95MB tar.gz 归档）。
 
+#### 测试数据集
+
+所有 benchmark 均基于作者个人收集整理的 [**vfx-shader-dataset**](https://github.com/yangfei1223/vfx-shader-dataset)（参考素材来自 Shadertoy，本地 `.gitignored`；非公开学术数据集）：
+
+| 维度 | 数值 |
+|------|------|
+| 样本总数 | **50**（每样本 = `.webm` 参考视频 + `.json` 人工标注元数据） |
+| 视效类别 | **9 类**：glow 14 / liquid 11 / particle 10 / shape 4 / space 4 / gradient 3 / warp 2 / ripple 1 / special 1 |
+| 复杂度 | simple 19 / medium 25 / complex 6 |
+| 动画 | 含动画 30 / 静态 20（flow 21 / pulse 5 / rotate 4 / morph 1 / none 19） |
+| 范围 | 2D / 2.5D UI 视效，100% in-scope，**排除 3D raymarching / 场景渲染 / 体渲染** |
+
+`.json` 标注字段：`effect_category` / `effect_name` / `visual_description`（自然语言描述） / `dominant_colors` / `key_elements` / `shape_type` / `fill_type` / `animation_type` / `complexity` / `is_2d` / `is_in_scope`，用于 Decompose Agent 评测对齐与样本难度分层。
+
 #### 测试覆盖
 
 - **50 samples**：v1.0 baseline 19 + 31 个新样本（覆盖 glow / particle / liquid / warp / 2D physics / dna helis / star tunnel 等视效类型）
@@ -230,12 +249,14 @@ VFX-Agent/
 
 > 注：评分机制（subagent 多模态对比）仍在迭代完善，绝对分数参考意义有限。实际生成 shader 的视觉效果和稳定性相比 v1.0 有显著提升，建议直接查看 release 归档里的 reference vs render 对比。
 
-#### 历次归档
+#### 测试报告归档（HTML 可视化报告）
 
-| 版本 | 日期 | 样本数 | 详情 |
+每次 benchmark 跑完会生成完整的 HTML 可视化报告（含每个 sample 的 reference vs render 对比、UI 截图、codex 关键事件时间线、8 维 dimension 评分、shader 源码），打包为 `.tar.gz` 上传到对应 GitHub Release。归档只是 HTML / JSON / PNG，没有可执行二进制。
+
+| 版本 | 日期 | 样本数 | 报告归档 |
 |------|------|--------|------|
-| **v2.0.1** | 2026-07-16 | 50 + retry | [Release v2.0.1](https://github.com/yangfei1223/VFX-Agent/releases/tag/v2.0.1) |
-| v2.0.0 | 2026-07-15 | 20 | [Release v2.0.0](https://github.com/yangfei1223/VFX-Agent/releases/tag/v2.0.0) |
+| **v2.0.1** | 2026-07-16 | 50 + retry | [Release v2.0.1](https://github.com/yangfei1223/VFX-Agent/releases/tag/v2.0.1)（95MB tar.gz，含 HTML + JSON + PNG） |
+| v2.0.0 | 2026-07-15 | 20 | [Release v2.0.0](https://github.com/yangfei1223/VFX-Agent/releases/tag/v2.0.0)（41MB tar.gz） |
 
 #### 本地查看
 
@@ -313,11 +334,16 @@ MIT License
 
 ### Project Overview
 
-VFX-Agent is an AI Agent-driven system that automatically generates Shadertoy-format GLSL shader code from UX video/image inputs. v2.0 uses a **codex OD (Orchestrated Dispatch)** architecture — a single `codex exec` call autonomously completes the full pipeline.
+VFX-Agent is an AI Agent-driven system that automatically generates Shadertoy-format GLSL shader code from UX video / image / text inputs, with isolated subagent evaluation and iterative refinement until convergence.
+
+**Core architectural idea — Dynamic Orchestration**: the orchestrator is reduced to a minimal skeleton (keyframe extraction + task dispatch + state persistence). Routing, iteration control, and evaluation decisions are delegated to the agent itself via `SKILL.md`, avoiding the rigidity of traditional static DAGs (e.g., LangGraph).
+
+**Pluggable backend**: the architecture is not bound to any specific agent runtime. The current MVP is built on [codex CLI](https://developers.openai.com/codex); the orchestration layer is decoupled from the backend, and can be extended to other popular multi-agent backends that support the agent skills standard (e.g., [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [OpenCode](https://opencode.ai)) by simply swapping the spawn call — SKILL assets / orchestrator / frontend / test infrastructure are all reusable.
 
 **Key Features**:
 - 🎨 Multimodal input: images, videos, text descriptions
-- 🤖 Autonomous single-Agent pipeline via codex exec + SKILL.md
+- 🤖 Dynamic orchestration: agent runs an autonomous 6-phase workflow (analyse → generate → validate → render → evaluate → iterate) per `SKILL.md`; orchestrator does not hardcode routing
+- 🔌 Pluggable backend: current MVP uses codex CLI; architected to swap in other agent-skills-compatible backends
 - 🔄 Self-iteration with isolated subagent evaluation
 - ⚡ Real-time WebGL shader preview + live editing
 
