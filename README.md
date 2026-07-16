@@ -251,6 +251,16 @@ python tests/e2e/generate_v2_report.py
 
 ---
 
+### 已知问题
+
+| 问题 | 说明 | 优先级 |
+|------|------|--------|
+| 部分样本 shader 编译失败 | codex 生成的 GLSL 偶发语法 / 语义错误，渲染全黑（retry 通常可恢复） | P0 |
+| 复杂样本 600s timeout | 单 pipeline 硬超时对复杂 effect type 不够，部分迭代未跑完 | P0 |
+| Subagent 评分仍在迭代 | 多模态对比打分存在偏差，绝对分数参考意义有限，建议直接看 reference vs render 对比 | P1 |
+
+---
+
 ### v1.0 历史版本
 
 v1.0（LangGraph 三 Agent 架构）已废弃。如需查看旧版代码，请 checkout `v1.0.0` tag。
