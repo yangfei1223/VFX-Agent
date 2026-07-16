@@ -4,7 +4,7 @@ Usage:
     python tests/e2e/run_v2_samples_via_ui.py [sample1 sample2 ...]
     python tests/e2e/run_v2_samples_via_ui.py --all
 
-Default (no args) runs all 20 samples.
+Default (no args) runs all samples discovered from test-samples/data/.
 """
 import argparse
 import asyncio
@@ -24,14 +24,26 @@ TEST_SAMPLES = Path("/Users/yangfei/Code/VFX-Agent/test-samples/data")
 ARCHIVE_ROOT = Path("/tmp/vfx_v2_runs")
 MAP_FILE = ARCHIVE_ROOT / "sample_pipeline_map.json"
 
-# 20 samples (v1.0 baseline 19 + windows-95)
-DEFAULT_SAMPLES = [
-    "4-col-grad", "auroras", "buffer-bloom", "cool-s-distance", "electron",
-    "happy-diwali-2019", "heart-2d", "hypnotic-ripples", "liquid-galss-test",
-    "liquid-glass-ui", "moon-distance-2d", "plasma-waves", "shiny-circle",
-    "sparks-drifting", "supah-frosted-glass", "twitter-blue-check",
-    "vortex-street", "warp-speed2", "water-color-blending", "windows-95",
-]
+
+def _discover_samples_from_disk() -> list[str]:
+    """Scan TEST_SAMPLES dir for all .webm files with matching .json pairs.
+
+    Returns sorted stem list. Warns on .webm without .json (skipped).
+    """
+    if not TEST_SAMPLES.exists():
+        print(f"[ui-runner] WARN: test samples dir not found: {TEST_SAMPLES}")
+        return []
+
+    samples: list[str] = []
+    for p in sorted(TEST_SAMPLES.glob("*.webm")):
+        stem = p.stem
+        json_path = TEST_SAMPLES / f"{stem}.json"
+        if not json_path.exists():
+            print(f"[ui-runner] WARN: {stem}: .webm found but no matching .json, skipping")
+            continue
+        samples.append(stem)
+
+    return samples
 
 
 def extract_keyframe(sample: str) -> Path | None:
@@ -238,7 +250,18 @@ async def run_one_sample(page, sample: str) -> dict:
     result["elapsed_s"] = round(time.time() - start_time, 1)
 
     # 9. Screenshot after completion
-    await page.wait_for_timeout(2000)
+    # Wait for evaluation score element to confirm React + Three.js fully rendered
+    # (avoid capturing vite loading page on slow mounts).
+    # "text=score" is from ScorePanel.tsx — the <span>score</span> label only renders
+    # when evaluation data exists (pipeline terminal state + React re-render done).
+    SELECTOR_TIMEOUT_MS = 15000
+    try:
+        await page.wait_for_selector("text=score", timeout=SELECTOR_TIMEOUT_MS)
+        await page.wait_for_timeout(1500)  # extra buffer for shader preview frame
+    except Exception as e:
+        print(f"[ui-runner] WARN: evaluation score not detected within {SELECTOR_TIMEOUT_MS}ms: {e}")
+        await page.wait_for_timeout(3000)  # fallback
+
     post_path = ARCHIVE_ROOT / f"{sample}_ui_post.png"
     try:
         await page.screenshot(path=str(post_path), full_page=True)
@@ -252,14 +275,16 @@ async def run_one_sample(page, sample: str) -> dict:
 
 async def main():
     parser = argparse.ArgumentParser(description="Run v2.0 samples via UI (Playwright)")
-    parser.add_argument("samples", nargs="*", help="Sample names (default: all 20)")
-    parser.add_argument("--all", action="store_true", help="Run all 20 samples")
+    parser.add_argument("samples", nargs="*", help="Sample names (default: all from test-samples/data/)")
+    parser.add_argument("--all", action="store_true",
+                        help="Explicitly run all samples (same as no args; for clarity in scripts)")
     args = parser.parse_args()
 
-    if args.all or not args.samples:
-        samples = DEFAULT_SAMPLES
-    else:
+    if args.samples:
         samples = args.samples
+    else:
+        samples = _discover_samples_from_disk()
+        print(f"[ui-runner] discovered {len(samples)} samples from test-samples/data/")
 
     ARCHIVE_ROOT.mkdir(parents=True, exist_ok=True)
 

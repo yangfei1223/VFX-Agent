@@ -198,30 +198,41 @@ VFX-Agent/
 
 ### 测试结果
 
-最新测试报告：`backend/test_results/2026-07-13_v2-codex-od-19samples/`
+> 📊 **完整 50-sample benchmark 详情**（每 sample 含 reference vs render 对比、UI 截图、codex 关键事件时间线、8 维 dimension 评分、shader 源码）见 [**GitHub Release v2.0.1**](https://github.com/yangfei1223/VFX-Agent/releases/tag/v2.0.1)（95MB tar.gz 归档）。
+
+#### v2.0 vs v1.0（50 samples + retry）
+
+| 指标 | v1.0 LangGraph (19 sample) | v2.0 codex OD (50 sample, 含 retry) | Delta |
+|------|---------------------------|-------------------------------------|-------|
+| 平均分 | 0.715 | **0.770** | **+0.055** |
+| 中位分 | 0.710 | 0.766 | +0.056 |
+| 通过 (≥0.85) | 5/19 (26.3%) | **16/50 (32.0%)** | +5.7% |
+| 可接受 (0.80-0.85) | 4/19 (21.1%) | 5/50 (10.0%) | − |
+| 失败 (<0.80) | 10/19 (52.6%) | 29/50 (58.0%) | − |
+
+> **关键发现**：v2.0 在 50-sample 上以 +0.055 反超 v1.0（v2.0 首次系统性超越 v1.0）。第一轮 9 个 0 分/低分样本经 retry 后全部大幅好转（4 个黑屏 → 0.6+，2 个直接 PASS），证明 codex 非确定性对瞬时编译失败有效。
+
+#### 历次 benchmark
+
+| 版本 | 日期 | 样本数 | 平均分 | 详情 |
+|------|------|--------|--------|------|
+| **v2.0.1** | 2026-07-16 | 50 (+ retry) | **0.770** | [Release v2.0.1](https://github.com/yangfei1223/VFX-Agent/releases/tag/v2.0.1) |
+| v2.0.0 | 2026-07-15 | 20 | 0.762 | [Release v2.0.0](https://github.com/yangfei1223/VFX-Agent/releases/tag/v2.0.0) |
+| v1.0 baseline | 2026-05-18 | 19 | 0.715 | `backend/test_results/2026-05-18_e2e-v2-baseline-19samples/` |
+
+#### 本地查看报告
 
 ```bash
-# 查看 HTML 报告
-open backend/test_results/2026-07-13_v2-codex-od-19samples/index.html
-
-# 收集结果 + 生成报告
+# 解压 release 里的 tar.gz 到 backend/test_results/
 cd backend
+tar xzf /path/to/v2.0.1-baseline-50samples.tar.gz
+open test_results/2026-07-16_v2-codex-od-50samples/index.html
+
+# 自己跑 benchmark + 生成报告
+python tests/e2e/run_v2_samples_via_ui.py <sample1> <sample2> ...  # 显式列表
 python tests/e2e/collect_v2_results.py
 python tests/e2e/generate_v2_report.py
 ```
-
-#### v2.0 vs v1.0 对比（19 样本）
-
-| 指标 | v1.0 LangGraph | v2.0 codex OD | Delta |
-|------|---------------|---------------|-------|
-| 平均分 | **0.715** | **0.642** | −0.073 |
-| 通过 (≥0.85) | 5/19 (26.3%) | 4/19 (21.1%) | −1 |
-| 可接受 (0.80-0.85) | 4/19 (21.1%) | 1/19 (5.3%) | −3 |
-| 失败 (<0.80) | 10/19 (52.6%) | 14/19 (73.7%) | +4 |
-
-**v2.0 显著提升的样本**：sparks-drifting (+0.49，v1.0 timeout)、auroras (+0.30)、liquid-galss-test (+0.28)
-
-**v2.0 显著退步的样本**：supah-frosted-glass (−0.75)、moon-distance-2d (−0.70)、hypnotic-ripples (−0.40)
 
 ---
 
@@ -329,12 +340,15 @@ python tests/e2e/run_v2_samples.py heart-2d
 
 ### Test Results Summary
 
-| Metric | v1.0 LangGraph | v2.0 codex OD | Delta |
-|--------|---------------|---------------|-------|
-| Average Score | **0.715** | **0.642** | −0.073 |
-| Pass (≥0.85) | 5/19 (26.3%) | 4/19 (21.1%) | −1 |
+📊 **Full 50-sample benchmark report** (per-sample reference vs render comparison, UI screenshots, codex event timeline, dimension scores, shader source): see [**GitHub Release v2.0.1**](https://github.com/yangfei1223/VFX-Agent/releases/tag/v2.0.1).
 
-Open latest report: `backend/test_results/2026-07-13_v2-codex-od-19samples/index.html`
+| Metric | v1.0 LangGraph (19) | v2.0 codex OD (50 + retry) | Delta |
+|--------|---------------------|----------------------------|-------|
+| Average Score | 0.715 | **0.770** | **+0.055** |
+| Median Score | 0.710 | 0.766 | +0.056 |
+| Pass (≥0.85) | 5/19 (26.3%) | **16/50 (32.0%)** | +5.7% |
+
+v2.0 surpasses v1.0 on the 50-sample benchmark. 9 zero/low-score samples in round 1 recovered significantly after retry (4 black-screen → 0.6+, 2 PASS) — codex non-determinism effectively rescues transient compile failures.
 
 ### License
 

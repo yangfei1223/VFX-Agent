@@ -49,6 +49,20 @@ EFFECT_META = {
 }
 
 
+TEST_SAMPLES_DIR = Path("/Users/yangfei/Code/VFX-Agent/test-samples/data")
+
+
+def _discover_samples_from_disk() -> list[str]:
+    """Scan test-samples/data/ for all .webm with matching .json pairs."""
+    if not TEST_SAMPLES_DIR.exists():
+        return []
+    out: list[str] = []
+    for p in sorted(TEST_SAMPLES_DIR.glob("*.webm")):
+        if (TEST_SAMPLES_DIR / f"{p.stem}.json").exists():
+            out.append(p.stem)
+    return out
+
+
 def encode_image_b64(path: Path) -> str | None:
     if not path.exists():
         return None
@@ -329,7 +343,8 @@ def persist_to_test_results(
     if output_dir is None:
         date_str = datetime.now().strftime("%Y-%m-%d")
         backend_root = Path(__file__).resolve().parents[2]
-        output_dir = backend_root / "test_results" / f"{date_str}_v2-codex-od-20samples"
+        num_samples = len(report_data.get("samples", []))
+        output_dir = backend_root / "test_results" / f"{date_str}_v2-codex-od-{num_samples}samples"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     backend_root = Path(__file__).resolve().parents[2]
@@ -589,11 +604,12 @@ def main():
         except Exception as e:
             print(f"[collect] WARN: failed to read map file: {e}", file=sys.stderr)
 
-    # Sample 列表：map-file 优先，否则 V1_BASELINES.keys()
+    # Sample 列表：map-file 优先，否则扫盘 test-samples/data/
     if map_by_sample:
         samples = sorted(map_by_sample.keys())
     else:
-        samples = sorted(V1_BASELINES.keys())
+        samples = _discover_samples_from_disk()
+        print(f"[collect] No map file; falling back to {len(samples)} samples from disk", file=sys.stderr)
 
     results = []
     for s in samples:
