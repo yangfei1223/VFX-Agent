@@ -251,23 +251,6 @@ python tests/e2e/generate_v2_report.py
 
 ---
 
-### 已知问题
-
-| 问题 | 说明 | 优先级 |
-|------|------|--------|
-| 部分样本 shader 编译失败 | 渲染全黑，subagent score ≈ 0 | P0 |
-| 复杂样本 600s timeout | hypnotic-ripples、moon-distance-2d 等超时 | P0 |
-| 平均分落后 v1.0 | 迭代质量不足，3 iter 用满仍不收敛 | P1 |
-| Subagent 评分偏差 | A/B cross-validation delta 0.111，borderline bias | P1 |
-
-### Roadmap
-
-- **Phase F**：提高 Generate Agent few-shot 覆盖面，降低编译失败率
-- **Phase G**：优化迭代策略，约束 codex 的时间分配
-- **Phase H**：v1.0 prompt 资产移植到 v2.0 skill 体系
-
----
-
 ### v1.0 历史版本
 
 v1.0（LangGraph 三 Agent 架构）已废弃。如需查看旧版代码，请 checkout `v1.0.0` tag。
@@ -276,19 +259,24 @@ v1.0（LangGraph 三 Agent 架构）已废弃。如需查看旧版代码，请 c
 
 ### 配置说明
 
-模型配置通过 `backend/.env` 指定：
+v2.0 通过 codex CLI 调用 LLM，模型本身（API key / base URL / model name）的配置在 codex 自己的 `~/.codex/config` 里。`backend/.env` 只配置 orchestrator 行为参数：
 
 ```env
-# codex 模型配置
-CODEX_MODEL=gemini-2.5-flash
-CODEX_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai
-CODEX_API_KEY=your_api_key
+# Codex 调用
+CODEX_PROXY=http://127.0.0.1:7890     # codex exec 走代理（海外 API 必需）
+CODEX_TIMEOUT=600                      # 单 pipeline 硬超时（秒）
+PASSING_SCORE=0.85                     # subagent 评分通过阈值
 
-# 代理（海外 API）
-PROXY=http://127.0.0.1:7890
+# 截图
+SCREENSHOT_WIDTH=1280
+SCREENSHOT_HEIGHT=720
+RENDER_TIMEOUT_MS=2000
+
+# Pipeline workdir 根目录（每个 pipeline 一个子目录）
+WORKDIR_ROOT=/tmp/vfx_workdirs
 ```
 
-**支持的所有 OpenAI-compatible API**：Gemini 2.x、OpenAI GPT-4o、Anthropic Claude 等。
+完整 schema 见 `backend/.env.example`。
 
 ---
 
