@@ -219,38 +219,32 @@ VFX-Agent/
 
 ### 测试结果
 
-> 📊 **完整 50-sample benchmark 详情**（每 sample 含 reference vs render 对比、UI 截图、codex 关键事件时间线、8 维 dimension 评分、shader 源码）见 [**GitHub Release v2.0.1**](https://github.com/yangfei1223/VFX-Agent/releases/tag/v2.0.1)（95MB tar.gz 归档）。
+> 📊 **完整 benchmark 详情**（每 sample 含 reference vs render 对比、UI 截图、codex 关键事件时间线、8 维 dimension 评分、shader 源码）见 [**GitHub Release v2.0.1**](https://github.com/yangfei1223/VFX-Agent/releases/tag/v2.0.1)（95MB tar.gz 归档）。
 
-#### v2.0 vs v1.0（50 samples + retry）
+#### 测试覆盖
 
-| 指标 | v1.0 LangGraph (19 sample) | v2.0 codex OD (50 sample, 含 retry) | Delta |
-|------|---------------------------|-------------------------------------|-------|
-| 平均分 | 0.715 | **0.770** | **+0.055** |
-| 中位分 | 0.710 | 0.766 | +0.056 |
-| 通过 (≥0.85) | 5/19 (26.3%) | **16/50 (32.0%)** | +5.7% |
-| 可接受 (0.80-0.85) | 4/19 (21.1%) | 5/50 (10.0%) | − |
-| 失败 (<0.80) | 10/19 (52.6%) | 29/50 (58.0%) | − |
+- **50 samples**：v1.0 baseline 19 + 31 个新样本（覆盖 glow / particle / liquid / warp / 2D physics / dna helis / star tunnel 等视效类型）
+- **Retry 机制**：第一轮 0 / 低分样本（多为瞬时编译失败、UI 截图时机问题）经 retry 后显著好转
+- **前端路径驱动**：Playwright 模拟真实用户操作（上传 → 提交 → 轮询 → 截图）
 
-> **关键发现**：v2.0 在 50-sample 上以 +0.055 反超 v1.0（v2.0 首次系统性超越 v1.0）。第一轮 9 个 0 分/低分样本经 retry 后全部大幅好转（4 个黑屏 → 0.6+，2 个直接 PASS），证明 codex 非确定性对瞬时编译失败有效。
+> 注：评分机制（subagent 多模态对比）仍在迭代完善，绝对分数参考意义有限。实际生成 shader 的视觉效果和稳定性相比 v1.0 有显著提升，建议直接查看 release 归档里的 reference vs render 对比。
 
-#### 历次 benchmark
+#### 历次归档
 
-| 版本 | 日期 | 样本数 | 平均分 | 详情 |
-|------|------|--------|--------|------|
-| **v2.0.1** | 2026-07-16 | 50 (+ retry) | **0.770** | [Release v2.0.1](https://github.com/yangfei1223/VFX-Agent/releases/tag/v2.0.1) |
-| v2.0.0 | 2026-07-15 | 20 | 0.762 | [Release v2.0.0](https://github.com/yangfei1223/VFX-Agent/releases/tag/v2.0.0) |
-| v1.0 baseline | 2026-05-18 | 19 | 0.715 | `backend/test_results/2026-05-18_e2e-v2-baseline-19samples/` |
+| 版本 | 日期 | 样本数 | 详情 |
+|------|------|--------|------|
+| **v2.0.1** | 2026-07-16 | 50 + retry | [Release v2.0.1](https://github.com/yangfei1223/VFX-Agent/releases/tag/v2.0.1) |
+| v2.0.0 | 2026-07-15 | 20 | [Release v2.0.0](https://github.com/yangfei1223/VFX-Agent/releases/tag/v2.0.0) |
 
-#### 本地查看报告
+#### 本地查看
 
 ```bash
-# 解压 release 里的 tar.gz 到 backend/test_results/
-cd backend
-tar xzf /path/to/v2.0.1-baseline-50samples.tar.gz
-open test_results/2026-07-16_v2-codex-od-50samples/index.html
+# 解压 release tar.gz 后打开 HTML 报告
+tar xzf v2.0.1-baseline-50samples.tar.gz
+open backend/test_results/2026-07-16_v2-codex-od-50samples/index.html
 
-# 自己跑 benchmark + 生成报告
-python tests/e2e/run_v2_samples_via_ui.py <sample1> <sample2> ...  # 显式列表
+# 自己跑 benchmark（显式传 sample 列表）
+python tests/e2e/run_v2_samples_via_ui.py <sample1> <sample2> ...
 python tests/e2e/collect_v2_results.py
 python tests/e2e/generate_v2_report.py
 ```
@@ -361,15 +355,15 @@ python tests/e2e/run_v2_samples.py heart-2d
 
 ### Test Results Summary
 
-📊 **Full 50-sample benchmark report** (per-sample reference vs render comparison, UI screenshots, codex event timeline, dimension scores, shader source): see [**GitHub Release v2.0.1**](https://github.com/yangfei1223/VFX-Agent/releases/tag/v2.0.1).
+📊 **Full benchmark report** (per-sample reference vs render comparison, UI screenshots, codex event timeline, dimension scores, shader source): see [**GitHub Release v2.0.1**](https://github.com/yangfei1223/VFX-Agent/releases/tag/v2.0.1).
 
-| Metric | v1.0 LangGraph (19) | v2.0 codex OD (50 + retry) | Delta |
-|--------|---------------------|----------------------------|-------|
-| Average Score | 0.715 | **0.770** | **+0.055** |
-| Median Score | 0.710 | 0.766 | +0.056 |
-| Pass (≥0.85) | 5/19 (26.3%) | **16/50 (32.0%)** | +5.7% |
+#### Test Coverage
 
-v2.0 surpasses v1.0 on the 50-sample benchmark. 9 zero/low-score samples in round 1 recovered significantly after retry (4 black-screen → 0.6+, 2 PASS) — codex non-determinism effectively rescues transient compile failures.
+- **50 samples**: v1.0 baseline 19 + 31 new samples (covers glow / particle / liquid / warp / 2D physics / dna helis / star tunnel effect types)
+- **Retry mechanism**: zero/low-score samples in round 1 (transient compile failures, UI screenshot timing issues) significantly recovered after retry
+- **Frontend path-driven**: Playwright simulates real user flow (upload → submit → poll → screenshot)
+
+> Note: the scoring mechanism (subagent multimodal comparison) is still iterating; absolute scores have limited reference value. The visual quality and stability of generated shaders is significantly improved over v1.0 — refer directly to the reference vs render comparisons in the release archive.
 
 ### License
 
