@@ -16,9 +16,9 @@ def test_run_pipeline_signature_has_backend_param():
     default = sig.parameters["backend"].default
     # FastAPI wraps Form defaults in a Form() object; check value inside
     if hasattr(default, "default"):
-        assert default.default == "codex"
+        assert default.default == "", f"backend default should be '' (fall back to runtime_config), got {default.default!r}"
     else:
-        assert default == "codex"
+        assert default == "", f"backend default should be '' (fall back to runtime_config), got {default!r}"
 
 
 def test_run_pipeline_passes_backend_to_orchestrator():
@@ -28,3 +28,11 @@ def test_run_pipeline_passes_backend_to_orchestrator():
     src = inspect.getsource(pipeline.run_pipeline)
     assert "backend_name=" in src, "run_pipeline source must pass backend_name= to orchestrator.run"
     # Don't run the full handler — it spawns asyncio tasks and touches filesystem
+
+
+def test_run_pipeline_falls_back_to_runtime_config():
+    """When backend Form field is empty, router uses runtime_config.backend."""
+    import inspect
+    src = inspect.getsource(pipeline.run_pipeline)
+    assert "runtime_cfg.backend" in src or "effective_backend" in src, \
+        "run_pipeline must compute effective_backend from runtime_cfg.backend when Form field is empty"

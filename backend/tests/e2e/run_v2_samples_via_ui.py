@@ -21,7 +21,7 @@ from playwright.async_api import async_playwright
 BACKEND_URL = "http://localhost:8000"
 FRONTEND_URL = "http://localhost:5173"
 TEST_SAMPLES = Path("/Users/yangfei/Code/VFX-Agent/test-samples/data")
-ARCHIVE_ROOT = Path("/tmp/vfx_v2_runs")
+ARCHIVE_ROOT = Path("/tmp/vfx_v2_runs_codex")  # default; overridden in main() with --backend
 MAP_FILE = ARCHIVE_ROOT / "sample_pipeline_map.json"
 
 
@@ -278,6 +278,12 @@ async def main():
     parser.add_argument("samples", nargs="*", help="Sample names (default: all from test-samples/data/)")
     parser.add_argument("--all", action="store_true",
                         help="Explicitly run all samples (same as no args; for clarity in scripts)")
+    parser.add_argument(
+        "--backend",
+        choices=["codex", "claude-code"],
+        default="codex",
+        help="Agent backend to use (default: codex). Sets runtime_config.backend via PUT /config.",
+    )
     args = parser.parse_args()
 
     if args.samples:
@@ -286,11 +292,16 @@ async def main():
         samples = _discover_samples_from_disk()
         print(f"[ui-runner] discovered {len(samples)} samples from test-samples/data/")
 
+    # Set per-backend archive root (prevents screenshot collisions between backends)
+    global ARCHIVE_ROOT, MAP_FILE
+    ARCHIVE_ROOT = Path(f"/tmp/vfx_v2_runs_{args.backend}")
+    MAP_FILE = ARCHIVE_ROOT / "sample_pipeline_map.json"
     ARCHIVE_ROOT.mkdir(parents=True, exist_ok=True)
 
     print(f"[ui-runner] Running {len(samples)} samples via UI")
     print(f"[ui-runner] Frontend: {FRONTEND_URL}")
     print(f"[ui-runner] Backend:  {BACKEND_URL}")
+    print(f"[ui-runner] Agent backend: {args.backend}")
 
     # Health check: verify backend is reachable
     # NOTE: Use requests with proxies={'http': '', 'https': ''} to bypass
@@ -305,6 +316,22 @@ async def main():
     except requests.RequestException as e:
         print(f"[ui-runner] ERROR: backend not reachable: {e}")
         sys.exit(1)
+
+    # Set backend via runtime_config (frontend doesn't send backend field;
+    # router falls back to runtime_config.backend when Form field is empty).
+    try:
+        get_resp = requests.get(f"{BACKEND_URL}/config", timeout=10,
+                                proxies={"http": "", "https": ""})
+        get_resp.raise_for_status()
+        current_cfg = get_resp.json()
+        current_cfg["backend"] = args.backend
+        put_resp = requests.put(f"{BACKEND_URL}/config", json=current_cfg, timeout=10,
+                                proxies={"http": "", "https": ""})
+        put_resp.raise_for_status()
+        print(f"[ui-runner] runtime_config.backend set to '{args.backend}'")
+    except requests.RequestException as e:
+        print(f"[ui-runner] WARN: failed to set backend via PUT /config: {e}")
+        print(f"[ui-runner] (will continue; backend may default to 'codex')")
 
     results = []
     async with async_playwright() as pw:

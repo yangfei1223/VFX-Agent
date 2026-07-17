@@ -35,7 +35,7 @@ async def run_pipeline(
     notes: str = Form(""),
     images: list[UploadFile] = File(default=[]),
     video: UploadFile | None = File(default=None),
-    backend: str = Form("codex"),
+    backend: str = Form(""),  # empty = use runtime_config.backend
 ):
     """Spawn a new pipeline run in background.
 
@@ -93,6 +93,7 @@ async def run_pipeline(
 
     runtime_cfg = get_runtime_config()
     max_iterations = runtime_cfg.max_iterations
+    effective_backend = backend or runtime_cfg.backend
 
     # Spawn orchestrator in background (asyncio task, not BackgroundTasks,
     # because the orchestrator is async).
@@ -104,7 +105,7 @@ async def run_pipeline(
             keyframes=keyframe_paths,
             notes=notes,
             max_iterations=max_iterations,
-            backend_name=backend,
+            backend_name=effective_backend,
         )
 
     asyncio.create_task(_run())
