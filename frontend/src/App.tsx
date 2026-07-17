@@ -8,6 +8,7 @@ import type { PipelineStatus } from "./types/pipeline";
 import InputPanel from "./components/InputPanel";
 import ShaderEditor from "./components/ShaderEditor";
 import ShaderPreview from "./components/ShaderPreview";
+import SettingsPanel from "./components/SettingsPanel";
 
 import PhaseTimeline from "./components/PhaseTimeline";
 import EventStream from "./components/EventStream";
@@ -191,6 +192,7 @@ function App() {
   } = usePipeline();
 
   const [showAbout, setShowAbout] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [editedCode, setEditedCode] = useState<string | null>(null);
 
   // Keep editedCode in sync with the pipeline result, but don't override local edits.
@@ -244,7 +246,7 @@ function App() {
 
           <div className="flex items-center gap-2">
             <button
-              onClick={() => alert("v2.0 配置编辑待实现")}
+              onClick={() => setShowSettings(true)}
               className="p-2 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] transition-all duration-200"
               title="Settings"
             >
@@ -351,6 +353,7 @@ function App() {
       </main>
 
       <AboutModal isOpen={showAbout} onClose={() => setShowAbout(false)} />
+      <SettingsPanel isOpen={showSettings} onClose={() => setShowSettings(false)} />
     </div>
   );
 }

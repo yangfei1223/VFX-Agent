@@ -8,13 +8,35 @@ interface SettingsPanelProps {
 }
 
 interface Settings {
-  maxIterations: number;
-  passingThreshold: number;
+  // Backend
+  backend: 'codex' | 'claude-code';
+  codex_proxy: string;
+  codex_timeout: number;
+  claude_code_proxy: string;
+  claude_code_timeout: number;
+  // Pipeline
+  max_iterations: number;
+  passing_threshold: number;
+  // Render
+  screenshot_width: number;
+  screenshot_height: number;
+  render_timeout_ms: number;
+  // System
+  workdir_root: string;
 }
 
 const DEFAULT_SETTINGS: Settings = {
-  maxIterations: 3,
-  passingThreshold: 0.85,
+  backend: 'codex',
+  codex_proxy: 'http://127.0.0.1:7890',
+  codex_timeout: 600,
+  claude_code_proxy: '',
+  claude_code_timeout: 600,
+  max_iterations: 5,
+  passing_threshold: 0.85,
+  screenshot_width: 1280,
+  screenshot_height: 720,
+  render_timeout_ms: 2000,
+  workdir_root: '/tmp/vfx_workdirs',
 };
 
 const API_BASE = 'http://localhost:8000';
@@ -36,14 +58,21 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
           const res = await fetch(`${API_BASE}/config`);
           if (res.ok) {
             const data = await res.json();
-            setSettings({
-              maxIterations: data.max_iterations,
-              passingThreshold: data.passing_threshold,
-            });
-            setSavedSettings({
-              maxIterations: data.max_iterations,
-              passingThreshold: data.passing_threshold,
-            });
+            const fetched: Settings = {
+              backend: data.backend ?? DEFAULT_SETTINGS.backend,
+              codex_proxy: data.codex_proxy ?? DEFAULT_SETTINGS.codex_proxy,
+              codex_timeout: data.codex_timeout ?? DEFAULT_SETTINGS.codex_timeout,
+              claude_code_proxy: data.claude_code_proxy ?? DEFAULT_SETTINGS.claude_code_proxy,
+              claude_code_timeout: data.claude_code_timeout ?? DEFAULT_SETTINGS.claude_code_timeout,
+              max_iterations: data.max_iterations ?? DEFAULT_SETTINGS.max_iterations,
+              passing_threshold: data.passing_threshold ?? DEFAULT_SETTINGS.passing_threshold,
+              screenshot_width: data.screenshot_width ?? DEFAULT_SETTINGS.screenshot_width,
+              screenshot_height: data.screenshot_height ?? DEFAULT_SETTINGS.screenshot_height,
+              render_timeout_ms: data.render_timeout_ms ?? DEFAULT_SETTINGS.render_timeout_ms,
+              workdir_root: data.workdir_root ?? DEFAULT_SETTINGS.workdir_root,
+            };
+            setSettings(fetched);
+            setSavedSettings(fetched);
           }
         } catch (e) {
           console.warn('Failed to fetch settings:', e);
@@ -63,8 +92,17 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          max_iterations: settings.maxIterations,
-          passing_threshold: settings.passingThreshold,
+          backend: settings.backend,
+          codex_proxy: settings.codex_proxy,
+          codex_timeout: settings.codex_timeout,
+          claude_code_proxy: settings.claude_code_proxy,
+          claude_code_timeout: settings.claude_code_timeout,
+          max_iterations: settings.max_iterations,
+          passing_threshold: settings.passing_threshold,
+          screenshot_width: settings.screenshot_width,
+          screenshot_height: settings.screenshot_height,
+          render_timeout_ms: settings.render_timeout_ms,
+          workdir_root: settings.workdir_root,
         }),
       });
       if (!res.ok) throw new Error(`Failed: ${res.statusText}`);
@@ -82,11 +120,11 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
     setError(null);
   }, []);
 
+  const hasChanges = Object.keys(settings).some(
+    (key) => settings[key as keyof Settings] !== savedSettings[key as keyof Settings]
+  );
+
   const handleClose = useCallback(() => {
-    const hasChanges = 
-      settings.maxIterations !== savedSettings.maxIterations ||
-      settings.passingThreshold !== savedSettings.passingThreshold;
-    
     if (hasChanges) {
       if (window.confirm('Discard unsaved changes?')) {
         onClose();
@@ -94,7 +132,7 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
     } else {
       onClose();
     }
-  }, [settings, savedSettings, onClose]);
+  }, [hasChanges, onClose]);
 
   // Close on Escape key
   useEffect(() => {
@@ -109,12 +147,8 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
 
   if (!isOpen) return null;
 
-  const hasChanges = 
-    settings.maxIterations !== savedSettings.maxIterations ||
-    settings.passingThreshold !== savedSettings.passingThreshold;
-
   return (
-    <div 
+    <div
       className="fixed inset-0 z-[60] flex items-center justify-center p-4"
       onClick={(e) => {
         if (e.target === e.currentTarget) handleClose();
@@ -122,10 +156,10 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
     >
       {/* Backdrop */}
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-      
+
       {/* Dialog */}
-      <div 
-        className="relative w-full max-w-lg bg-[var(--bg-secondary)] border border-[var(--border-color)]
+      <div
+        className="relative w-full max-w-2xl bg-[var(--bg-secondary)] border border-[var(--border-color)]
                    rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
       >
@@ -141,7 +175,7 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                 System Settings
               </h2>
               <p className="text-xs text-[var(--text-muted)]">
-                Configure pipeline parameters
+                Configure runtime parameters
               </p>
             </div>
           </div>
@@ -156,85 +190,230 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
         </div>
 
         {/* Content */}
-        <div className="px-6 py-5 space-y-5">
+        <div className="px-6 py-5 space-y-6 max-h-[70vh] overflow-y-auto">
           {isLoading ? (
             <div className="flex items-center justify-center py-12">
-              <div className="w-8 h-8 border-2 border-[var(--accent-primary)]/30 
+              <div className="w-8 h-8 border-2 border-[var(--accent-primary)]/30
                             border-t-[var(--accent-primary)] rounded-full animate-spin" />
             </div>
           ) : (
             <>
-              {/* Max Iterations */}
-              <div className="group">
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-sm font-medium text-[var(--text-primary)]">
-                    Max Iterations
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-[var(--text-muted)]">1</span>
-<div className="relative w-24 h-2 bg-[var(--bg-tertiary)] rounded-full overflow-hidden">
-                       <div 
-                         className="absolute left-0 top-0 h-full bg-gradient-to-r from-[var(--accent-primary)] 
-                                   to-[var(--accent-secondary)] rounded-full transition-all duration-150"
-                         style={{ width: `${((settings.maxIterations - 1) / 99) * 100}%` }}
-                       />
-                       <input
-                         type="range"
-                         min={1}
-                         max={100}
-                         step={1}
-                         value={settings.maxIterations}
-                         onChange={(e) => setSettings(s => ({ ...s, maxIterations: parseInt(e.target.value) }))}
-                         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                       />
-                     </div>
-                     <span className="text-xs text-[var(--text-muted)]">100</span>
+              {/* Backend Group */}
+              <div className="space-y-4">
+                <h3 className="text-sm font-semibold text-[var(--text-primary)] uppercase tracking-wider border-b border-[var(--border-color)] pb-2">
+                  Backend
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-2 sm:col-span-2">
+                    <label className="text-sm font-medium text-[var(--text-primary)]">Backend</label>
+                    <select
+                      value={settings.backend}
+                      onChange={(e) => setSettings(s => ({ ...s, backend: e.target.value as Settings['backend'] }))}
+                      className="w-full px-3 py-2 bg-[var(--bg-tertiary)] border border-[var(--border-color)] rounded-lg
+                               text-sm text-[var(--text-primary)] focus:border-[var(--accent-primary)] focus:outline-none
+                               focus:ring-1 focus:ring-[var(--accent-primary)]/30"
+                    >
+                      <option value="codex">codex</option>
+                      <option value="claude-code">claude-code</option>
+                    </select>
                   </div>
-                </div>
-                <div className="flex items-center justify-between">
-                  <p className="text-xs text-[var(--text-muted)]">
-                    Maximum shader generation cycles
-                  </p>
-                  <span className="text-sm font-bold text-[var(--accent-primary)] font-mono">
-                    {settings.maxIterations}
-                  </span>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-[var(--text-primary)]">Codex Proxy</label>
+                    <input
+                      type="text"
+                      value={settings.codex_proxy}
+                      onChange={(e) => setSettings(s => ({ ...s, codex_proxy: e.target.value }))}
+                      className="w-full px-3 py-2 bg-[var(--bg-tertiary)] border border-[var(--border-color)] rounded-lg
+                               text-sm text-[var(--text-primary)] font-mono focus:border-[var(--accent-primary)]
+                               focus:outline-none focus:ring-1 focus:ring-[var(--accent-primary)]/30"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-[var(--text-primary)]">Codex Timeout (s)</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={3600}
+                      value={settings.codex_timeout}
+                      onChange={(e) => setSettings(s => ({ ...s, codex_timeout: parseInt(e.target.value) || 0 }))}
+                      className="w-full px-3 py-2 bg-[var(--bg-tertiary)] border border-[var(--border-color)] rounded-lg
+                               text-sm text-[var(--text-primary)] font-mono focus:border-[var(--accent-primary)]
+                               focus:outline-none focus:ring-1 focus:ring-[var(--accent-primary)]/30"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-[var(--text-primary)]">Claude Code Proxy</label>
+                    <input
+                      type="text"
+                      value={settings.claude_code_proxy}
+                      onChange={(e) => setSettings(s => ({ ...s, claude_code_proxy: e.target.value }))}
+                      className="w-full px-3 py-2 bg-[var(--bg-tertiary)] border border-[var(--border-color)] rounded-lg
+                               text-sm text-[var(--text-primary)] font-mono focus:border-[var(--accent-primary)]
+                               focus:outline-none focus:ring-1 focus:ring-[var(--accent-primary)]/30"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-[var(--text-primary)]">Claude Code Timeout (s)</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={3600}
+                      value={settings.claude_code_timeout}
+                      onChange={(e) => setSettings(s => ({ ...s, claude_code_timeout: parseInt(e.target.value) || 0 }))}
+                      className="w-full px-3 py-2 bg-[var(--bg-tertiary)] border border-[var(--border-color)] rounded-lg
+                               text-sm text-[var(--text-primary)] font-mono focus:border-[var(--accent-primary)]
+                               focus:outline-none focus:ring-1 focus:ring-[var(--accent-primary)]/30"
+                    />
+                  </div>
                 </div>
               </div>
 
-              {/* Passing Threshold */}
-              <div className="group">
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-sm font-medium text-[var(--text-primary)]">
-                    Passing Threshold
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-[var(--text-muted)]">0.50</span>
-                    <div className="relative w-24 h-2 bg-[var(--bg-tertiary)] rounded-full overflow-hidden">
-                      <div 
-                        className="absolute left-0 top-0 h-full bg-gradient-to-r from-emerald-500 
-                                  to-emerald-400 rounded-full transition-all duration-150"
-                        style={{ width: `${((settings.passingThreshold - 0.5) / 0.5) * 100}%` }}
-                      />
-                      <input
-                        type="range"
-                        min={0.5}
-                        max={1.0}
-                        step={0.05}
-                        value={settings.passingThreshold}
-                        onChange={(e) => setSettings(s => ({ ...s, passingThreshold: parseFloat(e.target.value) }))}
-                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                      />
+              {/* Pipeline Group */}
+              <div className="space-y-4">
+                <h3 className="text-sm font-semibold text-[var(--text-primary)] uppercase tracking-wider border-b border-[var(--border-color)] pb-2">
+                  Pipeline
+                </h3>
+                <div className="space-y-5">
+                  {/* Max Iterations */}
+                  <div className="group">
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-sm font-medium text-[var(--text-primary)]">
+                        Max Iterations
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-[var(--text-muted)]">1</span>
+                        <div className="relative w-24 h-2 bg-[var(--bg-tertiary)] rounded-full overflow-hidden">
+                          <div
+                            className="absolute left-0 top-0 h-full bg-gradient-to-r from-[var(--accent-primary)]
+                                      to-[var(--accent-secondary)] rounded-full transition-all duration-150"
+                            style={{ width: `${((settings.max_iterations - 1) / 19) * 100}%` }}
+                          />
+                          <input
+                            type="range"
+                            min={1}
+                            max={20}
+                            step={1}
+                            value={settings.max_iterations}
+                            onChange={(e) => setSettings(s => ({ ...s, max_iterations: parseInt(e.target.value) }))}
+                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                          />
+                        </div>
+                        <span className="text-xs text-[var(--text-muted)]">20</span>
+                      </div>
                     </div>
-                    <span className="text-xs text-[var(--text-muted)]">1.00</span>
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs text-[var(--text-muted)]">
+                        Maximum shader generation cycles
+                      </p>
+                      <span className="text-sm font-bold text-[var(--accent-primary)] font-mono">
+                        {settings.max_iterations}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Passing Threshold */}
+                  <div className="group">
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-sm font-medium text-[var(--text-primary)]">
+                        Passing Threshold
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-[var(--text-muted)]">0.50</span>
+                        <div className="relative w-24 h-2 bg-[var(--bg-tertiary)] rounded-full overflow-hidden">
+                          <div
+                            className="absolute left-0 top-0 h-full bg-gradient-to-r from-emerald-500
+                                      to-emerald-400 rounded-full transition-all duration-150"
+                            style={{ width: `${((settings.passing_threshold - 0.5) / 0.5) * 100}%` }}
+                          />
+                          <input
+                            type="range"
+                            min={0.5}
+                            max={1.0}
+                            step={0.01}
+                            value={settings.passing_threshold}
+                            onChange={(e) => setSettings(s => ({ ...s, passing_threshold: parseFloat(e.target.value) }))}
+                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                          />
+                        </div>
+                        <span className="text-xs text-[var(--text-muted)]">1.00</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs text-[var(--text-muted)]">
+                        Minimum similarity score to pass inspection
+                      </p>
+                      <span className="text-sm font-bold text-emerald-400 font-mono">
+                        {settings.passing_threshold.toFixed(2)}
+                      </span>
+                    </div>
                   </div>
                 </div>
-                <div className="flex items-center justify-between">
-                  <p className="text-xs text-[var(--text-muted)]">
-                    Minimum similarity score to pass inspection
-                  </p>
-                  <span className="text-sm font-bold text-emerald-400 font-mono">
-                    {settings.passingThreshold.toFixed(2)}
-                  </span>
+              </div>
+
+              {/* Render Group */}
+              <div className="space-y-4">
+                <h3 className="text-sm font-semibold text-[var(--text-primary)] uppercase tracking-wider border-b border-[var(--border-color)] pb-2">
+                  Render
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-[var(--text-primary)]">Screenshot Width</label>
+                    <input
+                      type="number"
+                      min={256}
+                      max={2048}
+                      value={settings.screenshot_width}
+                      onChange={(e) => setSettings(s => ({ ...s, screenshot_width: parseInt(e.target.value) || 0 }))}
+                      className="w-full px-3 py-2 bg-[var(--bg-tertiary)] border border-[var(--border-color)] rounded-lg
+                               text-sm text-[var(--text-primary)] font-mono focus:border-[var(--accent-primary)]
+                               focus:outline-none focus:ring-1 focus:ring-[var(--accent-primary)]/30"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-[var(--text-primary)]">Screenshot Height</label>
+                    <input
+                      type="number"
+                      min={256}
+                      max={2048}
+                      value={settings.screenshot_height}
+                      onChange={(e) => setSettings(s => ({ ...s, screenshot_height: parseInt(e.target.value) || 0 }))}
+                      className="w-full px-3 py-2 bg-[var(--bg-tertiary)] border border-[var(--border-color)] rounded-lg
+                               text-sm text-[var(--text-primary)] font-mono focus:border-[var(--accent-primary)]
+                               focus:outline-none focus:ring-1 focus:ring-[var(--accent-primary)]/30"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-[var(--text-primary)]">Render Timeout (ms)</label>
+                    <input
+                      type="number"
+                      min={500}
+                      max={10000}
+                      step={100}
+                      value={settings.render_timeout_ms}
+                      onChange={(e) => setSettings(s => ({ ...s, render_timeout_ms: parseInt(e.target.value) || 0 }))}
+                      className="w-full px-3 py-2 bg-[var(--bg-tertiary)] border border-[var(--border-color)] rounded-lg
+                               text-sm text-[var(--text-primary)] font-mono focus:border-[var(--accent-primary)]
+                               focus:outline-none focus:ring-1 focus:ring-[var(--accent-primary)]/30"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* System Group */}
+              <div className="space-y-4">
+                <h3 className="text-sm font-semibold text-[var(--text-primary)] uppercase tracking-wider border-b border-[var(--border-color)] pb-2">
+                  System
+                </h3>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-[var(--text-primary)]">Workdir Root</label>
+                  <input
+                    type="text"
+                    value={settings.workdir_root}
+                    onChange={(e) => setSettings(s => ({ ...s, workdir_root: e.target.value }))}
+                    className="w-full px-3 py-2 bg-[var(--bg-tertiary)] border border-[var(--border-color)] rounded-lg
+                             text-sm text-[var(--text-primary)] font-mono focus:border-[var(--accent-primary)]
+                             focus:outline-none focus:ring-1 focus:ring-[var(--accent-primary)]/30"
+                  />
                 </div>
               </div>
 
@@ -258,7 +437,7 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-6 py-4 border-t border-[var(--border-color)] 
+        <div className="flex items-center justify-between px-6 py-4 border-t border-[var(--border-color)]
                       bg-[var(--bg-tertiary)]/30">
           <button
             onClick={handleReset}
