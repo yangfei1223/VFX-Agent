@@ -41,3 +41,12 @@ def test_register_and_get_backend_roundtrip():
     finally:
         # Clean up registry so this test doesn't pollute other tests
         BACKEND_REGISTRY.pop("mock-for-test", None)
+
+
+def test_get_backend_returns_instance_with_kwargs():
+    """CodexBackend is registered after T3."""
+    from app.backends.codex import CodexBackend
+    b = get_backend("codex", proxy="http://proxy", timeout_seconds=300)
+    assert isinstance(b, CodexBackend)
+    assert b.proxy == "http://proxy"
+    assert b.timeout_seconds == 300

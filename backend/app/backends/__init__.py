@@ -41,3 +41,5 @@ def get_backend(
 
 
 __all__ = ["BaseBackend", "AgentEvent", "BACKEND_REGISTRY", "register_backend", "get_backend"]
+
+from . import codex as _codex  # noqa: F401 (triggers register_backend on import)
