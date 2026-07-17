@@ -173,10 +173,10 @@ async def test_orchestrator_handles_codex_crash(fake_workdir, fake_codex_output,
 async def test_orchestrator_timeout_with_valid_outputs_marks_passed(
     fake_workdir, fake_codex_output, tmp_path, monkeypatch
 ):
-    """If codex times out but wrote final_shader.glsl + evaluation.json with score >= 0.85,
+    """If backend times out but wrote final_shader.glsl + evaluation.json with score >= 0.85,
     status should be 'passed' (not 'timeout'). Mirrors heart-2d MVP observed behavior.
     """
-    # Pre-write the outputs codex would have produced
+    # Pre-write the outputs backend would have produced
     (fake_workdir / "final_shader.glsl").write_text("void mainImage(...) {}")
     (fake_workdir / "evaluation.json").write_text(json.dumps({
         "overall_score": 0.901,
@@ -194,9 +194,10 @@ async def test_orchestrator_timeout_with_valid_outputs_marks_passed(
     mock_proc.returncode = 0
 
     async def mock_stdout():
-        # Yield some events then EOF (codex timed out mid-stream)
+        # Yield 3 events then hang forever (forces timeout to fire)
         for event in fake_codex_output[:3]:
             yield (json.dumps(event) + "\n").encode()
+        await asyncio.sleep(60)  # hang to force timeout
     mock_proc.stdout = mock_stdout()
     mock_proc.stderr = AsyncMock()
     mock_proc.stderr.read = AsyncMock(return_value=b"")
@@ -205,11 +206,11 @@ async def test_orchestrator_timeout_with_valid_outputs_marks_passed(
         return mock_proc
 
     # Force timeout=0.001 to trigger TimeoutError immediately after first event
+    from app.config import Settings
     monkeypatch.setattr(StateStore, "STORE_DIR", tmp_path / "states")
+    monkeypatch.setattr(Settings, "backend_timeout", lambda self, name: 0.001)
     with patch("asyncio.create_subprocess_exec", _fake_cse):
-        # Patch timeout to near-zero to force the timeout path
         orch = PipelineOrchestrator()
-        orch.CODEX_TIMEOUT = 0.001
         record = await orch.run(
             pipeline_id="test-timeout-pass",
             workdir=str(fake_workdir),
@@ -227,16 +228,16 @@ async def test_orchestrator_timeout_with_valid_outputs_marks_passed(
 async def test_orchestrator_timeout_with_missing_outputs_marks_timeout(
     fake_workdir, fake_codex_output, tmp_path, monkeypatch
 ):
-    """If codex times out and produced NO outputs, status should be 'timeout'."""
-    # No outputs written
+    """If backend times out and produced NO outputs, status should be 'timeout'."""
+    from app.backends.base import BaseBackend
 
-    async def _fake_spawn_and_stream(*args, **kwargs):
-        # Simulate codex hanging forever — raise TimeoutError directly
+    async def _fake_stream(self, workdir, prompt, keyframes, base_env):
+        # Simulate backend hanging forever — raise TimeoutError directly
         raise asyncio.TimeoutError("fake timeout")
         yield  # noqa: never reached, makes this an async generator
 
     monkeypatch.setattr(StateStore, "STORE_DIR", tmp_path / "states")
-    monkeypatch.setattr(PipelineOrchestrator, "_spawn_and_stream", _fake_spawn_and_stream)
+    monkeypatch.setattr(BaseBackend, "stream", _fake_stream)
     orch = PipelineOrchestrator()
     record = await orch.run(
         pipeline_id="test-timeout-real",
@@ -248,3 +249,54 @@ async def test_orchestrator_timeout_with_missing_outputs_marks_timeout(
 
     assert record.status == "timeout"
     assert "timed out" in (record.error or "")
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_max_iterations_when_score_below_threshold(
+    fake_workdir, fake_codex_output, tmp_path, monkeypatch
+):
+    """When backend completes normally with score < 0.85, status should be 'max_iterations'.
+
+    Covers the path: runtime_error=False, timeout_flag=False, valid shader +
+    valid evaluation, score < 0.85 → MAX_ITERATIONS (not FAILED, not TIMEOUT).
+    """
+    # Pre-write outputs with sub-threshold score
+    (fake_workdir / "final_shader.glsl").write_text("void mainImage(...) {}")
+    (fake_workdir / "evaluation.json").write_text(json.dumps({
+        "overall_score": 0.70,
+        "dimension_scores": {"color": {"score": 0.7}},
+    }))
+
+    mock_proc = MagicMock()
+    mock_proc.stdin = AsyncMock()
+    mock_proc.stdin.write = MagicMock()
+    mock_proc.stdin.drain = AsyncMock()
+    mock_proc.stdin.close = MagicMock()
+    mock_proc.stdin.wait_closed = AsyncMock()
+    mock_proc.wait = AsyncMock(return_value=0)
+    mock_proc.returncode = 0
+
+    async def mock_stdout():
+        for event in fake_codex_output:
+            yield (json.dumps(event) + "\n").encode()
+    mock_proc.stdout = mock_stdout()
+    mock_proc.stderr = AsyncMock()
+    mock_proc.stderr.read = AsyncMock(return_value=b"")
+
+    async def _fake_cse(*args, **kwargs):
+        return mock_proc
+
+    monkeypatch.setattr(StateStore, "STORE_DIR", tmp_path / "states")
+    with patch("asyncio.create_subprocess_exec", _fake_cse):
+        orch = PipelineOrchestrator()
+        record = await orch.run(
+            pipeline_id="test-max-iter",
+            workdir=str(fake_workdir),
+            keyframes=[],
+            notes="",
+            max_iterations=3,
+        )
+
+    assert record.status == "max_iterations"
+    assert record.final_score == 0.70
+    assert record.error is None  # no error in this path

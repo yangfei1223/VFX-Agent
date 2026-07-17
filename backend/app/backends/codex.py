@@ -32,6 +32,13 @@ class CodexBackend(BaseBackend):
         if not agents_link.exists():
             agents_link.symlink_to((skills_src / "AGENTS.md").resolve())
 
+        # Symlink CLAUDE.md -> AGENTS.md so the orchestrator's backend-neutral prompt
+        # (which mentions CLAUDE.md) doesn't cause a wasted file-not-found turn.
+        # Same source content; harmless for codex (it never auto-loads CLAUDE.md).
+        claude_link = workdir / "CLAUDE.md"
+        if not claude_link.exists():
+            claude_link.symlink_to((skills_src / "AGENTS.md").resolve())
+
     def build_command(
         self, workdir: Path, prompt: str, keyframes: list[str],
     ) -> list[str]:

@@ -81,3 +81,61 @@ def test_delete_removes_file(temp_store, tmp_path):
     
     # delete nonexistent id should not crash
     temp_store.delete("nonexistent")  # no exception
+
+
+def test_pipeline_record_backend_defaults_to_codex():
+    """New field 'backend' defaults to 'codex' for backward compat."""
+    from app.state_store import PipelineRecord, PipelineStatus
+    record = PipelineRecord(
+        pipeline_id="test-1",
+        status=PipelineStatus.RUNNING,
+        workdir="/tmp/test",
+        keyframe_paths=[],
+    )
+    assert record.backend == "codex"
+
+
+def test_pipeline_record_backend_explicit_value():
+    """backend field accepts any string."""
+    from app.state_store import PipelineRecord, PipelineStatus
+    record = PipelineRecord(
+        pipeline_id="test-2",
+        backend="claude-code",
+        status=PipelineStatus.RUNNING,
+        workdir="/tmp/test",
+        keyframe_paths=[],
+    )
+    assert record.backend == "claude-code"
+
+
+def test_pipeline_record_backward_compat_old_json_without_backend():
+    """Loading an old JSON (no backend field) auto-fills default 'codex'."""
+    from app.state_store import PipelineRecord
+    old_json = {
+        "pipeline_id": "v2-old-123",
+        "status": "passed",
+        "workdir": "/tmp/old",
+        "keyframe_paths": ["/tmp/001.png"],
+        "final_shader": "void main() {}",
+        "final_score": 0.92,
+    }
+    record = PipelineRecord(**old_json)
+    assert record.backend == "codex"
+
+
+def test_pipeline_record_save_load_preserves_backend(tmp_path):
+    """Round-trip save+load preserves backend field."""
+    from app.state_store import PipelineRecord, PipelineStatus, StateStore
+    StateStore.STORE_DIR = tmp_path
+    record = PipelineRecord(
+        pipeline_id="round-trip",
+        backend="claude-code",
+        status=PipelineStatus.PASSED,
+        workdir="/tmp/rt",
+        keyframe_paths=[],
+        final_score=0.88,
+    )
+    StateStore.save(record)
+    loaded = StateStore.load("round-trip")
+    assert loaded is not None
+    assert loaded.backend == "claude-code"

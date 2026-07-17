@@ -31,6 +31,7 @@ class PipelineRecord:
     status: str  # PipelineStatus enum value: running | passed | failed | timeout | max_iterations
     workdir: str
     keyframe_paths: list[str]
+    backend: str = "codex"  # which agent backend ran this pipeline (default for backward compat)
     final_shader: str = ""
     final_score: float = 0.0
     evaluation: Optional[dict] = None

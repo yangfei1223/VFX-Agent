@@ -61,8 +61,10 @@ class BaseBackend(ABC):
     ) -> list[str]:
         """Construct backend CLI argv list.
 
-        NOTE: workdir is passed via subprocess cwd= parameter in stream(),
-        NOT included in the command. Subclasses should not add a --cwd flag.
+        NOTE: stream() always passes `cwd=str(workdir)` to the subprocess.
+        Subclasses MAY ALSO include a backend-specific project-root flag
+        (e.g. codex's `-C <workdir>`) when the backend requires it; this
+        is redundant with `cwd=` but harmless.
         """
 
     @abstractmethod
