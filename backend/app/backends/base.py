@@ -113,6 +113,7 @@ class BaseBackend(ABC):
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             env=env,
+            limit=1024 * 1024 * 16,  # 16MB line limit (default 64KB overflows on large claude-code stream-json lines)
         )
 
         async def _drain_stderr() -> str:

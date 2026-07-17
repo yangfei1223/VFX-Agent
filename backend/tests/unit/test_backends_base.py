@@ -184,3 +184,36 @@ async def test_stream_integration_timeout_kills_proc():
         elapsed = time.monotonic() - start
         # Timeout should fire close to 1s, not 60s
         assert elapsed < 5, f"timeout took too long: {elapsed}s"
+
+
+@pytest.mark.asyncio
+async def test_stream_handles_oversize_jsonl_line():
+    """stream() must handle JSONL lines > 64KB (default asyncio limit).
+
+    Regression for claude-code stream-json lines that overflow the default
+    64KB StreamReader buffer. Subprocess-level limit must be raised to ≥16MB.
+    """
+    class BigLineBackend(BaseBackend):
+        name = "big"
+        def setup_workspace(self, workdir, skills_src): pass
+        def build_command(self, workdir, prompt, keyframes):
+            # Emit one JSONL line with a 200KB string field (> 64KB default limit)
+            big_str = "x" * (200 * 1024)
+            import json as _json
+            payload = _json.dumps({"type": "test", "data": big_str})
+            return ["sh", "-c", f"printf '{payload}\\n'"]
+        def parse_event(self, raw):
+            return {"type": "text", "content": "ok", "usage": None, "raw": raw}
+
+    import tempfile
+    from pathlib import Path
+    with tempfile.TemporaryDirectory() as tmpdir:
+        b = BigLineBackend(proxy=None, timeout_seconds=10)
+        events = []
+        async for ev in b.stream(Path(tmpdir), "ignored", [], {"PATH": "/usr/bin:/bin"}):
+            events.append(ev)
+
+    assert len(events) == 1
+    assert events[0]["content"] == "ok"
+    # Verify the big payload survived intact
+    assert len(events[0]["raw"]["data"]) == 200 * 1024

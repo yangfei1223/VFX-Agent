@@ -99,6 +99,11 @@ class PipelineOrchestrator:
             except RuntimeError as e:
                 runtime_error = f"{backend_name} subprocess error: {e}"
                 record.error = runtime_error
+            except Exception as e:
+                # Catch-all (e.g. ValueError on oversize stream lines, MCP errors).
+                # Without this, the record stays RUNNING forever.
+                runtime_error = f"{backend_name} stream error: {type(e).__name__}: {e}"
+                record.error = runtime_error
 
             # 3. Extract outputs (always, even on timeout/runtime error)
             record.final_shader = self._read_file(workdir / "final_shader.glsl") or \

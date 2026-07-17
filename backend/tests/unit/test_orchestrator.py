@@ -300,3 +300,36 @@ async def test_orchestrator_max_iterations_when_score_below_threshold(
     assert record.status == "max_iterations"
     assert record.final_score == 0.70
     assert record.error is None  # no error in this path
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_unexpected_exception_marks_failed_not_running(
+    fake_workdir, fake_codex_output, tmp_path, monkeypatch
+):
+    """When backend.stream raises an unexpected exception (e.g. ValueError on
+    oversize lines, MCP errors), orchestrator must catch it and set status=failed.
+    Regression for claude-code bug where record stayed RUNNING forever.
+    """
+    from app.backends.base import BaseBackend
+
+    async def _evil_stream(self, workdir, prompt, keyframes, base_env):
+        # Simulate asyncio LimitOverrunError → wrapped as ValueError
+        raise ValueError("Separator is not found, and chunk exceed the limit")
+        yield  # noqa: never reached
+
+    monkeypatch.setattr(StateStore, "STORE_DIR", tmp_path / "states")
+    monkeypatch.setattr(BaseBackend, "stream", _evil_stream)
+    orch = PipelineOrchestrator()
+    record = await orch.run(
+        pipeline_id="test-evil-stream",
+        workdir=str(fake_workdir),
+        keyframes=[],
+        notes="",
+        max_iterations=3,
+    )
+
+    # MUST NOT stay RUNNING — must transition to FAILED
+    assert record.status == "failed"
+    assert record.error is not None
+    assert "stream error" in record.error
+    assert "ValueError" in record.error
