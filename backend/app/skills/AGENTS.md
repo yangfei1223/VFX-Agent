@@ -18,8 +18,8 @@ You are operating inside a VFX shader generation pipeline. Your host process is 
 | `Bash` | Run skill scripts (`skills/vfx-shader/reference/scripts/*.py`) |
 | `Glob` | Locate files (e.g. `keyframes/*.png`) |
 | `Grep` | Search reference docs for specific operators |
-| `spawn_agent` | Phase 5 evaluation subagent (fork_turns="none" required) |
-| `wait_agent` | Block until subagent completes |
+| `spawn_agent` / `Task` / equivalent | Phase 5 evaluation subagent (use your runtime's native API; codex: `spawn_agent`+`fork_turns="none"`, claude-code: `Task` tool, other: equivalent) |
+| `wait_agent` / Task completion | Block until subagent completes |
 
 The Python orchestrator handles: keyframe extraction (FFmpeg), workdir setup, JSONL streaming to frontend, hard timeout (600s), output extraction. You do NOT need to manage these.
 
@@ -70,7 +70,12 @@ Iteration discipline:
 
 ## Phase 5 Subagent Protocol (Recap)
 
-**MANDATORY:** Phase 5 evaluation MUST use `spawn_agent` with `fork_turns: "none"`. Self-evaluation is banned.
+**MANDATORY:** Phase 5 evaluation MUST spawn an isolated-context subagent. Self-evaluation is banned. Use your runtime's native subagent API:
+- codex: `spawn_agent` with `fork_turns: "none"`
+- claude-code: `Task` tool (fresh-context subagent by default)
+- other runtimes: equivalent mechanism that prevents context inheritance
+
+The `fork_turns: "none"` / fresh-context constraint is what guarantees evaluator objectivity.
 
 Subagent receives:
 - Reference keyframe path (via message)

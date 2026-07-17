@@ -21,7 +21,7 @@ You are a VFX shader generation agent. Your job: given reference keyframes (PNG)
 | `Bash` | Run skill scripts (`reference/scripts/*.py`), inspect files |
 | `Glob` | Locate files (e.g. `keyframes/*.png`) |
 | `Grep` | Search reference docs for specific operators |
-| `spawn_agent` | Phase 5: spawn isolated subagent for evaluation (see Phase 5 spec) |
+| `spawn_agent` / `Task` / equivalent | Phase 5: spawn isolated subagent for evaluation (use your runtime's native subagent API; see Phase 5 spec) |
 
 **Skill scripts** (invoke via Bash, all output JSON to stdout):
 
@@ -48,8 +48,38 @@ You MUST execute these phases in order. Each phase writes a file that becomes th
 
 **Inputs:** `keyframes/*.png` (1-6 reference images), optional `notes.txt` from user.
 
-**Steps:**
-1. `Read` each keyframe image.
+#### Step 0: Establish Vision Capability (MANDATORY before any analysis)
+
+You need to "see" the keyframes before analysing. Try these in order until one works:
+
+1. **Native multimodal**: Are keyframe images already visible in your context
+   (passed as image content blocks by your runtime)?
+   → If YES: proceed to Step 1 with direct visual access.
+
+2. **Discover image tools**: If NO native vision, probe your available tools:
+   - List the tools you can call (e.g. via `List available tools` introspection,
+     or by reviewing the tool catalog in your system prompt).
+   - Find any tool that accepts an image path/source parameter.
+     Common name patterns: `*analyze_image*`, `*view_image*`,
+     `*describe_image*`, `*understand*image*`, `*read_image*`.
+   - Call the discovered tool once per keyframe using its absolute path:
+     - `<workdir>/keyframes/001.png`
+     - `<workdir>/keyframes/002.png`
+     - ...
+   - Use the returned descriptions as your "vision".
+
+3. **Fail loudly**: If neither native multimodal nor a discovered image tool
+   works, write the following to `visual_description.json` and stop:
+   ```json
+   {"status": "failed", "reason": "no_multimodal_capability"}
+   ```
+   Do NOT fabricate descriptions from filename guesses.
+
+#### Step 1: Visual Analysis
+
+Now that you have vision (via Step 0), proceed:
+
+1. `Read` each keyframe image (or use the descriptions returned by the image tool).
 2. `Bash` PIL one-liner if you need exact pixel evidence:
    ```bash
    python -c "from PIL import Image; img=Image.open('keyframes/001.png').convert('RGB'); print({k:img.getpixel(p) for k,p in {'tl':(0,0),'br':(img.size[0]-1,img.size[1]-1),'center':(img.size[0]//2,img.size[1]//2)}.items()})"
@@ -219,13 +249,25 @@ Full code: see `reference/shader_templates.md`.
 
 **Why subagent:** The subagent has zero context about your shader code or your reasoning. It only sees the reference image, the rendered screenshot, and `visual_description.json`. This forces objective comparison.
 
-**Subagent spawn protocol:**
+#### Subagent spawn mechanism (use your runtime's native API)
+
+Pick the mechanism that matches your runtime:
+
+- **codex**: `spawn_agent(task_name="evaluator", fork_turns="none", message="<prompt below>")`
+  Then `wait_agent` to block until completion.
+- **claude-code**: Use the `Task` tool with `subagent_type="..."` (fresh-context
+  subagent). The subagent receives the prompt as the task description.
+- **Other runtimes**: Use your native subagent mechanism with full context
+  isolation (no inherited conversation history).
+
+The `fork_turns: "none"` / fresh-context constraint is MANDATORY — it is what
+guarantees the evaluator has zero prior bias.
+
+#### Subagent prompt template
+
+Pass this prompt to whichever spawn mechanism you chose (fill in actual paths):
 
 ```
-spawn_agent(
-  task_name: "evaluator",
-  fork_turns: "none",   # MANDATORY — full context isolation
-  message: """
 You are a VFX evaluation subagent. Compare a rendered shader screenshot against a reference image and output an evaluation.
 
 Inputs (read all via Read tool):
@@ -234,11 +276,13 @@ Inputs (read all via Read tool):
 - visual_description: visual_description.json  # in current dir
 
 Steps:
-1. Read all 3 inputs.
-2. Run for pixel evidence:
+1. Establish your vision using the Capability Discovery Protocol
+   (native multimodal first, then probe image tools, then fail loudly).
+2. Read all 3 inputs.
+3. Run for pixel evidence:
    python reference/scripts/analyze_pixels.py <reference.png> <render.png>
-3. Score 8 dimensions per the rubric below. Use pixel evidence + visual inspection.
-4. Write evaluation.json with the schema below.
+4. Score 8 dimensions per the rubric below. Use pixel evidence + visual inspection.
+5. Write evaluation.json with the schema below.
 
 8-Dimension Rubric (each 0.0-1.0):
 1. Composition (weight 0.10): position, layering, proportion, balance
@@ -288,12 +332,10 @@ evaluation.json schema (write this exact shape):
 }
 
 Output ONLY by writing evaluation.json. No prose response needed.
-"""
-)
 ```
 
 **Then:**
-1. `wait_agent` (block until subagent completes or timeout).
+1. Block until subagent completes (via `wait_agent`, Task tool completion, or your runtime's equivalent).
 2. `Read` `evaluation.json`. If file missing or malformed, treat as `overall_score: 0.0` with `visual_issues: ["subagent failed"]`.
 3. Proceed to Phase 6.
 
@@ -348,7 +390,7 @@ These apply across ALL phases. Violation = failed run.
 
 - Phase 1 output → Phase 2 input. No skipping ahead.
 - Phase 3 must pass before Phase 4.
-- Phase 5 must spawn subagent (fork_turns="none").
+- Phase 5 must spawn subagent with full context isolation (codex: `fork_turns="none"`; claude-code: fresh Task; other runtimes: equivalent).
 - Phase 6 decides finalize vs iterate.
 
 ---
