@@ -50,3 +50,9 @@ def test_get_backend_returns_instance_with_kwargs():
     assert isinstance(b, CodexBackend)
     assert b.proxy == "http://proxy"
     assert b.timeout_seconds == 300
+
+
+def test_registry_has_both_backends():
+    """After T3 + T5, registry has codex and claude-code."""
+    assert "codex" in BACKEND_REGISTRY
+    assert "claude-code" in BACKEND_REGISTRY
