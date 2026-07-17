@@ -35,6 +35,7 @@ async def run_pipeline(
     notes: str = Form(""),
     images: list[UploadFile] = File(default=[]),
     video: UploadFile | None = File(default=None),
+    backend: str = Form("codex"),
 ):
     """Spawn a new pipeline run in background.
 
@@ -103,6 +104,7 @@ async def run_pipeline(
             keyframes=keyframe_paths,
             notes=notes,
             max_iterations=max_iterations,
+            backend_name=backend,
         )
 
     asyncio.create_task(_run())
