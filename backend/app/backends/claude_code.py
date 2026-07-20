@@ -10,6 +10,7 @@ Main model: deepseek-v4-pro via api.deepseek.com/anthropic
 Multimodal: zai-mcp-server (GLM) — must be configured globally in ~/.claude.json
 """
 from pathlib import Path
+from typing import Optional
 
 from .base import BaseBackend, AgentEvent
 from . import register_backend
@@ -24,6 +25,36 @@ class ClaudeCodeBackend(BaseBackend):
     # MCP tools (zai-mcp-server_*) are auto-discovered by Claude Code from
     # ~/.claude.json global config; do not need to be in this list.
     ALLOWED_TOOLS = "Bash,Read,Write,Edit,Glob,Grep,Task"
+
+    # Events to drop at parse time (claude-code specific noise).
+    #
+    # Background (B1 fix): claude-code emits dozens of `system/thinking_tokens`
+    # events per sample (one per reasoning chunk). Without filtering these
+    # flood orchestrator's `events[-100:]` window and crowd out useful events
+    # (Phase 1 vision MCP calls, tool_use, errors), making failed samples
+    # undebuggable. The frontend also renders unhandled types as generic
+    # "lifecycle" JSON cards, causing visual noise.
+    #
+    # Also dropped:
+    #   - system/init: one-shot session metadata, no debugging value
+    #   - system/task_*: subagent internal progress notifications; frontend
+    #     does not render these (no TYPE_CONFIG entry).
+    #   - stream_event/* partial deltas: the final `assistant` event contains
+    #     the complete content blocks; deltas are pure noise.
+    DROP_EVENT_TYPES = frozenset({
+        ("system", "thinking_tokens"),
+        ("system", "init"),
+        ("system", "task_started"),
+        ("system", "task_progress"),
+        ("system", "task_notification"),
+        ("stream_event", "content_block_delta"),
+        ("stream_event", "content_block_start"),
+        ("stream_event", "content_block_stop"),
+        ("stream_event", "message_start"),
+        ("stream_event", "message_stop"),
+        ("stream_event", "message_delta"),
+        ("stream_event", "ping"),
+    })
 
     def setup_workspace(self, workdir: Path, skills_src: Path) -> None:
         """Create dual-naming symlinks: AGENTS.md + CLAUDE.md (same source).
@@ -68,18 +99,26 @@ class ClaudeCodeBackend(BaseBackend):
             "--allowedTools", self.ALLOWED_TOOLS,
         ]
 
-    def parse_event(self, raw: dict) -> AgentEvent:
+    def parse_event(self, raw: dict) -> Optional[AgentEvent]:
         """Map Claude Code stream-json event types to unified AgentEvent.
 
+        Returns None for known noise events (see DROP_EVENT_TYPES) so they
+        are filtered at the BaseBackend.stream() layer before reaching the
+        orchestrator's events buffer.
+
         Claude Code event types (from lib-5 research):
-            - system (subtype=init/error)
-            - stream_event (subtype=content_block_delta/...)
+            - system (subtype=init/error/thinking_tokens/task_*)
+            - stream_event (subtype=content_block_delta/...)  [dropped]
             - assistant (message.content: text/tool_use blocks)
             - user (message.content: tool_result blocks)
             - result (terminal, contains usage)
         """
         t = raw.get("type", "")
         subtype = raw.get("subtype", "")
+
+        # Drop known noise events (B1 fix).
+        if (t, subtype) in self.DROP_EVENT_TYPES:
+            return None
 
         if t == "result":
             return {

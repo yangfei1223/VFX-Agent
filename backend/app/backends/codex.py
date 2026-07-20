@@ -6,6 +6,7 @@ change is structural (methods moved from orchestrator class to backend class).
 """
 import os
 from pathlib import Path
+from typing import Optional
 
 from .base import BaseBackend, AgentEvent
 from . import register_backend
@@ -57,8 +58,13 @@ class CodexBackend(BaseBackend):
         cmd.append("-")  # read prompt from stdin
         return cmd
 
-    def parse_event(self, raw: dict) -> AgentEvent:
-        """Map codex JSONL event types to unified AgentEvent."""
+    def parse_event(self, raw: dict) -> Optional[AgentEvent]:
+        """Map codex JSONL event types to unified AgentEvent.
+
+        Codex events are all kept — no noise filtering needed (codex does
+        not emit thinking_tokens or partial deltas like claude-code).
+        Always returns an AgentEvent, never None.
+        """
         t = raw.get("type", "")
         if t == "turn.completed":
             return {

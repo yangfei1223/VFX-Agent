@@ -68,8 +68,11 @@ class BaseBackend(ABC):
         """
 
     @abstractmethod
-    def parse_event(self, raw: dict) -> AgentEvent:
+    def parse_event(self, raw: dict) -> Optional[AgentEvent]:
         """Convert backend-specific JSONL event to unified AgentEvent.
+
+        Return None to drop noise events (e.g. partial stream deltas, debug
+        tokens, internal progress notifications the frontend doesn't render).
 
         Unknown events should fall back to {"type": "text", "content": "",
         "usage": None, "raw": raw} — never raise.
@@ -148,7 +151,10 @@ class BaseBackend(ABC):
                             raw = json.loads(line)
                         except json.JSONDecodeError:
                             continue
-                        yield self.parse_event(raw)
+                        parsed = self.parse_event(raw)
+                        if parsed is None:
+                            continue
+                        yield parsed
 
                     await proc.wait()
 

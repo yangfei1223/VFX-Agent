@@ -125,10 +125,12 @@ def test_parse_event_system_error():
 
 
 def test_parse_event_unknown_falls_back_to_text():
-    """Unknown event → AgentEvent type=text with raw preserved."""
+    """Unknown event (not in DROP_EVENT_TYPES) → AgentEvent type=text with raw preserved."""
     b = ClaudeCodeBackend(proxy=None, timeout_seconds=60)
-    raw = {"type": "stream_event", "subtype": "something"}
+    # Use a type genuinely unknown to claude-code (not in DROP_EVENT_TYPES)
+    raw = {"type": "totally_new_type", "subtype": "whatever"}
     event = b.parse_event(raw)
+    assert event is not None
     assert event["type"] == "text"
     assert event["content"] == ""
     assert event["raw"] == raw
@@ -155,3 +157,74 @@ def test_setup_workspace_creates_dual_symlinks(tmp_path):
     agents_target = (workdir / "AGENTS.md").resolve()
     claude_target = (workdir / "CLAUDE.md").resolve()
     assert agents_target == claude_target
+
+
+def test_parse_event_drops_thinking_tokens():
+    """B1 regression: system/thinking_tokens must return None (drop).
+
+    claude-code emits 80+ of these per sample; without filtering they
+    flood orchestrator's events[-100:] buffer and crowd out useful events.
+    """
+    b = ClaudeCodeBackend(proxy=None, timeout_seconds=60)
+    raw = {"type": "system", "subtype": "thinking_tokens", "tokens": "..."}
+    assert b.parse_event(raw) is None
+
+
+def test_parse_event_drops_subagent_task_progress():
+    """system/task_started/progress/notification must return None.
+
+    These are subagent internal progress notifications; the frontend
+    useEventStream.ts has no TYPE_CONFIG entry for them, so they would
+    render as generic 'lifecycle' JSON cards (visual noise).
+    """
+    b = ClaudeCodeBackend(proxy=None, timeout_seconds=60)
+    for subtype in ("task_started", "task_progress", "task_notification"):
+        raw = {"type": "system", "subtype": subtype, "data": {}}
+        assert b.parse_event(raw) is None, f"Failed to drop system/{subtype}"
+
+
+def test_parse_event_drops_stream_event_deltas():
+    """stream_event/* partial deltas must return None.
+
+    The final `assistant` event contains the complete content blocks;
+    per-token deltas are pure noise.
+    """
+    b = ClaudeCodeBackend(proxy=None, timeout_seconds=60)
+    for subtype in ("content_block_delta", "content_block_start", "content_block_stop",
+                    "message_start", "message_stop", "message_delta", "ping"):
+        raw = {"type": "stream_event", "subtype": subtype, "delta": {"text": "..."}}
+        assert b.parse_event(raw) is None, f"Failed to drop stream_event/{subtype}"
+
+
+def test_parse_event_keeps_useful_events_after_drop_filter():
+    """Sanity: ensure drop filter doesn't accidentally filter useful events.
+
+    After B1 fix, these must STILL be returned as proper AgentEvents:
+    - assistant (tool_use + text)
+    - user (tool_result)
+    - result (terminal + usage)
+    - system/error
+    """
+    b = ClaudeCodeBackend(proxy=None, timeout_seconds=60)
+
+    # assistant with tool_use → tool_call
+    e1 = b.parse_event({
+        "type": "assistant",
+        "message": {"content": [{"type": "tool_use", "name": "Bash", "input": {}}]}
+    })
+    assert e1 is not None and e1["type"] == "tool_call"
+
+    # user with tool_result → tool_result
+    e2 = b.parse_event({
+        "type": "user",
+        "message": {"content": [{"type": "tool_result", "content": "ok"}]}
+    })
+    assert e2 is not None and e2["type"] == "tool_result"
+
+    # result/success → completed
+    e3 = b.parse_event({"type": "result", "subtype": "success", "usage": {"x": 1}})
+    assert e3 is not None and e3["type"] == "completed"
+
+    # system/error → error
+    e4 = b.parse_event({"type": "system", "subtype": "error", "message": "boom"})
+    assert e4 is not None and e4["type"] == "error"

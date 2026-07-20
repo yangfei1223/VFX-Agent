@@ -217,3 +217,38 @@ async def test_stream_handles_oversize_jsonl_line():
     assert events[0]["content"] == "ok"
     # Verify the big payload survived intact
     assert len(events[0]["raw"]["data"]) == 200 * 1024
+
+
+@pytest.mark.asyncio
+async def test_stream_skips_none_events_from_parse_event():
+    """stream() must NOT yield events when parse_event returns None.
+
+    Regression for B1: claude-code returns None for noise events
+    (thinking_tokens, partial deltas); stream() must filter these out
+    so they don't reach the orchestrator's events buffer.
+    """
+    class FilteringBackend(BaseBackend):
+        """Backend that drops events whose msg is 'noise'."""
+        name = "filtering"
+        def setup_workspace(self, workdir, skills_src): pass
+        def build_command(self, workdir, prompt, keyframes):
+            return [
+                "sh", "-c",
+                "printf '{\"msg\":\"a\"}\\n{\"msg\":\"noise\"}\\n{\"msg\":\"b\"}\\n{\"msg\":\"noise\"}\\n{\"msg\":\"c\"}\\n'"
+            ]
+        def parse_event(self, raw):
+            if raw.get("msg") == "noise":
+                return None  # drop noise
+            return {"type": "text", "content": raw.get("msg", ""), "usage": None, "raw": raw}
+
+    import tempfile
+    from pathlib import Path
+    with tempfile.TemporaryDirectory() as tmpdir:
+        b = FilteringBackend(proxy=None, timeout_seconds=10)
+        events = []
+        async for ev in b.stream(Path(tmpdir), "ignored", [], {"PATH": "/usr/bin:/bin"}):
+            events.append(ev)
+
+    # 5 raw events, 2 dropped → 3 yielded
+    assert len(events) == 3
+    assert [e["content"] for e in events] == ["a", "b", "c"]
