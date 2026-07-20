@@ -84,6 +84,12 @@ backend/app/sessions/
 # Pipeline state files (runtime data, one JSON per pipeline)
 backend/app/pipeline_states/
 
+# Runtime config (written by PUT /config API; not source of truth)
+backend/app/config/runtime_config.json
+
+# Stray render artifacts (render_shader.py writes to workdir, not here)
+render_output.png
+
 # Test samples (large video files)
 test-samples/
 
