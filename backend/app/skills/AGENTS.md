@@ -1,6 +1,6 @@
-# VFX-Agent v2.0 (codex OD mode)
+# VFX-Agent v2.0 (multi-backend)
 
-You are operating inside a VFX shader generation pipeline. Your host process is `codex exec` invoked by the Python orchestrator (`backend/app/orchestrator.py`). You run autonomously through the 6-phase workflow defined in `skills/vfx-shader/SKILL.md`.
+You are operating inside a VFX shader generation pipeline. Your host process is an agent runtime (codex / claude-code / other) invoked by the Python orchestrator (`backend/app/orchestrator.py`). You run autonomously through the 6-phase workflow defined in `skills/vfx-shader/SKILL.md`.
 
 **What you do:** Given reference keyframes + optional user notes, produce a Shadertoy GLSL shader that visually matches the reference, evaluated by an isolated subagent. Iterate up to `max_iterations` (default 3) until subagent score ≥ 0.85.
 
@@ -18,8 +18,8 @@ You are operating inside a VFX shader generation pipeline. Your host process is 
 | `Bash` | Run skill scripts (`skills/vfx-shader/reference/scripts/*.py`) |
 | `Glob` | Locate files (e.g. `keyframes/*.png`) |
 | `Grep` | Search reference docs for specific operators |
-| `spawn_agent` / `Task` / equivalent | Phase 5 evaluation subagent (use your runtime's native API; codex: `spawn_agent`+`fork_turns="none"`, claude-code: `Task` tool, other: equivalent) |
-| `wait_agent` / Task completion | Block until subagent completes |
+| subagent spawn tool | Phase 5 evaluation subagent — use your runtime's native API (codex: `spawn_agent`+`fork_turns="none"`; claude-code: `Agent` tool; other: equivalent fresh-context mechanism) |
+| subagent wait | Block until subagent completes (codex: `wait_agent`; claude-code: Task tool completion; other: runtime-native equivalent) |
 
 The Python orchestrator handles: keyframe extraction (FFmpeg), workdir setup, JSONL streaming to frontend, hard timeout (600s), output extraction. You do NOT need to manage these.
 
@@ -42,7 +42,7 @@ The only skill in v2.0. See `skills/vfx-shader/SKILL.md` for the full 6-phase wo
 
 ## Output Files Convention
 
-You operate inside a workdir (passed via `-C` flag). Each pipeline run produces:
+You operate inside a workdir (set as your current working directory by the orchestrator). Each pipeline run produces:
 
 | File | Phase | Owner |
 |------|-------|-------|
@@ -72,7 +72,7 @@ Iteration discipline:
 
 **MANDATORY:** Phase 5 evaluation MUST spawn an isolated-context subagent. Self-evaluation is banned. Use your runtime's native subagent API:
 - codex: `spawn_agent` with `fork_turns: "none"`
-- claude-code: `Task` tool (fresh-context subagent by default)
+- claude-code: `Agent` tool (fresh-context subagent by default)
 - other runtimes: equivalent mechanism that prevents context inheritance
 
 The `fork_turns: "none"` / fresh-context constraint is what guarantees evaluator objectivity.
@@ -82,7 +82,7 @@ Subagent receives:
 - Rendered screenshot path (via message)
 - `visual_description.json` (via shared filesystem)
 
-Subagent writes `evaluation.json` and exits. You `wait_agent`, then `Read` the result.
+Subagent writes `evaluation.json` and exits. You block until subagent completion (via your runtime's native wait mechanism — codex `wait_agent`, claude-code Task tool completion, or equivalent), then `Read` the result.
 
 See `skills/vfx-shader/SKILL.md` Phase 5 for the full spawn template.
 

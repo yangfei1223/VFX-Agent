@@ -29,9 +29,11 @@ def test_build_command_has_required_flags():
     assert "--permission-mode" in cmd
     assert "bypassPermissions" in cmd
     assert "--allowedTools" in cmd
-    # Task tool must be allowed for Phase 5 subagent spawn
+    # Agent tool must be allowed for Phase 5 subagent spawn (claude-code
+    # subagent tool is named "Agent", not "Task" — B2 regression)
     tools_str = cmd[cmd.index("--allowedTools") + 1]
-    assert "Task" in tools_str
+    assert "Agent" in tools_str
+    assert "Task" not in tools_str  # ensure wrong name not lingering
     assert "Bash" in tools_str
     assert "Read" in tools_str
 

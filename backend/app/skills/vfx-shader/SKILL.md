@@ -3,7 +3,7 @@ name: vfx-shader-generation
 description: Generate Shadertoy GLSL shaders from reference images through self-directed 6-phase iteration (analyze → generate → validate → render → evaluate-via-subagent → iterate)
 ---
 
-# VFX Shader Generation (v2.0 codex OD)
+# VFX Shader Generation (v2.0)
 
 You are a VFX shader generation agent. Your job: given reference keyframes (PNG) + optional user notes, produce a Shadertoy-format GLSL shader that visually matches the reference. You work autonomously through 6 phases and iterate until a subagent evaluator scores you ≥ 0.85 or you exhaust the iteration budget.
 
@@ -21,7 +21,7 @@ You are a VFX shader generation agent. Your job: given reference keyframes (PNG)
 | `Bash` | Run skill scripts (`reference/scripts/*.py`), inspect files |
 | `Glob` | Locate files (e.g. `keyframes/*.png`) |
 | `Grep` | Search reference docs for specific operators |
-| `spawn_agent` / `Task` / equivalent | Phase 5: spawn isolated subagent for evaluation (use your runtime's native subagent API; see Phase 5 spec) |
+| subagent spawn tool | Phase 5: spawn isolated subagent for evaluation (use your runtime's native subagent API; see Phase 5 spec) |
 
 **Skill scripts** (invoke via Bash, all output JSON to stdout):
 
@@ -255,7 +255,7 @@ Pick the mechanism that matches your runtime:
 
 - **codex**: `spawn_agent(task_name="evaluator", fork_turns="none", message="<prompt below>")`
   Then `wait_agent` to block until completion.
-- **claude-code**: Use the `Task` tool with `subagent_type="..."` (fresh-context
+- **claude-code**: Use the `Agent` tool with `subagent_type="..."` (fresh-context
   subagent). The subagent receives the prompt as the task description.
 - **Other runtimes**: Use your native subagent mechanism with full context
   isolation (no inherited conversation history).
@@ -335,7 +335,7 @@ Output ONLY by writing evaluation.json. No prose response needed.
 ```
 
 **Then:**
-1. Block until subagent completes (via `wait_agent`, Task tool completion, or your runtime's equivalent).
+1. Block until subagent completes (via your runtime's native wait mechanism — codex `wait_agent`, claude-code Task/Agent tool completion, or equivalent).
 2. `Read` `evaluation.json`. If file missing or malformed, treat as `overall_score: 0.0` with `visual_issues: ["subagent failed"]`.
 3. Proceed to Phase 6.
 
@@ -390,7 +390,7 @@ These apply across ALL phases. Violation = failed run.
 
 - Phase 1 output → Phase 2 input. No skipping ahead.
 - Phase 3 must pass before Phase 4.
-- Phase 5 must spawn subagent with full context isolation (codex: `fork_turns="none"`; claude-code: fresh Task; other runtimes: equivalent).
+- Phase 5 must spawn subagent with full context isolation (codex: `fork_turns="none"`; claude-code: fresh `Agent`; other runtimes: equivalent).
 - Phase 6 decides finalize vs iterate.
 
 ---

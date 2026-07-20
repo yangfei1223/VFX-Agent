@@ -21,10 +21,11 @@ class ClaudeCodeBackend(BaseBackend):
 
     name = "claude-code"
 
-    # Tools allowed by default. Task is required for Phase 5 subagent spawn.
+    # Tools allowed by default. Agent is required for Phase 5 subagent spawn
+    # (claude-code's actual subagent tool is named "Agent", not "Task").
     # MCP tools (zai-mcp-server_*) are auto-discovered by Claude Code from
     # ~/.claude.json global config; do not need to be in this list.
-    ALLOWED_TOOLS = "Bash,Read,Write,Edit,Glob,Grep,Task"
+    ALLOWED_TOOLS = "Bash,Read,Write,Edit,Glob,Grep,Agent"
 
     # Events to drop at parse time (claude-code specific noise).
     #

@@ -156,8 +156,7 @@ class PipelineOrchestrator:
 ## Setup
 
 Your working directory contains:
-- `AGENTS.md` (auto-loaded by codex) — project context and VFX terminology
-- `CLAUDE.md` (auto-loaded by Claude Code) — same content as AGENTS.md
+- `AGENTS.md` / `CLAUDE.md` (auto-loaded by your runtime — both symlinked to same source) — project context and VFX terminology
 - `skills/vfx-shader/SKILL.md` — the 6-phase workflow you MUST follow
 - `skills/vfx-shader/reference/` — shader templates + few-shot examples + scripts
 - `keyframes/001.png`, `002.png`, ... — reference images ({len(keyframes)} provided)
@@ -191,7 +190,7 @@ When you finish (either passed or max_iterations reached), these files MUST exis
 
 - NO self-evaluation in Phase 5. MUST spawn subagent (use your runtime's
   subagent mechanism: codex `spawn_agent(fork_turns="none")`, claude-code
-  Task tool, or equivalent).
+  Agent tool, or equivalent).
 - NO skipping Phase 3 (validation) before Phase 4 (render).
 - Maximum {max_iterations} iterations total.
 - Stop as soon as subagent score >= 0.85.
