@@ -160,6 +160,7 @@ def collect_sample(
         entry["v2"]["iterations"] = iters
         entry["v2"]["duration_s"] = state_data.get("duration_ms", 0) // 1000
         entry["v2"]["codex_usage"] = state_data.get("codex_usage")
+        entry["backend"] = state_data.get("backend", "codex")
 
     # Find reference image
     kf_dir = workdir / "keyframes"
@@ -218,11 +219,12 @@ def collect_sample(
     return entry
 
 
-def write_codex_events_md(state_file: Path, output_md: Path, sample_name: str) -> None:
-    """Extract codex events from pipeline_state.json into a markdown timeline.
+def write_agent_events_md(state_file: Path, output_md: Path, sample_name: str) -> None:
+    """Extract agent events from pipeline_state.json into a markdown timeline.
 
-    Designed for human review to identify pipeline bottlenecks, codex reasoning patterns,
-    and iteration effectiveness.
+    Supports both codex (item.completed-based) and claude-code
+    (assistant/user/result-based) event formats. Detects backend automatically
+    from state.get('backend') or event structure.
     """
     state = json.loads(state_file.read_text())
     events = state.get("events", [])
@@ -231,12 +233,15 @@ def write_codex_events_md(state_file: Path, output_md: Path, sample_name: str) -
     status = state.get("status", "?")
     duration_ms = state.get("duration_ms", 0)
     final_score = state.get("final_score", 0)
+    backend = state.get("backend", "codex")
     total = len(events)
 
+    title = "Agent Events" if backend != "codex" else "Codex Events"
     lines = [
-        f"# Codex Events: {sample_name}",
+        f"# {title}: {sample_name}",
         "",
         f"**Pipeline ID**: `{pipeline_id}`  ",
+        f"**Backend**: {backend}  ",
         f"**Status**: {status}  ",
         f"**Duration**: {duration_ms / 1000:.1f}s  ",
         f"**Final Score**: {final_score:.3f}  ",
@@ -246,6 +251,26 @@ def write_codex_events_md(state_file: Path, output_md: Path, sample_name: str) -
         "",
     ]
 
+    # Detect backend from first non-meta event if not in state
+    if backend == "codex":
+        is_codex = True
+        for ev in events[:5]:
+            if ev.get("type") in ("assistant", "user", "result"):
+                is_codex = False
+                break
+        # If state didn't have backend field, first events tell the story
+        if is_codex:
+            _render_codex_events(events, lines, total)
+        else:
+            _render_claude_code_events(events, lines, total)
+    else:
+        _render_claude_code_events(events, lines, total)
+
+    output_md.write_text("\n".join(lines))
+
+
+def _render_codex_events(events: list, lines: list, total: int) -> None:
+    """Render codex-style events (item.completed-based) into lines."""
     for i, ev in enumerate(events, start=1):
         ev_type = ev.get("type", "?")
         item = ev.get("item", {})
@@ -316,7 +341,94 @@ def write_codex_events_md(state_file: Path, output_md: Path, sample_name: str) -
             lines.append(f"### [{i:03d}] 🔵 {ev_type} {position}")
             lines.append("")
 
-    output_md.write_text("\n".join(lines))
+
+def _render_claude_code_events(events: list, lines: list, total: int) -> None:
+    """Render claude-code-style events (assistant/user/result-based) into lines."""
+    for i, ev in enumerate(events, start=1):
+        ev_type = ev.get("type", "?")
+        position = f"[{i}/{total}]"
+
+        if ev_type == "assistant":
+            msg = ev.get("message", {})
+            if isinstance(msg, dict):
+                content = msg.get("content", [])
+                if isinstance(content, list):
+                    tool_uses = [c for c in content if isinstance(c, dict) and c.get("type") == "tool_use"]
+                    texts = [c for c in content if isinstance(c, dict) and c.get("type") == "text"]
+                    if tool_uses:
+                        for tu in tool_uses:
+                            tool_name = tu.get("name", "?")
+                            tool_input = tu.get("input", {})
+                            lines.append(f"### [{i:03d}] 🔧 tool_use: {tool_name} {position}")
+                            lines.append("")
+                            if tool_name == "Bash" and isinstance(tool_input, dict):
+                                cmd = tool_input.get("command", "")
+                                lines.append(f"```bash")
+                                lines.append(cmd[:800])
+                                lines.append("```")
+                            elif tool_name in ("Read", "Write", "Edit") and isinstance(tool_input, dict):
+                                path = tool_input.get("path", tool_input.get("file_path", ""))
+                                lines.append(f"**Path**: `{path}`")
+                            elif tool_name == "Agent" and isinstance(tool_input, dict):
+                                desc = tool_input.get("description", tool_input.get("prompt", ""))
+                                lines.append(f"**Agent description**: {desc[:200]}")
+                                for k, v in tool_input.items():
+                                    if k not in ("description", "prompt"):
+                                        lines.append(f"- {k}: {str(v)[:100]}")
+                            elif tool_name.startswith("mcp__") and isinstance(tool_input, dict):
+                                # MCP tool — show input summary
+                                for k, v in tool_input.items():
+                                    lines.append(f"- {k}: {str(v)[:100]}")
+                            else:
+                                # Generic: show first few keys
+                                if isinstance(tool_input, dict):
+                                    for k, v in list(tool_input.items())[:4]:
+                                        lines.append(f"- {k}: {str(v)[:100]}")
+                            lines.append("")
+                    if texts:
+                        for txt in texts:
+                            text = txt.get("text", "").strip()
+                            if text:
+                                preview = text[:500] + ("..." if len(text) > 500 else "")
+                                lines.append(f"### [{i:03d}] 💬 assistant_message {position}")
+                                lines.append("")
+                                lines.append(f"> {preview}")
+                                lines.append("")
+        elif ev_type == "user":
+            msg = ev.get("message", {})
+            if isinstance(msg, dict):
+                content = msg.get("content", [])
+                if isinstance(content, list):
+                    tool_results = [c for c in content if isinstance(c, dict) and c.get("type") == "tool_result"]
+                    for tr in tool_results:
+                        tr_content = tr.get("content", "")
+                        result_preview = str(tr_content)[:600] + ("..." if len(str(tr_content)) > 600 else "")
+                        lines.append(f"### [{i:03d}] ↩️ tool_result {position}")
+                        lines.append("")
+                        lines.append(f"> {result_preview}")
+                        lines.append("")
+        elif ev_type == "result":
+            subtype = ev.get("subtype", "")
+            usage_info = ev.get("usage", {})
+            cost = ev.get("total_cost_usd")
+            icon = "✅" if subtype == "success" else "ℹ️"
+            lines.append(f"### [{i:03d}] {icon} result/{subtype} {position}")
+            lines.append("")
+            if cost is not None:
+                lines.append(f"**Cost**: ${cost:.4f} USD")
+            if usage_info:
+                in_t = usage_info.get("input_tokens", 0)
+                out_t = usage_info.get("output_tokens", 0)
+                lines.append(f"**Usage**: {in_t:,} in / {out_t:,} out")
+            lines.append("")
+        elif ev_type in ("thread.started", "turn.started"):
+            lines.append(f"### [{i:03d}] 🔵 {ev_type} {position}")
+            lines.append("")
+
+
+# Backward-compatible alias
+def write_codex_events_md(state_file: Path, output_md: Path, sample_name: str) -> None:
+    write_agent_events_md(state_file, output_md, sample_name)
 
 
 def persist_to_test_results(
@@ -344,7 +456,16 @@ def persist_to_test_results(
         date_str = datetime.now().strftime("%Y-%m-%d")
         backend_root = Path(__file__).resolve().parents[2]
         num_samples = len(report_data.get("samples", []))
-        output_dir = backend_root / "test_results" / f"{date_str}_v2-codex-od-{num_samples}samples"
+        # Detect backend from samples
+        samples_list = report_data.get("samples", [])
+        backend_name = "codex"
+        for s in samples_list:
+            b = s.get("backend")
+            if b:
+                backend_name = b
+                break
+        archive_suffix = "codex-od" if backend_name == "codex" else backend_name
+        output_dir = backend_root / "test_results" / f"{date_str}_v2-{archive_suffix}-{num_samples}samples"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     backend_root = Path(__file__).resolve().parents[2]
@@ -547,7 +668,7 @@ def persist_to_test_results(
         try:
             state_file_for_events = sample_dir / "pipeline_state.json"
             if state_file_for_events.exists():
-                write_codex_events_md(state_file_for_events, sample_dir / "codex_events.md", sample_name)
+                write_agent_events_md(state_file_for_events, sample_dir / "codex_events.md", sample_name)
         except Exception:
             pass
 
@@ -578,6 +699,30 @@ def persist_to_test_results(
     return output_dir
 
 
+def _resolve_map_file(cli_value: str) -> Path:
+    """Resolve map-file path with auto-detection for per-backend run dirs.
+
+    Priority:
+    1. CLI value (if explicitly provided and not a default legacy path)
+    2. /tmp/vfx_v2_runs/sample_pipeline_map.json (legacy)
+    3. /tmp/vfx_v2_runs_codex/sample_pipeline_map.json
+    4. /tmp/vfx_v2_runs_claude-code/sample_pipeline_map.json
+    """
+    p = Path(cli_value)
+    if p.exists():
+        return p
+    candidates = [
+        Path("/tmp/vfx_v2_runs/sample_pipeline_map.json"),
+        Path("/tmp/vfx_v2_runs_codex/sample_pipeline_map.json"),
+        Path("/tmp/vfx_v2_runs_claude-code/sample_pipeline_map.json"),
+    ]
+    for c in candidates:
+        if c.exists():
+            print(f"[collect] Auto-detected map file: {c}", file=sys.stderr)
+            return c
+    return p  # fallback to CLI value (will fail gracefully later)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--runs-dir", default="/tmp/vfx_v2_runs",
@@ -586,10 +731,29 @@ def main():
                         help="Output JSON path")
     parser.add_argument(
         "--map-file",
-        default="/tmp/vfx_v2_runs/sample_pipeline_map.json",
-        help="Path to sample_pipeline_map.json produced by run_v2_samples_via_ui.py",
+        default="",
+        help="Path to sample_pipeline_map.json (auto-detected from /tmp/vfx_v2_runs* by default)",
+    )
+    parser.add_argument(
+        "--backend",
+        choices=["codex", "claude-code"],
+        default=None,
+        help="Backend name (auto-detected from map-file path if not specified)",
     )
     args = parser.parse_args()
+
+    # Resolve map-file path
+    map_file_path = _resolve_map_file(args.map_file) if args.map_file else _resolve_map_file("")
+    args.map_file = str(map_file_path)
+    # Infer backend from --backend or map-file path
+    if args.backend is None:
+        if "claude-code" in str(map_file_path):
+            args.backend = "claude-code"
+        else:
+            args.backend = "codex"
+    # Infer runs_dir from backend if default
+    if args.runs_dir == "/tmp/vfx_v2_runs":
+        args.runs_dir = f"/tmp/vfx_v2_runs_{args.backend}"
 
     runs_root = Path(args.runs_dir)
 
