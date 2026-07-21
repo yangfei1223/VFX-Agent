@@ -63,6 +63,16 @@ def _discover_samples_from_disk() -> list[str]:
     return out
 
 
+def _resolve_ui_path(map_value: str | None, sample: str, kind: str, runs_root: Path) -> Path | None:
+    """Resolve UI screenshot path: map value wins, else fallback to runs_root/<sample>_ui_<kind>.png."""
+    if map_value:
+        p = Path(map_value)
+        if p.exists():
+            return p
+    fallback = runs_root / f"{sample}_ui_{kind}.png"
+    return fallback if fallback.exists() else None
+
+
 def encode_image_b64(path: Path) -> str | None:
     if not path.exists():
         return None
@@ -84,7 +94,7 @@ def collect_sample(
     """
     # Workdir: override wins, otherwise try candidates
     workdir = None
-    if workdir_override is not None and workdir_override.exists() and (workdir_override / "shader.glsl").exists():
+    if workdir_override is not None and workdir_override.exists():
         workdir = workdir_override
     else:
         candidates = [
@@ -92,7 +102,24 @@ def collect_sample(
             Path("/tmp/vfx_" + sample_name),
             Path("/tmp/vfx_" + sample_name.replace("-", "_")),
         ]
-        workdir = next((c for c in candidates if c.exists() and (c / "shader.glsl").exists()), None)
+        workdir = next((c for c in candidates if c.exists()), None)
+
+    # Fallback: read workdir from pipeline_state.json
+    # (overrides candidates result if state workdir exists and has meaningful content)
+    if pipeline_id:
+        backend_root = Path(__file__).resolve().parents[2]
+        states_dir = backend_root / "app" / "pipeline_states"
+        sf = states_dir / f"{pipeline_id}.json"
+        if sf.exists():
+            try:
+                st = json.loads(sf.read_text())
+                state_wd = st.get("workdir", "")
+                if state_wd and Path(state_wd).exists():
+                    # Prefer state workdir if current candidates dir is empty or missing shader
+                    if workdir is None or not (workdir / "shader.glsl").exists():
+                        workdir = Path(state_wd)
+            except Exception:
+                pass
 
     entry = {
         "sample_name": sample_name,
@@ -180,16 +207,15 @@ def collect_sample(
             entry["images"]["render"] = encode_image_b64(cand)
             break
 
-    # UI screenshots (前端运行界面截图,from UI-driven mode)
-    # Read directly from ui_pre_screenshot / ui_post_screenshot paths
-    if ui_pre_screenshot:
-        ui_pre_path = Path(ui_pre_screenshot)
-        if ui_pre_path.exists():
-            entry["images"]["ui_pre"] = encode_image_b64(ui_pre_path)
-    if ui_post_screenshot:
-        ui_post_path = Path(ui_post_screenshot)
-        if ui_post_path.exists():
-            entry["images"]["ui_post"] = encode_image_b64(ui_post_path)
+    # UI screenshots (前端运行界面截图, from UI-driven mode)
+    # Try map value first, fallback to runs_root/<sample>_ui_<kind>.png
+    ui_pre_path = _resolve_ui_path(ui_pre_screenshot, sample_name, "pre", runs_root)
+    if ui_pre_path:
+        entry["images"]["ui_pre"] = encode_image_b64(ui_pre_path)
+
+    ui_post_path = _resolve_ui_path(ui_post_screenshot, sample_name, "post", runs_root)
+    if ui_post_path:
+        entry["images"]["ui_post"] = encode_image_b64(ui_post_path)
 
     # Read visual_description.json
     vd_path = workdir / "visual_description.json"
@@ -673,13 +699,11 @@ def persist_to_test_results(
             pass
 
         # 8. UI screenshots (前端运行界面截图 from UI-driven mode)
-        for source_path, target_name in [
-            (entry.get("ui_pre_screenshot"), "ui_pre.png"),
-            (entry.get("ui_post_screenshot"), "ui_post.png"),
-        ]:
-            if source_path and Path(source_path).exists():
+        for kind, target_name in [("pre", "ui_pre.png"), ("post", "ui_post.png")]:
+            src = _resolve_ui_path(entry.get(f"ui_{kind}_screenshot"), sample_name, kind, runs_root)
+            if src:
                 try:
-                    shutil.copy(Path(source_path), sample_dir / target_name)
+                    shutil.copy(src, sample_dir / target_name)
                 except Exception:
                     pass
 
