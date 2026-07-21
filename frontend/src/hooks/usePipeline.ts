@@ -43,6 +43,42 @@ export function usePipeline(): UsePipelineReturn {
     "passed", "failed", "timeout", "max_iterations", "not_found",
   ]);
 
+  // ── Helper: poll a pipeline_id until terminal ────────────────────────────
+  const startPolling = useCallback((pid: string) => {
+    const poll = async () => {
+      try {
+        const statusRes = await fetch(
+          `http://localhost:8000/pipeline/status/${pid}`,
+        );
+        if (!statusRes.ok) {
+          throw new Error(`Poll failed: HTTP ${statusRes.status}`);
+        }
+        const statusData = (await statusRes.json()) as PipelineRecord;
+        setRecord(statusData);
+        if (terminalStatuses.has(statusData.status)) {
+          setIsRunning(false);
+          return;
+        }
+        pollingRef.current = setTimeout(poll, 1000);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Polling error");
+        setIsRunning(false);
+      }
+    };
+    poll();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Load existing pipeline from URL query param (e.g. ?pipeline_id=p123) ─
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const pid = params.get("pipeline_id");
+    if (pid) {
+      setPipelineId(pid);
+      setIsRunning(true);
+      startPolling(pid);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── start ────────────────────────────────────────────────────────────────
   const start = useCallback(async (formData: FormData) => {
     // Cancel any in-flight polling
@@ -68,39 +104,12 @@ export function usePipeline(): UsePipelineReturn {
 
       const data = await res.json();
       setPipelineId(data.pipeline_id);
-
-      // ── Poll status ──
-      const poll = async () => {
-        try {
-          const statusRes = await fetch(
-            `http://localhost:8000/pipeline/status/${data.pipeline_id}`,
-          );
-
-          if (!statusRes.ok) {
-            throw new Error(`Poll failed: HTTP ${statusRes.status}`);
-          }
-
-          const statusData = (await statusRes.json()) as PipelineRecord;
-          setRecord(statusData);
-
-          if (terminalStatuses.has(statusData.status)) {
-            setIsRunning(false);
-            return;
-          }
-
-          pollingRef.current = setTimeout(poll, 1000);
-        } catch (err) {
-          setError(err instanceof Error ? err.message : "Polling error");
-          setIsRunning(false);
-        }
-      };
-
-      poll();
+      startPolling(data.pipeline_id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Start failed");
       setIsRunning(false);
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [startPolling]);
 
   // ── cancel ───────────────────────────────────────────────────────────────
   const cancel = useCallback(() => {

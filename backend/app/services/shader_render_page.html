@@ -34,17 +34,20 @@
     return;
   }
 
-  // Vertex shader: full-screen quad
-  const vsSource = `#version 100
-attribute vec2 aPos;
+  // Vertex shader: full-screen quad (WebGL2 / GLSL ES 3.00)
+  const vsSource = `#version 300 es
+in vec2 aPos;
 void main() { gl_Position = vec4(aPos, 0.0, 1.0); }`;
 
-  // Fragment shader: Shadertoy wrapper around user code
+  // Fragment shader: Shadertoy wrapper around user code (WebGL2 / GLSL ES 3.00)
+  // WebGL1 (#version 100) failed on some shaders that work in Three.js WebGL2;
+  // aligning standalone renderer with frontend ShaderPreview for parity.
   const userCode = shaderCode;
-  const fsHeader = `#version 100
+  const fsHeader = `#version 300 es
 precision highp float;
 uniform float iTime;
 uniform vec3 iResolution;
+out vec4 _fragColor;
 `;
 
   const fsFooter = `
@@ -55,7 +58,7 @@ vec4 _mainWrapper(vec2 fragCoord) {
 }
 void main() {
   vec4 c = _mainWrapper(gl_FragCoord.xy);
-  gl_FragColor = vec4(c.rgb, 1.0);
+  _fragColor = vec4(c.rgb, 1.0);
 }`;
 
   // Combine (user code goes between header and footer)

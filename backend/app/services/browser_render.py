@@ -74,6 +74,14 @@ async def render_and_screenshot(
         # 额外 wait: 让 GPU 命令队列刷新 (swiftshader 软件渲染稍慢)
         await page.wait_for_timeout(300)
 
+        # Bug A: Check if shader compile failed (HTML sets __shaderError on compile fail)
+        shader_error = await page.evaluate("() => window.__shaderError === true")
+        if shader_error:
+            raise RuntimeError(
+                "Shader failed to compile in standalone renderer. "
+                "Check shader code or upgrade shader_render_page.html to WebGL2."
+            )
+
         # 验证 canvas 真的渲染了内容 (中央像素非空白)
         # 避免"截图成功但内容是白色"的 silently-failure
         rendered = await page.evaluate(
@@ -84,9 +92,9 @@ async def render_and_screenshot(
                 if (!gl) return false;
                 const px = new Uint8Array(4);
                 gl.readPixels(c.width/2 | 0, c.height/2 | 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
-                // 拒绝纯白 (255,255,255,255) 和纯透明 (0,0,0,0)
+                // Bug B: reject pure white (255,255,255,*) and pure black (0,0,0,*) — both are blank
                 const isBlank = (px[0] === 255 && px[1] === 255 && px[2] === 255) ||
-                                 (px[0] === 0 && px[1] === 0 && px[2] === 0 && px[3] === 0);
+                                 (px[0] === 0 && px[1] === 0 && px[2] === 0);
                 return !isBlank;
             }"""
         )
