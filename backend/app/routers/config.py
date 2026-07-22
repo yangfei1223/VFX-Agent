@@ -11,11 +11,13 @@ router = APIRouter(prefix="/config", tags=["config"])
 class RuntimeConfig(BaseModel):
     """Runtime configuration settings (v2.0+ multi-backend)."""
     # ── Backend ──
-    backend: Literal["codex", "claude-code"] = "codex"
+    backend: Literal["codex", "claude-code", "kimi"] = "codex"
     codex_proxy: str = "http://127.0.0.1:7890"
     codex_timeout: int = Field(default=600, ge=60, le=3600)
     claude_code_proxy: str = ""  # empty = direct connection
     claude_code_timeout: int = Field(default=600, ge=60, le=3600)
+    kimi_proxy: str = ""  # China-domestic, no proxy needed
+    kimi_timeout: int = Field(default=600, ge=60, le=3600)
 
     # ── Pipeline ──
     max_iterations: int = Field(default=5, ge=1, le=100)
