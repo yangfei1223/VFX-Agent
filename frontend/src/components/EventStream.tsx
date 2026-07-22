@@ -9,12 +9,14 @@ import {
   Trash2,
   ChevronDown,
   ChevronRight,
+  Cpu,
 } from "lucide-react";
 import type { DisplayEvent, DisplayEventType } from "../types/pipeline";
 
 interface EventStreamProps {
   events: DisplayEvent[];
   isRunning: boolean;
+  backend?: string;
 }
 
 const TYPE_CONFIG: Record<
@@ -131,7 +133,16 @@ function EventCard({ event }: { event: DisplayEvent }) {
   );
 }
 
-export default function EventStream({ events, isRunning }: EventStreamProps) {
+function BackendChip({ backend }: { backend: string }) {
+  return (
+    <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-[var(--bg-tertiary)] border border-[var(--border-color)] text-[var(--text-secondary)]">
+      <Cpu className="w-3 h-3 text-[var(--accent-primary)]" />
+      <span className="text-xs font-medium">{backend}</span>
+    </div>
+  );
+}
+
+export default function EventStream({ events, isRunning, backend }: EventStreamProps) {
   const [cleared, setCleared] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -159,12 +170,18 @@ export default function EventStream({ events, isRunning }: EventStreamProps) {
     isHoveredRef.current = false;
   }, []);
 
+  const backendLabel = backend || "codex";
+  const emptyText = isRunning ? `等待 ${backendLabel} 事件...` : "尚无事件";
+
   return (
     <div className="panel bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg overflow-hidden flex flex-col h-full min-h-0">
       <div className="px-4 py-2 border-b border-[var(--border-color)] flex items-center justify-between flex-shrink-0">
-        <h2 className="text-xs font-semibold text-[var(--text-primary)] uppercase tracking-wider">
-          Event Stream
-        </h2>
+        <div className="flex items-center gap-3 min-w-0">
+          <h2 className="text-xs font-semibold text-[var(--text-primary)] uppercase tracking-wider">
+            Event Stream
+          </h2>
+          <BackendChip backend={backendLabel} />
+        </div>
         <button
           onClick={() => setCleared(true)}
           disabled={isRunning}
@@ -189,9 +206,7 @@ export default function EventStream({ events, isRunning }: EventStreamProps) {
         {displayEvents.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center p-4">
             <Activity className="w-8 h-8 text-[var(--text-muted)]/30 mb-2" />
-            <p className="text-sm text-[var(--text-muted)]">
-              {isRunning ? "等待 codex 事件..." : "尚无事件"}
-            </p>
+            <p className="text-sm text-[var(--text-muted)]">{emptyText}</p>
           </div>
         ) : (
           <>

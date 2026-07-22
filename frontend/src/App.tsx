@@ -194,6 +194,23 @@ function App() {
   const [showAbout, setShowAbout] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [editedCode, setEditedCode] = useState<string | null>(null);
+  const [runtimeBackend, setRuntimeBackend] = useState<string | null>(null);
+
+  // Fetch current backend from runtime config.
+  // Re-fetch when SettingsPanel closes so Apply'd changes reflect immediately.
+  useEffect(() => {
+    if (showSettings) return;
+    fetch("http://localhost:8000/config")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.backend) {
+          setRuntimeBackend(data.backend as string);
+        }
+      })
+      .catch(() => {
+        // Ignore fetch errors; fallback to 'codex' below.
+      });
+  }, [showSettings]);
 
   // Keep editedCode in sync with the pipeline result, but don't override local edits.
   useEffect(() => {
@@ -226,6 +243,7 @@ function App() {
   }, [record?.events]);
 
   const status = record?.status || "not_found";
+  const currentBackend = (record?.backend || runtimeBackend || "codex") as string;
 
   return (
     <div className="min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)] font-sans">
@@ -310,7 +328,7 @@ function App() {
               </ResizablePanel>
               <ResizableSeparator />
               <ResizablePanel defaultSize={58} minSize={35} maxSize={75}>
-                <EventStream events={displayEvents} isRunning={isRunning} />
+                <EventStream events={displayEvents} isRunning={isRunning} backend={currentBackend} />
               </ResizablePanel>
               <ResizableSeparator />
               <ResizablePanel defaultSize={30} minSize={15} maxSize={45}>
