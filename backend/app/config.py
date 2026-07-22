@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     claude_code_proxy: str = ""  # empty = direct connection (DeepSeek doesn't need proxy)
     claude_code_timeout: int = 600
 
+    # Kimi Code backend (Moonshot K3; China-domestic, no proxy needed)
+    kimi_proxy: str = ""
+    kimi_timeout: int = 600
+
     # Pipeline 配置
     max_iterations: int = 5
     passing_score: float = 0.85
