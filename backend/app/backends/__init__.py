@@ -44,3 +44,4 @@ __all__ = ["BaseBackend", "AgentEvent", "BACKEND_REGISTRY", "register_backend", 
 
 from . import codex as _codex  # noqa: F401 (triggers register_backend on import)
 from . import claude_code as _claude_code  # noqa: F401 (triggers register_backend)
+from . import kimi as _kimi  # noqa: F401 (triggers register_backend)

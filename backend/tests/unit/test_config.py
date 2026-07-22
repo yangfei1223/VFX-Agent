@@ -14,10 +14,17 @@ def test_settings_has_claude_code_proxy_timeout():
     assert hasattr(s, "claude_code_timeout")
 
 
+def test_settings_has_kimi_proxy_timeout():
+    s = Settings()
+    assert hasattr(s, "kimi_proxy")
+    assert hasattr(s, "kimi_timeout")
+
+
 def test_backend_proxy_lookup():
     s = Settings()
     assert s.backend_proxy("codex") == s.codex_proxy
     assert s.backend_proxy("claude-code") == s.claude_code_proxy
+    assert s.backend_proxy("kimi") == s.kimi_proxy
 
 
 def test_backend_proxy_unknown_backend_returns_empty():
@@ -30,6 +37,7 @@ def test_backend_timeout_lookup():
     s = Settings()
     assert s.backend_timeout("codex") == s.codex_timeout
     assert s.backend_timeout("claude-code") == s.claude_code_timeout
+    assert s.backend_timeout("kimi") == s.kimi_timeout
 
 
 def test_backend_timeout_unknown_backend_returns_default():

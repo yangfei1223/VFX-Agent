@@ -52,7 +52,8 @@ def test_get_backend_returns_instance_with_kwargs():
     assert b.timeout_seconds == 300
 
 
-def test_registry_has_both_backends():
-    """After T3 + T5, registry has codex and claude-code."""
+def test_registry_has_all_three_backends():
+    """Registry has codex + claude-code + kimi (three backends)."""
     assert "codex" in BACKEND_REGISTRY
     assert "claude-code" in BACKEND_REGISTRY
+    assert "kimi" in BACKEND_REGISTRY
