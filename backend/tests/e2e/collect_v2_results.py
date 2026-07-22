@@ -834,6 +834,7 @@ def _resolve_map_file(cli_value: str) -> Path:
         Path("/tmp/vfx_v2_runs/sample_pipeline_map.json"),
         Path("/tmp/vfx_v2_runs_codex/sample_pipeline_map.json"),
         Path("/tmp/vfx_v2_runs_claude-code/sample_pipeline_map.json"),
+        Path("/tmp/vfx_v2_runs_kimi/sample_pipeline_map.json"),
     ]
     for c in candidates:
         if c.exists():

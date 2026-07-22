@@ -300,7 +300,7 @@ def generate_html(data: dict) -> str:
     summary = data["summary"]
     samples = data["samples"]
     backend_name = _detect_backend_name(samples)
-    display_name = {"codex": "codex OD", "claude-code": "claude-code"}.get(backend_name, backend_name)
+    display_name = {"codex": "codex OD", "claude-code": "claude-code", "kimi": "Kimi K3"}.get(backend_name, backend_name)
     generated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     # Render cards with backend-aware labeling
