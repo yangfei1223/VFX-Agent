@@ -289,6 +289,8 @@ def write_agent_events_md(state_file: Path, output_md: Path, sample_name: str) -
             _render_codex_events(events, lines, total)
         else:
             _render_claude_code_events(events, lines, total)
+    elif backend == "kimi":
+        _render_kimi_events(events, lines, total)
     else:
         _render_claude_code_events(events, lines, total)
 
@@ -455,6 +457,99 @@ def _render_claude_code_events(events: list, lines: list, total: int) -> None:
 # Backward-compatible alias
 def write_codex_events_md(state_file: Path, output_md: Path, sample_name: str) -> None:
     write_agent_events_md(state_file, output_md, sample_name)
+
+
+def _render_kimi_events(events: list, lines: list, total: int) -> None:
+    """Render kimi-style events (OpenAI chat completion JSONL) into lines.
+
+    Kimi event schema:
+        {"role": "assistant", "tool_calls": [{"function": {"name", "arguments"}}]}
+        {"role": "assistant", "content": "<text>"}
+        {"role": "tool", "tool_call_id": "...", "content": "<result>"}
+        {"role": "meta", "type": "session.resume_hint", ...}  # dropped by parse_event
+
+    The orchestrator stores raw + injected unified "type" field
+    ("tool_call"/"tool_result"/"text"); we dispatch on role for accurate
+    structure detection.
+    """
+    import json as _json
+    for i, ev in enumerate(events, start=1):
+        position = f"[{i}/{total}]"
+        role = ev.get("role", "")
+
+        if role == "assistant":
+            tool_calls = ev.get("tool_calls") or []
+            if tool_calls:
+                for tc in tool_calls:
+                    if not isinstance(tc, dict):
+                        continue
+                    fn = tc.get("function", {})
+                    if not isinstance(fn, dict):
+                        continue
+                    tool_name = fn.get("name", "?")
+                    args_str = fn.get("arguments", "")
+                    # arguments is a JSON string in OpenAI chat completion format
+                    try:
+                        args = _json.loads(args_str) if isinstance(args_str, str) else args_str
+                    except Exception:
+                        args = {"_raw": args_str}
+
+                    lines.append(f"### [{i:03d}] 🔧 tool_call: {tool_name} {position}")
+                    lines.append("")
+                    if tool_name == "Bash" and isinstance(args, dict):
+                        cmd = args.get("command", "")
+                        lines.append("```bash")
+                        lines.append(str(cmd)[:800])
+                        lines.append("```")
+                    elif tool_name in ("Read", "Write", "Edit") and isinstance(args, dict):
+                        path = args.get("path", args.get("file_path", ""))
+                        lines.append(f"**Path**: `{path}`")
+                    elif tool_name == "ReadMediaFile" and isinstance(args, dict):
+                        path = args.get("path", "")
+                        lines.append(f"**Image**: `{path}`")
+                    elif tool_name == "Grep" and isinstance(args, dict):
+                        pattern = args.get("pattern", "")
+                        lines.append(f"**Pattern**: `{pattern}`")
+                    elif tool_name == "Agent" and isinstance(args, dict):
+                        desc = args.get("description", args.get("prompt", ""))
+                        lines.append(f"**Agent description**: {str(desc)[:200]}")
+                        for k, v in args.items():
+                            if k not in ("description", "prompt"):
+                                lines.append(f"- {k}: {str(v)[:100]}")
+                    else:
+                        # Generic: show first few keys
+                        if isinstance(args, dict):
+                            for k, v in list(args.items())[:4]:
+                                lines.append(f"- {k}: {str(v)[:100]}")
+                    lines.append("")
+            # Pure text response (no tool_calls)
+            content = ev.get("content")
+            if not tool_calls and isinstance(content, str) and content.strip():
+                preview = content[:500] + ("..." if len(content) > 500 else "")
+                lines.append(f"### [{i:03d}] 💬 assistant_message {position}")
+                lines.append("")
+                lines.append(f"> {preview}")
+                lines.append("")
+
+        elif role == "tool":
+            content = ev.get("content", "")
+            result_preview = str(content)[:600] + ("..." if len(str(content)) > 600 else "")
+            lines.append(f"### [{i:03d}] ↩️ tool_result {position}")
+            lines.append("")
+            lines.append(f"> {result_preview}")
+            lines.append("")
+
+        elif role == "meta":
+            # meta events (other than session.resume_hint which is dropped) — informational
+            meta_type = ev.get("type", "?")
+            lines.append(f"### [{i:03d}] ℹ️ meta/{meta_type} {position}")
+            lines.append("")
+
+        else:
+            # Unknown role — log raw for debugging
+            ev_type = ev.get("type", "?")
+            lines.append(f"### [{i:03d}] ❓ {ev_type} (role={role}) {position}")
+            lines.append("")
 
 
 def persist_to_test_results(
@@ -760,7 +855,7 @@ def main():
     )
     parser.add_argument(
         "--backend",
-        choices=["codex", "claude-code"],
+        choices=["codex", "claude-code", "kimi"],
         default=None,
         help="Backend name (auto-detected from map-file path if not specified)",
     )
