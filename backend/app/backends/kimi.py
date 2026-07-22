@@ -115,6 +115,16 @@ class KimiBackend(BaseBackend):
         Token usage: kimi v0.28.1 does not emit token counts in -p mode.
         All returned events have usage=None. Frontend usage panel renders
         "—" for kimi backend.
+
+        raw["type"] injection: orchestrator stores event["raw"] directly into
+        pipeline_state.events, and frontend (useEventStream.ts) reads
+        event.type — which exists on codex/claude-code raw but is absent
+        on kimi raw (kimi uses "role" instead). We inject a `type` field
+        into the raw dict so frontend's `event.type.startsWith("item.")`
+        does not crash with `undefined.startsWith is not a function`.
+        The injected value is the unified AgentEvent type string, which
+        frontend renders as a generic lifecycle event (kimi-specific
+        event detail rendering is future work).
         """
         role = raw.get("role", "")
 
@@ -140,14 +150,15 @@ class KimiBackend(BaseBackend):
                     "type": "tool_call",
                     "content": tool_names,
                     "usage": None,
-                    "raw": raw,
+                    # Inject unified type into raw copy for frontend compat.
+                    "raw": {**raw, "type": "tool_call"},
                 }
             # No tool_calls: pure text response
             return {
                 "type": "text",
                 "content": raw.get("content", ""),
                 "usage": None,
-                "raw": raw,
+                "raw": {**raw, "type": "text"},
             }
 
         if role == "tool":
@@ -155,7 +166,7 @@ class KimiBackend(BaseBackend):
                 "type": "tool_result",
                 "content": "",  # raw preserved; frontend can deep-read
                 "usage": None,
-                "raw": raw,
+                "raw": {**raw, "type": "tool_result"},
             }
 
         # Unknown / malformed event: text fallback, never raise.
@@ -164,7 +175,7 @@ class KimiBackend(BaseBackend):
             "type": "text",
             "content": "",
             "usage": None,
-            "raw": raw,
+            "raw": {**raw, "type": "text"},
         }
 
 

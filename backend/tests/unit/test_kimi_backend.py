@@ -118,7 +118,7 @@ def test_parse_assistant_with_tool_calls_becomes_tool_call():
     assert ev["type"] == "tool_call"
     assert ev["content"] == "Bash"
     assert ev["usage"] is None
-    assert ev["raw"] is raw
+    assert ev["raw"] == {**raw, "type": ev["type"]}
 
 
 def test_parse_assistant_with_multiple_tool_calls_joins_names():
@@ -177,7 +177,7 @@ def test_parse_tool_result_event():
     # content left empty (raw preserved for frontend deep-read)
     assert ev["content"] == ""
     assert ev["usage"] is None
-    assert ev["raw"] is raw
+    assert ev["raw"] == {**raw, "type": ev["type"]}
 
 
 def test_parse_meta_session_resume_hint_dropped():
@@ -212,7 +212,7 @@ def test_parse_unknown_event_falls_back_to_text():
     assert ev is not None
     assert ev["type"] == "text"
     assert ev["content"] == ""
-    assert ev["raw"] is raw
+    assert ev["raw"] == {**raw, "type": ev["type"]}
 
 
 def test_parse_empty_dict_does_not_raise():
