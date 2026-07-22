@@ -280,7 +280,7 @@ async def main():
                         help="Explicitly run all samples (same as no args; for clarity in scripts)")
     parser.add_argument(
         "--backend",
-        choices=["codex", "claude-code"],
+        choices=["codex", "claude-code", "kimi"],
         default="codex",
         help="Agent backend to use (default: codex). Sets runtime_config.backend via PUT /config.",
     )
