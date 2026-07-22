@@ -9,11 +9,13 @@ interface SettingsPanelProps {
 
 interface Settings {
   // Backend
-  backend: 'codex' | 'claude-code';
+  backend: 'codex' | 'claude-code' | 'kimi';
   codex_proxy: string;
   codex_timeout: number;
   claude_code_proxy: string;
   claude_code_timeout: number;
+  kimi_proxy: string;
+  kimi_timeout: number;
   // Pipeline
   max_iterations: number;
   passing_threshold: number;
@@ -31,6 +33,8 @@ const DEFAULT_SETTINGS: Settings = {
   codex_timeout: 600,
   claude_code_proxy: '',
   claude_code_timeout: 600,
+  kimi_proxy: '',
+  kimi_timeout: 600,
   max_iterations: 5,
   passing_threshold: 0.85,
   screenshot_width: 1280,
@@ -64,6 +68,8 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
               codex_timeout: data.codex_timeout ?? DEFAULT_SETTINGS.codex_timeout,
               claude_code_proxy: data.claude_code_proxy ?? DEFAULT_SETTINGS.claude_code_proxy,
               claude_code_timeout: data.claude_code_timeout ?? DEFAULT_SETTINGS.claude_code_timeout,
+              kimi_proxy: data.kimi_proxy ?? DEFAULT_SETTINGS.kimi_proxy,
+              kimi_timeout: data.kimi_timeout ?? DEFAULT_SETTINGS.kimi_timeout,
               max_iterations: data.max_iterations ?? DEFAULT_SETTINGS.max_iterations,
               passing_threshold: data.passing_threshold ?? DEFAULT_SETTINGS.passing_threshold,
               screenshot_width: data.screenshot_width ?? DEFAULT_SETTINGS.screenshot_width,
@@ -97,6 +103,8 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
           codex_timeout: settings.codex_timeout,
           claude_code_proxy: settings.claude_code_proxy,
           claude_code_timeout: settings.claude_code_timeout,
+          kimi_proxy: settings.kimi_proxy,
+          kimi_timeout: settings.kimi_timeout,
           max_iterations: settings.max_iterations,
           passing_threshold: settings.passing_threshold,
           screenshot_width: settings.screenshot_width,
@@ -215,6 +223,7 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                     >
                       <option value="codex">codex</option>
                       <option value="claude-code">claude-code</option>
+                      <option value="kimi">kimi</option>
                     </select>
                   </div>
                   <div className="space-y-2">
@@ -260,6 +269,30 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                       max={3600}
                       value={settings.claude_code_timeout}
                       onChange={(e) => setSettings(s => ({ ...s, claude_code_timeout: parseInt(e.target.value) || 0 }))}
+                      className="w-full px-3 py-2 bg-[var(--bg-tertiary)] border border-[var(--border-color)] rounded-lg
+                               text-sm text-[var(--text-primary)] font-mono focus:border-[var(--accent-primary)]
+                               focus:outline-none focus:ring-1 focus:ring-[var(--accent-primary)]/30"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-[var(--text-primary)]">Kimi Proxy</label>
+                    <input
+                      type="text"
+                      value={settings.kimi_proxy}
+                      onChange={(e) => setSettings(s => ({ ...s, kimi_proxy: e.target.value }))}
+                      className="w-full px-3 py-2 bg-[var(--bg-tertiary)] border border-[var(--border-color)] rounded-lg
+                               text-sm text-[var(--text-primary)] font-mono focus:border-[var(--accent-primary)]
+                               focus:outline-none focus:ring-1 focus:ring-[var(--accent-primary)]/30"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-[var(--text-primary)]">Kimi Timeout (s)</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={3600}
+                      value={settings.kimi_timeout}
+                      onChange={(e) => setSettings(s => ({ ...s, kimi_timeout: parseInt(e.target.value) || 0 }))}
                       className="w-full px-3 py-2 bg-[var(--bg-tertiary)] border border-[var(--border-color)] rounded-lg
                                text-sm text-[var(--text-primary)] font-mono focus:border-[var(--accent-primary)]
                                focus:outline-none focus:ring-1 focus:ring-[var(--accent-primary)]/30"
