@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Re-render final shader for each sample, save to workdir/render_final.png.
 
-Usage: python tests/e2e/rerender_samples.py
+Usage: python benchmark/skills/vfx-benchmark/reference/rerender_samples.py
 """
 import asyncio
 import json
@@ -9,7 +9,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-BACKEND_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[4]  # benchmark/skills/vfx-benchmark/reference/X.py → repo root
+BACKEND_ROOT = REPO_ROOT / 'backend'
 sys.path.insert(0, str(BACKEND_ROOT))
 
 SCRIPT = BACKEND_ROOT / "app" / "skills" / "vfx-shader" / "reference" / "scripts" / "render_shader.py"

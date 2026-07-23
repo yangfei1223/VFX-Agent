@@ -1,10 +1,10 @@
 """Run v2.0 samples via UI (Playwright) - mimics real user path.
 
 Usage:
-    python tests/e2e/run_v2_samples_via_ui.py [sample1 sample2 ...]
-    python tests/e2e/run_v2_samples_via_ui.py --all
+    python benchmark/skills/vfx-benchmark/reference/run_v2_samples_via_ui.py [sample1 sample2 ...]
+    python benchmark/skills/vfx-benchmark/reference/run_v2_samples_via_ui.py --all
 
-Default (no args) runs all samples discovered from test-samples/data/.
+Default (no args) runs all samples discovered from benchmark/test-samples/data/.
 """
 import argparse
 import asyncio
@@ -18,9 +18,10 @@ from pathlib import Path
 import requests
 from playwright.async_api import async_playwright
 
+REPO_ROOT = Path(__file__).resolve().parents[4]  # benchmark/skills/vfx-benchmark/reference/X.py → repo root
 BACKEND_URL = "http://localhost:8000"
 FRONTEND_URL = "http://localhost:5173"
-TEST_SAMPLES = Path("/Users/yangfei/Code/VFX-Agent/test-samples/data")
+TEST_SAMPLES = REPO_ROOT / "benchmark" / "test-samples" / "data"
 ARCHIVE_ROOT = Path("/tmp/vfx_v2_runs_codex")  # default; overridden in main() with --backend
 MAP_FILE = ARCHIVE_ROOT / "sample_pipeline_map.json"
 

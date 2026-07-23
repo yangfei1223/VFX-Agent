@@ -6,8 +6,11 @@ set -e
 
 RUN_PID_FILE=${RUN_PID_FILE:-/tmp/v2_run_16.pid}
 LOG_FILE=${LOG_FILE:-/tmp/v2_run_16.log}
-WORKTREE=/Users/yangfei/Code/VFX-Agent/.worktrees/v2.0-codex-od
-BACKEND=$WORKTREE/backend
+# 定位 repo root：本脚本位于 <repo>/benchmark/skills/vfx-benchmark/reference/
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+REPO_ROOT=$(cd "$SCRIPT_DIR/../../../.." && pwd)
+BACKEND=$REPO_ROOT/backend
+BENCHMARK=$REPO_ROOT/benchmark
 
 echo "[finalize] Watching for run_v2_samples.py completion..."
 
@@ -30,15 +33,15 @@ sleep 5
 # Collect results
 echo ""
 echo "[finalize] Collecting results..."
-cd $BACKEND
-python tests/e2e/collect_v2_results.py --output /tmp/v2_report_data.json
+cd $BENCHMARK/skills/vfx-benchmark/reference
+python collect_v2_results.py --output /tmp/v2_report_data.json
 
 # Generate report
 echo ""
 echo "[finalize] Generating HTML report..."
-REPORT_DIR=$BACKEND/test_results/$(date +%Y-%m-%d)_v2-codex-od-19samples
+REPORT_DIR=$BENCHMARK/test_results/$(date +%Y-%m-%d)_v2-codex-od-19samples
 mkdir -p $REPORT_DIR
-python tests/e2e/generate_v2_report.py \
+python generate_v2_report.py \
     --input /tmp/v2_report_data.json \
     --output $REPORT_DIR/index.html
 

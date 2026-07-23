@@ -1,7 +1,7 @@
 """Collect v2.0 run results + v1.0 baselines into a single JSON for report generator.
 
 Usage:
-    python tests/e2e/collect_v2_results.py [--runs-dir /tmp/vfx_v2_runs] [--output /tmp/v2_report_data.json]
+    python benchmark/skills/vfx-benchmark/reference/collect_v2_results.py [--runs-dir /tmp/vfx_v2_runs] [--output /tmp/v2_report_data.json]
 """
 import argparse
 import base64
@@ -10,6 +10,8 @@ import shutil
 import sys
 from datetime import datetime
 from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[4]  # benchmark/skills/vfx-benchmark/reference/X.py → repo root
 
 # v1.0 V2 baseline (from AGENTS.md, 2026-05-18)
 V1_BASELINES = {
@@ -49,7 +51,7 @@ EFFECT_META = {
 }
 
 
-TEST_SAMPLES_DIR = Path("/Users/yangfei/Code/VFX-Agent/test-samples/data")
+TEST_SAMPLES_DIR = REPO_ROOT / "benchmark" / "test-samples" / "data"
 
 
 def _discover_samples_from_disk() -> list[str]:

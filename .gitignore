@@ -91,12 +91,11 @@ backend/app/config/runtime_config.json
 render_output.png
 
 # Test samples (large video files)
-test-samples/
+/test-samples/
 
 # Test results (archived with timestamps)
-backend/test_results/
+benchmark/test_results/
 
 # Benchmark data
-benchmark/
 
 # Note: Use date-stamped subdirs like 2026-05-20_ab-cv-toggle-19samples/

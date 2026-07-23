@@ -1,7 +1,7 @@
 """Run multiple v2.0 samples sequentially via orchestrator.
 
 Usage:
-    python tests/e2e/run_v2_samples.py <sample1> [sample2] ...
+    python benchmark/skills/vfx-benchmark/reference/run_v2_samples.py <sample1> [sample2] ...
 """
 import argparse
 import asyncio
@@ -12,18 +12,15 @@ import sys
 import time
 from pathlib import Path
 
-BACKEND_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[4]  # benchmark/skills/vfx-benchmark/reference/X.py → repo root
+BACKEND_ROOT = REPO_ROOT / 'backend'
 sys.path.insert(0, str(BACKEND_ROOT))
 
 from app.orchestrator import PipelineOrchestrator
 from app.state_store import StateStore
 
-REPO_ROOT = BACKEND_ROOT.parent
-# test-samples/ is gitignored so not in worktree. Look in main repo first, fall back to worktree.
-MAIN_REPO = Path("/Users/yangfei/Code/VFX-Agent")
-TEST_SAMPLES = (MAIN_REPO / "test-samples" / "data")
-if not TEST_SAMPLES.exists():
-    TEST_SAMPLES = REPO_ROOT / "test-samples" / "data"
+# test-samples 现作为 git submodule 位于 benchmark/test-samples/
+TEST_SAMPLES = REPO_ROOT / "benchmark" / "test-samples" / "data"
 WORKDIR_ROOT = Path("/tmp/vfx_v2_runs")
 
 

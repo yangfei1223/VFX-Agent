@@ -188,12 +188,14 @@ cp .env.example .env
 #### CLI 直接运行（不需要前端）
 
 ```bash
-cd backend
-python tests/e2e/run_v2_samples.py heart-2d
+# 单样本
+python benchmark/skills/vfx-benchmark/reference/run_v2_samples.py heart-2d
 
 # 批量运行
-python tests/e2e/run_v2_samples.py 4-col-grad heart-2d shiny-circle
+python benchmark/skills/vfx-benchmark/reference/run_v2_samples.py 4-col-grad heart-2d shiny-circle
 ```
+
+> 完整 benchmark 流程（含 backend 切换 / UI 模式 / 报告生成）见 [`benchmark/README.md`](benchmark/README.md)。
 
 ---
 
@@ -235,9 +237,7 @@ VFX-Agent/
 │   │                   ├── render_shader.py
 │   │                   └── analyze_pixels.py
 │   ├── tests/
-│   │   ├── unit/                     # 单元测试（5 个文件，18 tests pass）
-│   │   └── e2e/                      # v2.0 E2E runner + report
-│   ├── test_results/                 # 测试结果归档
+│   │   └── unit/                     # 单元测试（5 个文件，18 tests pass）
 │   ├── requirements.txt
 │   └── .env.example
 ├── frontend/                         # 复用 v1.0（最小改动）
@@ -246,7 +246,10 @@ VFX-Agent/
 │   │   ├── components/               # InputPanel, ShaderEditor 等
 │   │   └── hooks/usePipeline.ts
 │   └── package.json
-├── test-samples/                     # 19 baseline 样本 (.gitignored)
+├── benchmark/                        # benchmark 工作目录（见 benchmark/README.md）
+│   ├── skills/vfx-benchmark/         # opencode skill 定义 + 脚本 reference
+│   ├── test-samples/                 # 测试数据集（git submodule）
+│   └── test_results/                 # 测试结果归档 (.gitignored)
 ├── docs/
 ├── start.sh
 └── README.md
@@ -255,6 +258,8 @@ VFX-Agent/
 ---
 
 ### 测试结果
+
+> 📁 **Benchmark 工作目录**：所有 benchmark 数据集（`test-samples/` submodule）、运行脚本（作为 opencode skill 的 reference）、历史归档集中在 [`benchmark/`](benchmark/) 目录。完整目录结构、执行流程、归档命名约定见 [**benchmark/README.md**](benchmark/README.md)。
 
 > 📊 **完整 benchmark 详情**（每 sample 含 reference vs render 对比、UI 截图、backend 关键事件时间线、8 维 dimension 评分、shader 源码）见 [**GitHub Release v2.0.1**](https://github.com/yangfei1223/VFX-Agent/releases/tag/v2.0.1)（95MB tar.gz 归档，codex backend）。其他 backend 见下方"测试报告归档"。
 
@@ -313,12 +318,12 @@ VFX-Agent/
 ```bash
 # 解压 release tar.gz 后打开 HTML 报告
 tar xzf v2.0.1-baseline-50samples.tar.gz
-open backend/test_results/2026-07-16_v2-codex-od-50samples/index.html
+open benchmark/test_results/2026-07-16_v2-codex-od-50samples/index.html
 
 # 自己跑 benchmark（显式传 sample 列表）
-python tests/e2e/run_v2_samples_via_ui.py <sample1> <sample2> ...
-python tests/e2e/collect_v2_results.py
-python tests/e2e/generate_v2_report.py
+python benchmark/skills/vfx-benchmark/reference/run_v2_samples_via_ui.py <sample1> <sample2> ...
+python benchmark/skills/vfx-benchmark/reference/collect_v2_results.py
+python benchmark/skills/vfx-benchmark/reference/generate_v2_report.py
 ```
 
 ---
@@ -417,13 +422,13 @@ VFX-Agent is an AI Agent-driven system that automatically generates Shadertoy-fo
 
 **Core architectural idea — Dynamic Orchestration**: the orchestrator is reduced to a minimal skeleton (keyframe extraction + task dispatch + state persistence). Routing, iteration control, and evaluation decisions are delegated to the agent itself via `SKILL.md`, avoiding the rigidity of traditional static DAGs (e.g., LangGraph).
 
-**Multi-backend**: architecture decouples orchestration from agent runtime via a `BaseBackend` ABC + auto-registry. Three backends are currently supported and tested end-to-end:
+**Pluggable backends**: the architecture does not lock into any specific agent runtime. A [BaseBackend](backend/app/backends/base.py) ABC + auto-registry mechanism is implemented. Three backends are currently supported:
 
 - [codex CLI](https://developers.openai.com/codex) (OpenAI) — default
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (Anthropic / DeepSeek / Anthropic-compatible)
-- [Kimi Code](https://moonshotai.github.io/kimi-code/) (Moonshot K3, multimodal-native)
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (Anthropic / DeepSeek / other Anthropic-compatible)
+- [Kimi Code](https://moonshotai.github.io/kimi-code/) (Moonshot K3) — Chinese-developed, multimodal-native
 
-Adding a new backend takes ~150 lines (3 abstract methods); orchestrator / SKILL assets / frontend / test infrastructure all reuse without modification.
+Adding a new backend takes ~150 lines (subclass `BaseBackend`, implement 3 abstract methods); orchestrator / SKILL assets / frontend / test infrastructure all reuse without modification.
 
 **Key Features**:
 - 🎨 Multimodal input: images, videos, text descriptions
@@ -432,56 +437,317 @@ Adding a new backend takes ~150 lines (3 abstract methods); orchestrator / SKILL
 - 🔄 Self-iteration with isolated subagent evaluation
 - ⚡ Real-time WebGL shader preview + live editing
 
+**Scope**:
+- ✅ 2D / 2.5D planar motion effects (ripple, glow, frosted glass, shimmer, and other UI VFX)
+- ✅ Mobile and Web platforms
+- ❌ 3D raymarching / scene rendering / volume rendering (out of current scope)
+
+---
+
+### Use Cases
+
+#### 🎨 Rapid Shader prototyping for UX designers
+Upload a design mock or motion reference; auto-generate runnable GLSL code without hand-writing shaders.
+
+#### 🎬 Motion design verification
+Convert a UX video into shader code to verify whether the motion logic meets expectations.
+
+#### ✨ UI VFX generation
+Rapidly produce common UI effects: Ripple, Glow, Frosted Glass, Shimmer, Gradient Animation, Wave, etc.
+
+---
+
+### Design Inspiration
+
+The **codex OD (Orchestrated Dispatch)** dynamic orchestration in v2.0 borrows from current popular agent system patterns:
+
+- **[AutoResearchClaw](https://github.com/aiming-lab/AutoResearchClaw)** — a 23-stage autonomous research pipeline that abstracts agent backends via the [acpx protocol](https://github.com/openclaw/acpx), supporting Claude Code / Codex / OpenCode / Copilot / Gemini / Kimi; stages can roll back or PIVOT. Directly inspired this project's "skeleton orchestrator + agent-driven routing" idea.
+- **[OpenDesign](https://github.com/nexu-io/open-design)** — agent-native design tool where coding agents (Claude Code / Codex / Cursor, etc.) autonomously produce design artifacts via `SKILL.md` + `DESIGN.md` + plugins. We reuse its `SKILL.md` orchestration model (standardized agent skills, files-as-contracts).
+- **[Loop Engineering](https://github.com/cobusgreyling/loop-engineering)** — agent engineering philosophy promoted by Addy Osmani / Cobus Greyling ("Stop prompting. Design the loop."), defining 5 core primitives (Automations / Worktrees / Skills / MCP Connectors / Sub-agents) + a memory spine. v2.0 currently implements Skills + Sub-agents + Memory; future iterations will round out the single loop (cross-run Reflexion learning / orchestrator-level independent checker / token budget circuit-breaker).
+- **[OpenCode](https://opencode.ai)** / **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)** — terminal-native agent skills standard.
+
+**Core idea**: delegate "routing / iteration control / scoring" decisions to the agent itself (constrained by `SKILL.md`) rather than hardcoding a static DAG in the Python orchestrator (the v1.0 LangGraph pattern). The orchestrator shrinks to a minimal skeleton (FFmpeg + spawn + JSONL parsing); the agent decides when to iterate and when to finalize.
+
+**Currently supported backends** (implemented and verified by e2e regression):
+
+| Backend | CLI Binary | Default Model | Features |
+|---------|-----------|---------------|----------|
+| [codex](https://developers.openai.com/codex) (default) | `codex` (PATH) | OpenAI codex CLI default | full 6-phase pipeline, `spawn_agent` subagent |
+| [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | `claude` (PATH) | Anthropic-compatible (e.g. DeepSeek) | `Agent` tool subagent + MCP multimodal |
+| [Kimi Code](https://moonshotai.github.io/kimi-code/) | `~/.kimi-code/bin/kimi` (v0.28.1+) | Moonshot K3 (kimi-code/k3, 1M context) | Chinese model, native K3 `image_in` + `ReadMediaFile` tool |
+
+> Backend switching: frontend SettingsPanel dropdown → Apply → `PUT /config {backend: "kimi"}` → orchestrator routes → the corresponding backend's `stream()` is invoked.
+
+Adding a backend: see `docs/superpowers/specs/2026-07-17-multi-agent-backend-abstraction-design.md` + `docs/superpowers/specs/2026-07-22-kimi-backend-design.md`; implement the 3 abstract methods of `BaseBackend` (`setup_workspace` / `build_command` / `parse_event`) and register one line in `backends/__init__.py`.
+
+---
+
+### v2.0 Architecture
+
+```
+[Input] video / image / text description
+    │
+    ▼
+┌──────────────────────────────────────────────────────────────┐
+│  Python Orchestrator (~300 LOC)                               │
+│  FFmpeg keyframes → symlink skills → spawn backend → parse   │
+│  JSONL. No iteration control / scoring / routing decisions   │
+│  (all delegated to the backend agent).                       │
+│  Backend selected by runtime config (codex/claude-code/kimi).│
+└──────────────────────────────────────────────────────────────┘
+    │
+    ▼
+┌──────────────────────────────────────────────────────────────┐
+│  Backend Agent autonomous orchestration (per SKILL.md,       │
+│  CLI-agnostic)                                               │
+│                                                              │
+│  Phase 1  Analyse  ──→  visual_description.json              │
+│  Phase 2  Generate ──→  shader.glsl                          │
+│  Phase 3  Validate ──→  compile check                        │
+│  Phase 4  Render   ──→  Playwright screenshot                │
+│  Phase 5  Evaluate ──→  subagent (isolated context, avoids   │
+│                        positive bias of self-evaluation)     │
+│  Phase 6  Iterate  ──→  loop or finalize                     │
+│                                                              │
+│  ←── iteration (max_iterations bounded by SKILL.md) ──→      │
+└──────────────────────────────────────────────────────────────┘
+    │
+    ▼
+[Output] final GLSL shader + WebGL preview + score report
+```
+
+**Architecture essentials**:
+
+| Component | Responsibility |
+|-----------|---------------|
+| **Python Orchestrator** | FFmpeg keyframe extraction, workdir creation, symlink skills, spawn backend, JSONL parsing, state persistence. Does NOT do routing / scoring / iteration control. |
+| **Backend Agent (main)** | Executes the 6-phase workflow per `skills/vfx-shader/SKILL.md`. Backend is chosen by runtime config (codex / claude-code / kimi). |
+| **Subagent (Phase 5)** | Evaluates render result via the backend's subagent mechanism (codex `spawn_agent` / claude-code `Agent` tool / kimi `Agent` tool) in an isolated context, outputting a structured score. |
+| **Skill assets** | SKILL.md (6-phase workflow, backend-agnostic) + shader_templates.md (~1200 LOC reference) + few_shot_examples.md (9 end-to-end examples) + scripts (validate / render / pixel analysis). |
+
+---
+
+### Tech Stack
+
+| Component | v2.0 Tech |
+|-----------|-----------|
+| Backend | Python 3.11+, FastAPI + BaseBackend abstraction layer |
+| Agent runtime (one or more) | codex CLI 0.144.1+ / Claude Code CLI / Kimi Code CLI v0.28.1+ |
+| LLM orchestration | Dynamic orchestration (not LangGraph), driven by SKILL.md |
+| Frontend | React 18, Vite, TypeScript |
+| Rendering | Three.js, WebGL (reused from v1.0) |
+| Browser automation | Playwright |
+| Video processing | FFmpeg |
+| State persistence | JSON files |
+
+---
+
 ### Quick Start
 
+#### Prerequisites
+
+- Python 3.11+
+- Node.js 18+
+- FFmpeg (for video processing)
+- A modern browser with WebGL support
+
+**Install at least one agent runtime** (choose one or more):
+
+| Backend | Install | Config file |
+|---------|---------|------------|
+| codex CLI (default) | `npm install -g @openai/codex` | `~/.codex/config.toml` |
+| Claude Code | see [claude.ai/code](https://claude.ai/code) | `~/.claude.json` (global) |
+| Kimi Code | `npm install -g @moonshot-ai/kimi-code` or the [official script](https://moonshotai.github.io/kimi-code/) | `~/.kimi-code/config.toml` (set `default_model = "kimi-code/k3"`) |
+
+#### Setup & launch
+
 ```bash
-# Clone and setup
-git clone https://github.com/your-repo/VFX-Agent.git
+# 1. Clone (with benchmark dataset submodule)
+git clone --recurse-submodules https://github.com/yangfei1223/VFX-Agent.git
 cd VFX-Agent
-cd backend && cp .env.example .env
 
-# Start services
-../start.sh start
+# 2. Configure API keys
+cd backend
+cp .env.example .env
+# Edit .env to fill PROXY / TIMEOUT for the chosen backend.
+# Backend switching is done from the frontend SettingsPanel (no restart needed).
 
-# CLI direct run
-python tests/e2e/run_v2_samples.py heart-2d
-
-# Access WebUI at http://localhost:5173
+# 3. Start services (auto-installs dependencies)
+./start.sh start
 ```
 
-### Architecture (v2.0)
+#### Access URLs
 
+| Service | URL |
+|---------|-----|
+| **Frontend (WebUI)** | http://localhost:5173 |
+| **Backend (API)** | http://localhost:8000 |
+| **API Docs** | http://localhost:8000/docs |
+
+#### CLI direct run (no frontend required)
+
+```bash
+# Single sample
+python benchmark/skills/vfx-benchmark/reference/run_v2_samples.py heart-2d
+
+# Batch
+python benchmark/skills/vfx-benchmark/reference/run_v2_samples.py 4-col-grad heart-2d shiny-circle
 ```
-[Input] → Python Orchestrator (FFmpeg + spawn backend)
-         → Backend Agent (autonomous 6-phase workflow, runtime-selected: codex / claude-code / kimi)
-            Phase 1: Analyse → visual_description.json
-            Phase 2: Generate → shader.glsl
-            Phase 3: Validate → compile check
-            Phase 4: Render → screenshot
-            Phase 5: Evaluate → subagent (isolated context)
-            Phase 6: Iterate / Finalize
-         → Output: GLSL Shader + Score Report
-```
 
-### Supported Backends
+> Full benchmark workflow (backend switching / UI mode / report generation) is documented in [`benchmark/README.md`](benchmark/README.md).
 
-| Backend | Default model | Subagent mechanism | Notes |
-|---------|--------------|--------------------|-------|
-| codex (default) | OpenAI codex CLI default | `spawn_agent(fork_turns="none")` | overseas API, requires proxy |
-| claude-code | Anthropic-compatible (DeepSeek) | `Agent` tool | MCP for multimodal input |
-| kimi | Moonshot K3 (1M context) | `Agent` tool | native `image_in`, no proxy |
+---
 
-### Test Results Summary
+### Test Results
 
-📊 **Full benchmark report** (per-sample reference vs render comparison, UI screenshots, codex event timeline, dimension scores, shader source): see [**GitHub Release v2.0.1**](https://github.com/yangfei1223/VFX-Agent/releases/tag/v2.0.1).
+> 📁 **Benchmark workspace**: all benchmark datasets (`test-samples/` submodule), runner scripts (as opencode skill references), and historical archives live in [`benchmark/`](benchmark/). See [**benchmark/README.md**](benchmark/README.md) for directory layout, execution workflow, and archive naming conventions.
+
+> 📊 **Full benchmark report** (per-sample reference vs render comparison, UI screenshots, backend event timeline, 8-dimension scores, shader source): see [**GitHub Release v2.0.1**](https://github.com/yangfei1223/VFX-Agent/releases/tag/v2.0.1) (95MB tar.gz, codex backend). Other backends: see the archive list below.
+
+#### Test Dataset
+
+All benchmarks are based on the author's personally curated [**vfx-shader-dataset**](https://github.com/yangfei1223/vfx-shader-dataset) (reference materials sourced from Shadertoy; not a public academic dataset):
+
+| Dimension | Value |
+|-----------|-------|
+| Total samples | **50** (each = `.webm` reference video + `.json` hand-annotated metadata) |
+| Effect categories | **9**: glow 14 / liquid 11 / particle 10 / shape 4 / space 4 / gradient 3 / warp 2 / ripple 1 / special 1 |
+| Complexity | simple 19 / medium 25 / complex 6 |
+| Animation | animated 30 / static 20 (flow 21 / pulse 5 / rotate 4 / morph 1 / none 19) |
+| Scope | 2D / 2.5D UI VFX, 100% in-scope, **excludes 3D raymarching / scene rendering / volume rendering** |
+
+`.json` annotation fields: `effect_category` / `effect_name` / `visual_description` (natural-language description) / `dominant_colors` / `key_elements` / `shape_type` / `fill_type` / `animation_type` / `complexity` / `is_2d` / `is_in_scope` — used for Decompose Agent evaluation alignment and difficulty stratification.
 
 #### Test Coverage
 
-- **50 samples**: v1.0 baseline 19 + 31 new samples (covers glow / particle / liquid / warp / 2D physics / dna helis / star tunnel effect types)
-- **Retry mechanism**: zero/low-score samples in round 1 (transient compile failures, UI screenshot timing issues) significantly recovered after retry
-- **Frontend path-driven**: Playwright simulates real user flow (upload → submit → poll → screenshot)
+- **50 samples**: v1.0 baseline 19 + 31 new samples (covers glow / particle / liquid / warp / 2D physics / dna helix / star tunnel effect types)
+- **Retry mechanism**: zero / low-score samples in round 1 (mostly transient compile failures, UI screenshot timing issues) recover significantly after retry
+- **Frontend-path driven**: Playwright simulates the real user flow (upload → submit → poll → screenshot)
 
-> Note: the scoring mechanism (subagent multimodal comparison) is still iterating; absolute scores have limited reference value. The visual quality and stability of generated shaders is significantly improved over v1.0 — refer directly to the reference vs render comparisons in the release archive.
+> Note: the scoring mechanism (subagent multimodal comparison) is still iterating; absolute scores have limited reference value. Visual quality and stability of generated shaders improved significantly over v1.0 — refer directly to the reference vs render comparisons in the release archives.
+
+#### HTML Report Archives
+
+Each benchmark run produces a full HTML visualization report (per-sample reference vs render comparison, UI screenshots, backend event timeline, 8-dimension scores, shader source), packed as `.tar.gz` and uploaded to the matching GitHub Release. Archives contain only HTML / JSON / PNG — no executable binaries.
+
+> Reports are archived per backend, e.g.:
+> - `2026-07-15_v2-codex-od-20samples/` (codex backend baseline)
+> - `2026-07-21_v2-claude-code-20samples/` (Claude Code backend)
+> - `2026-07-23_v2-kimi-20samples/` (Kimi K3 backend full 20-sample benchmark)
+
+### Multi-backend Comparison (20-sample subset)
+
+Three backends run on the same 20 samples (covering 9 effect types: gradient / glow / shape / liquid / particle / warp / ripple / flow):
+
+| Backend | Model | Passed (≥0.85) | Avg score | Δ vs v1.0 (0.715) | Notes |
+|---------|-------|----------------|-----------|-------------------|-------|
+| **codex** (default) | GPT-5.6 Sol | **6/20** | **0.762** | +0.047 | best overall |
+| kimi | Kimi K3 | 4/20 | 0.689 | -0.026 | close to codex, notably better than claude-code |
+| claude-code | DeepSeek V4 Pro (via `api.deepseek.com/anthropic`, not official Claude) | 2/20 | 0.469 | -0.246 | 600s timeout is the main bottleneck |
+
+> All three backends share the same SKILL.md / orchestrator / test infrastructure; differences come entirely from agent runtime + model. Kimi K3 matches codex on simple samples; complex samples hit the 600s timeout like claude-code.
+
+| Version | Date | Backend | Model | Samples | Archive |
+|---------|------|---------|-------|---------|---------|
+| **v2.0.2-kimi** | 2026-07-23 | kimi | Kimi K3 | 20 | [Release v2.0.2-kimi](https://github.com/yangfei1223/VFX-Agent/releases/tag/v2.0.2-kimi) (47MB tar.gz) |
+| **v2.0.2-claude-code** | 2026-07-23 | claude-code | **DeepSeek V4 Pro** (claude CLI via `api.deepseek.com/anthropic`, not official Claude) | 20 | [Release v2.0.2-claude-code](https://github.com/yangfei1223/VFX-Agent/releases/tag/v2.0.2-claude-code) (54MB tar.gz) |
+| **v2.0.1** | 2026-07-16 | codex | GPT-5.6 Sol | 50 (full) | [Release v2.0.1](https://github.com/yangfei1223/VFX-Agent/releases/tag/v2.0.1) (95MB tar.gz, HTML + JSON + PNG) |
+| v2.0.0 | 2026-07-15 | codex | GPT-5.6 Sol | 20 | [Release v2.0.0](https://github.com/yangfei1223/VFX-Agent/releases/tag/v2.0.0) (41MB tar.gz) |
+
+#### Local viewing
+
+```bash
+# Extract a release tar.gz and open the HTML report
+tar xzf v2.0.1-baseline-50samples.tar.gz
+open benchmark/test_results/2026-07-16_v2-codex-od-50samples/index.html
+
+# Run your own benchmark (pass an explicit sample list)
+python benchmark/skills/vfx-benchmark/reference/run_v2_samples_via_ui.py <sample1> <sample2> ...
+python benchmark/skills/vfx-benchmark/reference/collect_v2_results.py
+python benchmark/skills/vfx-benchmark/reference/generate_v2_report.py
+```
+
+---
+
+### Known Issues
+
+| Issue | Description | Priority |
+|-------|-------------|----------|
+| Shader compile failures on some samples | agent-generated GLSL occasionally has syntax / semantic errors, render goes full black (retry usually recovers) | P0 |
+| 600s timeout on complex samples | the per-pipeline hard timeout is insufficient for complex effect types; some iterations don't finish | P0 |
+| Subagent scoring still iterating | multimodal comparison scoring has bias; absolute scores have limited reference value — refer directly to reference vs render comparisons | P1 |
+| kimi backend doesn't emit token usage | kimi-code CLI v0.28.1 `-p` mode doesn't return token counts; frontend Usage panel shows "—"; functionality unaffected | P2 |
+
+---
+
+### v1.0 Historical Version
+
+v1.0 (LangGraph three-agent architecture) is deprecated. To inspect the old code, checkout the `v1.0.0` tag.
+
+---
+
+### Configuration
+
+In v2.0 the BaseBackend abstraction invokes the selected agent runtime. **The model itself** (API key / base URL / model name) is configured in each backend's own global config:
+
+| Backend | Model config location |
+|---------|----------------------|
+| codex | `~/.codex/config.toml` (`model = "..."` field) |
+| claude-code | claude CLI internal (override via `--model` flag) |
+| kimi | `~/.kimi-code/config.toml` (`default_model = "kimi-code/k3"`) |
+
+`backend/.env` only configures orchestrator behavior (per-backend proxy / timeout):
+
+```env
+# Default backend (frontend SettingsPanel can switch at runtime)
+BACKEND=codex                        # codex | claude-code | kimi
+
+# Codex invocation
+CODEX_PROXY=http://127.0.0.1:7890    # codex exec via proxy (required for overseas APIs)
+CODEX_TIMEOUT=600                    # per-pipeline hard timeout (seconds)
+
+# Claude Code invocation
+CLAUDE_CODE_PROXY=                   # DeepSeek and other domestic endpoints don't need a proxy
+CLAUDE_CODE_TIMEOUT=600
+
+# Kimi Code invocation (Chinese model, no proxy)
+KIMI_PROXY=
+KIMI_TIMEOUT=600
+KIMI_BIN_PATH=~/.kimi-code/bin/kimi  # Kimi Code CLI binary path (set explicitly when not in PATH)
+
+# Pipeline general
+PASSING_SCORE=0.85                   # subagent passing threshold
+MAX_ITERATIONS=5                     # iteration cap enforced by SKILL.md
+
+# Screenshots
+SCREENSHOT_WIDTH=1280
+SCREENSHOT_HEIGHT=720
+RENDER_TIMEOUT_MS=2000
+
+# Pipeline workdir root (one subdir per pipeline)
+WORKDIR_ROOT=/tmp/vfx_workdirs
+```
+
+**Runtime backend switching** (no service restart needed):
+1. Frontend SettingsPanel → Backend dropdown → pick the target → Apply
+2. Or `curl -X PUT http://localhost:8000/config -d '{"backend":"kimi",...}'`
+3. Or pass `backend=kimi` in POST `/pipeline/run` (per-request override)
+
+Full schema in `backend/.env.example`.
+
+---
+
+### References
+
+- **Design doc**: `docs/superpowers/specs/2026-07-13-vfx-agent-v2-codex-od-design.md`
+- **codex Agent instructions**: `backend/app/skills/AGENTS.md`
+- **6-phase workflow**: `backend/app/skills/vfx-shader/SKILL.md`
+- **Shader template library**: `backend/app/skills/vfx-shader/reference/shader_templates.md`
+- **Few-shot examples**: `backend/app/skills/vfx-shader/reference/few_shot_examples.md`
+- **iq SDF operators**: https://iquilezles.org/articles/distfunctions2d/
+- **Shadertoy examples**: https://www.shadertoy.com/
+
+---
 
 ### License
 

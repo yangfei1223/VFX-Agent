@@ -1,0 +1,4 @@
+[submodule "benchmark/test-samples"]
+	path = benchmark/test-samples
+	url = https://github.com/yangfei1223/vfx-shader-dataset.git
+	branch = main

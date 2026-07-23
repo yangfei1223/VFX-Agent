@@ -16,7 +16,8 @@ import time
 from pathlib import Path
 
 # Setup path so imports from backend/app work
-BACKEND_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[4]  # benchmark/skills/vfx-benchmark/reference/X.py → repo root
+BACKEND_ROOT = REPO_ROOT / 'backend'
 sys.path.insert(0, str(BACKEND_ROOT))
 
 from app.agents.inspect import InspectAgent
