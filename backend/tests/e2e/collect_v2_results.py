@@ -231,6 +231,19 @@ def collect_sample(
         entry["v2"]["status"] = "passed" if ev.get("passed") else (
             "timeout" if ev.get("_timeout_flag") else "max_iterations"
         )
+    elif state_data:
+        # Fallback: no evaluation but pipeline state exists.
+        # Use state.status (timeout / failed / etc.) so reports don't
+        # misleadingly mark partial-completion samples as "missing".
+        # "missing" should mean truly no data; if shader/render exist,
+        # the pipeline got partway and we should reflect that.
+        state_status = state_data.get("status", "")
+        if state_status in ("timeout", "failed", "running"):
+            entry["v2"]["status"] = "timeout" if state_status == "running" else state_status
+        # If state has final_score (e.g. recovered via fallback), use it
+        state_score = state_data.get("final_score", 0)
+        if state_score > 0:
+            entry["v2"]["score"] = state_score
 
     # Read shader
     shader_path = workdir / "final_shader.glsl"
