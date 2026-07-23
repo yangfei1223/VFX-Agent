@@ -303,8 +303,7 @@ VFX-Agent/
 
 | 版本 | 日期 | 样本数 | 报告归档 |
 |------|------|--------|------|
-| **v2.0.2** | 2026-07-23 | 20 | [Release v2.0.2](https://github.com/yangfei1223/VFX-Agent/releases/tag/v2.0.2)（kimi K3 backend，29MB tar.gz） |
-| **v2.0-claude-code-20samples** | 2026-07-21 | 20 | `backend/test_results/2026-07-21_v2-claude-code-20samples/`（未上传 Release） |
+| **v2.0.2** | 2026-07-23 | 20 | [Release v2.0.2](https://github.com/yangfei1223/VFX-Agent/releases/tag/v2.0.2) — kimi K3 (47MB) + claude-code (54MB) 双 backend benchmark archive |
 | **v2.0.1** | 2026-07-16 | 50 + retry | [Release v2.0.1](https://github.com/yangfei1223/VFX-Agent/releases/tag/v2.0.1)（95MB tar.gz，含 HTML + JSON + PNG） |
 | v2.0.0 | 2026-07-15 | 20 | [Release v2.0.0](https://github.com/yangfei1223/VFX-Agent/releases/tag/v2.0.0)（41MB tar.gz） |
 
