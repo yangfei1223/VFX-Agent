@@ -293,19 +293,20 @@ VFX-Agent/
 
 三 backend 跑同一组 20 sample（覆盖 gradient / glow / shape / liquid / particle / warp / ripple / flow 等 9 类效果），结果：
 
-| Backend | Passed (≥0.85) | Avg score | Δ vs v1.0 (0.715) | 备注 |
-|---------|----------------|-----------|-------------------|------|
-| **codex**（默认） | **6/20** | **0.762** | +0.047 | 整体最佳 |
-| **kimi K3** | 4/20 | 0.689 | -0.026 | 接近 codex，显著优于 claude-code |
-| claude-code | 2/20 | 0.469 | -0.246 | 600s timeout 是主要瓶颈 |
+| Backend | 模型 | Passed (≥0.85) | Avg score | Δ vs v1.0 (0.715) | 备注 |
+|---------|------|----------------|-----------|-------------------|------|
+| **codex**（默认） | GPT-5.6 Sol | **6/20** | **0.762** | +0.047 | 整体最佳 |
+| kimi | Kimi K3 | 4/20 | 0.689 | -0.026 | 接近 codex，显著优于 claude-code |
+| claude-code | DeepSeek V4 Pro（走 `api.deepseek.com/anthropic`，非 Claude 官方模型） | 2/20 | 0.469 | -0.246 | 600s timeout 是主要瓶颈 |
 
 > 三 backend 用同一份 SKILL.md / orchestrator / 测试基础设施，差异完全由 agent runtime + model 决定。Kimi K3 在 simple sample 上跟 codex 持平，复杂 sample 跟 claude-code 类似会撞 600s timeout。
 
-| 版本 | 日期 | 样本数 | 报告归档 |
-|------|------|--------|------|
-| **v2.0.2** | 2026-07-23 | 20 | [Release v2.0.2](https://github.com/yangfei1223/VFX-Agent/releases/tag/v2.0.2) — kimi K3 (47MB) + claude-code (54MB) 双 backend benchmark archive |
-| **v2.0.1** | 2026-07-16 | 50 + retry | [Release v2.0.1](https://github.com/yangfei1223/VFX-Agent/releases/tag/v2.0.1)（95MB tar.gz，含 HTML + JSON + PNG） |
-| v2.0.0 | 2026-07-15 | 20 | [Release v2.0.0](https://github.com/yangfei1223/VFX-Agent/releases/tag/v2.0.0)（41MB tar.gz） |
+| 版本 | 日期 | 后端 | 模型 | 样本数 | 报告归档 |
+|------|------|------|------|--------|------|
+| **v2.0.2-kimi** | 2026-07-23 | kimi | Kimi K3 | 20 | [Release v2.0.2-kimi](https://github.com/yangfei1223/VFX-Agent/releases/tag/v2.0.2-kimi)（47MB tar.gz） |
+| **v2.0.2-claude-code** | 2026-07-23 | claude-code | **DeepSeek V4 Pro**（claude CLI 走 `api.deepseek.com/anthropic` endpoint，并非 Claude 官方模型） | 20 | [Release v2.0.2-claude-code](https://github.com/yangfei1223/VFX-Agent/releases/tag/v2.0.2-claude-code)（54MB tar.gz） |
+| **v2.0.1** | 2026-07-16 | codex | GPT-5.6 Sol | 50（全量） | [Release v2.0.1](https://github.com/yangfei1223/VFX-Agent/releases/tag/v2.0.1)（95MB tar.gz，含 HTML + JSON + PNG） |
+| v2.0.0 | 2026-07-15 | codex | GPT-5.6 Sol | 20 | [Release v2.0.0](https://github.com/yangfei1223/VFX-Agent/releases/tag/v2.0.0)（41MB tar.gz） |
 
 #### 本地查看
 
