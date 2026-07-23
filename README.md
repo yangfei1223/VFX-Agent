@@ -296,7 +296,7 @@ VFX-Agent/
 | Backend | Passed (≥0.85) | Avg score | Δ vs v1.0 (0.715) | 备注 |
 |---------|----------------|-----------|-------------------|------|
 | **codex**（默认） | **6/20** | **0.762** | +0.047 | 整体最佳 |
-| **kimi K3** | 4/20 | 0.652 | -0.063 | 接近 codex，显著优于 claude-code |
+| **kimi K3** | 4/20 | 0.694 | -0.021 | 接近 codex，显著优于 claude-code |
 | claude-code | 2/20 | 0.469 | -0.246 | 600s timeout 是主要瓶颈 |
 
 > 三 backend 用同一份 SKILL.md / orchestrator / 测试基础设施，差异完全由 agent runtime + model 决定。Kimi K3 在 simple sample 上跟 codex 持平，复杂 sample 跟 claude-code 类似会撞 600s timeout。
@@ -307,14 +307,14 @@ VFX-Agent/
 |--------|--------|-------|--------|--------|-------|
 | 4-col-grad | ✅ passed | 0.985 | shiny-circle | ✅ passed | 0.888 |
 | buffer-bloom | ✅ passed | 0.900 | twitter-blue-check | ✅ passed | 0.940 |
-| supah-frosted-glass | max_iter | 0.823 | plasma-waves | max_iter | 0.723 |
-| liquid-glass-ui | max_iter | 0.700 | moon-distance-2d | max_iter | 0.700 |
-| auroras | max_iter | 0.670 | electron | max_iter | 0.670 |
-| happy-diwali-2019 | max_iter | 0.670 | warp-speed2 | max_iter | 0.697 |
-| sparks-drifting | max_iter | 0.660 | hypnotic-ripples | max_iter | 0.660 |
-| water-color-blending | max_iter | 0.645 | vortex-street | max_iter | 0.640 |
-| cool-s-distance | max_iter | 0.630 | liquid-galss-test | max_iter | 0.430 |
-| heart-2d | timeout | 0.000 | windows-95 | timeout | 0.000 |
+| supah-frosted-glass | max_iter | 0.823 | heart-2d | max_iter | 0.840 |
+| plasma-waves | max_iter | 0.723 | liquid-glass-ui | max_iter | 0.700 |
+| moon-distance-2d | max_iter | 0.700 | auroras | max_iter | 0.670 |
+| electron | max_iter | 0.670 | happy-diwali-2019 | max_iter | 0.670 |
+| warp-speed2 | max_iter | 0.697 | sparks-drifting | max_iter | 0.660 |
+| hypnotic-ripples | max_iter | 0.660 | water-color-blending | max_iter | 0.645 |
+| vortex-street | max_iter | 0.640 | cool-s-distance | max_iter | 0.630 |
+| liquid-galss-test | max_iter | 0.430 | windows-95 | missing | 0.000 |
 
 | 版本 | 日期 | 样本数 | 报告归档 |
 |------|------|--------|------|
